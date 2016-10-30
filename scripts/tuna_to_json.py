@@ -12,7 +12,7 @@ def parse_domain_entity(entity_el):
     entity = {
         "id": entity_el.get("ID"),
         "image": entity_el.get("IMAGE"),
-        "type": entity_el.get("TYPE"),
+        "target": entity_el.get("TYPE") == "target",
     }
 
     attributes = {attr_el.get("NAME"): get_attribute_value(attr_el)
