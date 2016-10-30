@@ -1,0 +1,37 @@
+name: pragmatic-tuna
+channels:
+- conda-forge
+- defaults
+dependencies:
+- conda-forge::ca-certificates=2016.8.31=0
+- conda-forge::certifi=2016.8.31=py35_0
+- conda-forge::mock=2.0.0=py35_0
+- conda-forge::ncurses=5.9=9
+- conda-forge::openssl=1.0.2h=2
+- conda-forge::pbr=1.10.0=py35_0
+- conda-forge::pip=8.1.2=py35_0
+- conda-forge::protobuf=3.0.0=py35_0
+- conda-forge::python=3.5.2=2
+- conda-forge::readline=6.2=0
+- conda-forge::setuptools=26.1.1=py35_0
+- conda-forge::six=1.10.0=py35_0
+- conda-forge::sqlite=3.13.0=1
+- conda-forge::tensorflow=0.11.0rc0=py35_0
+- conda-forge::tk=8.5.19=0
+- conda-forge::wheel=0.29.0=py35_0
+- conda-forge::xz=5.2.2=0
+- conda-forge::zlib=1.2.8=3
+- mkl=11.3.3=0
+- numpy=1.11.2=py35_0
+- pip:
+  - certifi==2016.8.31
+  - mock==2.0.0
+  - pbr==1.10.0
+  - pip==8.1.2
+  - protobuf==3.0.0
+  - setuptools==26.1.1.post20160901
+  - six==1.10.0
+  - tensorflow==0.11.0rc0
+  - wheel==0.29.0
+prefix: /Users/jon/anaconda/envs/pragmatic-tuna
+
