@@ -8,6 +8,8 @@ import os.path
 import sys
 from xml.etree import ElementTree as ET
 
+import nltk
+
 
 def parse_domain_entity(entity_el):
     entity = {
@@ -50,7 +52,7 @@ def parse_trial(path):
         "similarity": tree.get("SIMILARITY"),
 
         "domain": domain,
-        "string_description": tree.findtext("./STRING-DESCRIPTION").strip(),
+        "string_description": tree.findtext("./STRING-DESCRIPTION").strip().lower(),
     }
 
 
@@ -64,6 +66,7 @@ def main(args):
         # Compute trial and attribute metadata.
         domain_size = len(trials[0]["domain"])
         attribute_values = defaultdict(set)
+        vocab = set()
         for trial in trials:
             assert len(trial["domain"]) == domain_size
 
@@ -71,9 +74,13 @@ def main(args):
                 for attribute, value in item["attributes"].items():
                     attribute_values[attribute].add(value)
 
+            tokens = nltk.word_tokenize(trial["string_description"])
+            vocab |= set(tokens)
+
         corpora[corpus] = {
             "attributes": {key: list(values) for key, values
                            in attribute_values.items()},
+            "vocab": list(vocab),
             "trials": trials,
         }
 
