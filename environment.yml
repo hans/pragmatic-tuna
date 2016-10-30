@@ -25,10 +25,13 @@ dependencies:
 - numpy=1.11.2=py35_0
 - pip:
   - certifi==2016.8.31
+  - gym==0.4.9
   - mock==2.0.0
   - pbr==1.10.0
   - pip==8.1.2
   - protobuf==3.0.0
+  - pyglet==1.2.4
+  - requests==2.11.1
   - setuptools==26.1.1.post20160901
   - six==1.10.0
   - tensorflow==0.11.0rc0

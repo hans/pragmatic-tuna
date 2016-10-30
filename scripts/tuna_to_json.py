@@ -1,6 +1,7 @@
 # Convert the TUNA XML corpus to a friendlier JSON format.
 
 from argparse import ArgumentParser
+from collections import defaultdict
 import json
 import os
 import os.path
@@ -13,11 +14,9 @@ def parse_domain_entity(entity_el):
         "id": entity_el.get("ID"),
         "image": entity_el.get("IMAGE"),
         "target": entity_el.get("TYPE") == "target",
+        "attributes": {attr_el.get("NAME"): get_attribute_value(attr_el)
+                       for attr_el in entity_el.findall("./ATTRIBUTE")},
     }
-
-    attributes = {attr_el.get("NAME"): get_attribute_value(attr_el)
-                    for attr_el in entity_el.findall("./ATTRIBUTE")}
-    entity.update(attributes)
 
     return entity
 
@@ -46,7 +45,7 @@ def parse_trial(path):
 
     return {
         "id": tree.get("ID"),
-        "cardinality": tree.get("CARDINALITY"),
+        "cardinality": int(tree.get("CARDINALITY")),
         "condition": tree.get("CONDITION"),
         "similarity": tree.get("SIMILARITY"),
 
@@ -62,7 +61,21 @@ def main(args):
         trials = [parse_trial(os.path.join(path, trial_path))
                   for trial_path in os.listdir(path) if trial_path.endswith(".xml")]
 
-        corpora[corpus] = trials
+        # Compute trial and attribute metadata.
+        domain_size = len(trials[0]["domain"])
+        attribute_values = defaultdict(set)
+        for trial in trials:
+            assert len(trial["domain"]) == domain_size
+
+            for item in trial["domain"]:
+                for attribute, value in item["attributes"].items():
+                    attribute_values[attribute].add(value)
+
+        corpora[corpus] = {
+            "attributes": {key: list(values) for key, values
+                           in attribute_values.items()},
+            "trials": trials,
+        }
 
     json.dump(corpora, sys.stdout, sort_keys=True, indent=4)
 
