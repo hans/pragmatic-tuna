@@ -80,7 +80,7 @@ def main(args):
         corpora[corpus] = {
             "attributes": {key: list(values) for key, values
                            in attribute_values.items()},
-            "vocab": list(vocab),
+            "vocab": sorted(vocab),
             "trials": trials,
         }
 
