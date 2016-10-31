@@ -75,7 +75,7 @@ class MuteTUNAEnv(gym.Env):
     def _step(self, action):
         chosen = self._trial["domain"][action]
 
-        reward = 1.0 if chosen["target"] else 0.0
+        reward = 0.5 if chosen["target"] else -0.5
         done = True
         info = {}
 
