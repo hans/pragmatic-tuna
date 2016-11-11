@@ -19,24 +19,31 @@ Model = namedtuple("Model", [# inputs for computation 1: action scores
                              # outputs for computation 2: gradients
                              "gradients"])
 def build_model(env, item_repr_dim=50, utterance_repr_dim=50):
-    items = tf.placeholder(tf.float32, shape=(env.domain_size, env.attr_dim),
-                           name="items")
-    utterance = tf.placeholder(tf.float32, shape=(env.vocab_size,),
-                               name="utterance")
+    if env.bag:
+        input_shape = (env.domain_size, env.attr_dim * env.vocab_size)
+        inputs = tf.placeholder(tf.float32, shape=input_shape)
 
-    # Pretend that the first axis of `items` is a batch axis; library functions
-    # work for us then
-    item_reprs = layers.fully_connected(items, item_repr_dim, tf.tanh)
+        scores = layers.fully_connected(inputs, 1, tf.identity)
+    else:
+        items = tf.placeholder(tf.float32, shape=(env.domain_size, env.attr_dim),
+                               name="items")
+        utterance = tf.placeholder(tf.float32, shape=(env.vocab_size,),
+                                   name="utterance")
 
-    # `utterance` is a sparse input; this acts like an inefficient embedding
-    # lookup
-    utterance_repr = layers.fully_connected(tf.expand_dims(utterance, 0),
-                                            utterance_repr_dim, tf.identity)
-    # one preprocessing layer
-    utterance_repr = layers.fully_connected(utterance_repr, item_repr_dim,
-                                            tf.tanh)
+        # Pretend that the first axis of `items` is a batch axis; library functions
+        # work for us then
+        item_reprs = layers.fully_connected(items, item_repr_dim, tf.tanh)
 
-    scores = tf.squeeze(tf.matmul(item_reprs, tf.transpose(utterance_repr)))
+        # `utterance` is a sparse input; this acts like an inefficient embedding
+        # lookup
+        utterance_repr = layers.fully_connected(tf.expand_dims(utterance, 0),
+                                                utterance_repr_dim, tf.identity)
+        # one preprocessing layer
+        utterance_repr = layers.fully_connected(utterance_repr, item_repr_dim,
+                                                tf.tanh)
+
+        scores = tf.squeeze(tf.matmul(item_reprs, tf.transpose(utterance_repr)))
+
     probs = tf.nn.softmax(scores)
 
     ###########
@@ -111,6 +118,7 @@ if __name__ == "__main__":
     p.add_argument("--corpus_path", required=True)
     p.add_argument("--corpus_selection", default="furniture")
 
+    p.add_argument("--bag_env", default=False, action="store_true")
     p.add_argument("--item_repr_dim", type=int, default=64)
     p.add_argument("--utterance_repr_dim", type=int, default=64)
 
