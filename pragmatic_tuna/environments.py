@@ -10,7 +10,7 @@ import numpy as np
 UNK = "<unk>"
 
 
-class MuteTUNAEnv(gym.Env):
+class TUNAEnv(gym.Env):
 
     def __init__(self, corpus_path, corpus_selection="furniture"):
         with open(corpus_path, "r") as corpus_f:

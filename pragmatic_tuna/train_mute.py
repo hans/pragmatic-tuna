@@ -6,7 +6,7 @@ import tensorflow as tf
 from tensorflow.contrib.layers import layers
 from tqdm import trange, tqdm
 
-from pragmatic_tuna.environments import MuteTUNAEnv
+from pragmatic_tuna.environments import TUNAEnv
 from pragmatic_tuna.reinforce import reinforce_episodic_gradients
 
 
@@ -89,7 +89,7 @@ def build_train_graph(model, env, args):
 
 
 def train(args):
-    env = MuteTUNAEnv(args.corpus_path, args.corpus_selection)
+    env = TUNAEnv(args.corpus_path, args.corpus_selection)
     model = build_model(env, args.item_repr_dim, args.utterance_repr_dim)
     train_op, global_step = build_train_graph(model, env, args)
 
