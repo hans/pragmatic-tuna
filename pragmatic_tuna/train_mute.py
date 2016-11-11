@@ -44,7 +44,7 @@ def build_model(env, item_repr_dim=50, utterance_repr_dim=50):
 
         scores = tf.matmul(item_reprs, tf.transpose(utterance_repr))
 
-    scores = tf.squeeze(scores)
+    scores = tf.squeeze(scores, [1])
     probs = tf.nn.softmax(scores)
 
     ###########
@@ -105,7 +105,18 @@ def build_train_graph(model, env, args):
 
 
 def analyze_weights(sess, env):
-    print([x.name for x in tf.trainable_variables()])
+    descs = env.describe_features()
+    weight_var = next(var for var in tf.trainable_variables()
+                      if var.get_shape().as_list()[0] == len(descs))
+    weight_var = sess.run(weight_var)
+
+    weights = zip(descs, weight_var)
+    weights = sorted(weights, key=lambda weight: -abs(weight[1]))
+
+    print("%20s\t%10s\t%10s\t%s" % ("WORD", "KEY", "VALUE", "WEIGHT"))
+    print("=" * 100)
+    for (word, key, value), weight in weights[:500]:
+        print("%20s\t%10s\t%10s\t%+.5f" % (word, key, value, weight))
 
 
 def train(args):
@@ -123,7 +134,7 @@ def train(args):
             run_trial(model, train_op, env, sess)
 
         if args.analyze_weights:
-            analyze_weights(sess)
+            analyze_weights(sess, env)
 
 
 if __name__ == "__main__":

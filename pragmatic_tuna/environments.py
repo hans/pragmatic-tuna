@@ -80,7 +80,6 @@ class TUNAEnv(gym.Env):
         else:
             return np.array(items), bag_of_words
 
-
     def _item_to_vector(self, item):
         vec = np.zeros(self.attr_dim)
         offset = 0
@@ -107,9 +106,32 @@ class TUNAEnv(gym.Env):
 
         return None, reward, done, info
 
+    def describe_features(self):
+        """
+        Return a list of string descriptions for the features in observations
+        returned by this environment.
+        """
+        if not self.bag:
+            raise NotImplementedError
+
+        idx_to_attribute = {}
+        i = 0
+        for attribute in sorted(self._attributes.keys()):
+            attr_values = self.attributes_to_idx[attribute]
+            for value, value_idx in attr_values.items():
+                idx_to_attribute[i + value_idx] = (attribute, value)
+
+            i += len(attr_values)
+
+        descs = [(word,) + idx_to_attribute[attr_idx]
+                 for word in self.vocab
+                 for attr_idx in range(len(idx_to_attribute))]
+
+        return descs
+
 
 if __name__ == "__main__":
-    env = MuteTUNAEnv("data/tuna.json")
+    env = TUNAEnv("data/tuna.json")
 
     np.set_printoptions(threshold=np.inf)
     print(env.reset())
