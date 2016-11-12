@@ -1,0 +1,784 @@
+{
+    "spatial": {
+        "attributes": {
+            "y": [
+                0,
+                1,
+                2,
+                3,
+                4,
+                5,
+                6,
+                7,
+                8,
+                9
+            ],
+            "x": [
+              0,
+              1,
+              2,
+              3,
+              4,
+              5,
+              6,
+              7,
+              8,
+              9
+            ],
+            "type": [
+                "dog",
+                "sheep",
+                "pig",
+                "goat",
+                "cow",
+                "cat",
+                "chicken",
+                "donkey",
+                "duck",
+                "horse",
+                "goose",
+                "mouse",
+                "goldfish",
+                "hedgehog",
+                "rat"
+            ]
+        },
+        "vocab": [
+            "dog",
+            "sheep",
+            "pig",
+            "goat",
+            "cow",
+            "cat",
+            "chicken",
+            "donkey",
+            "duck",
+            "horse",
+            "goose",
+            "mouse",
+            "goldfish",
+            "hedgehog",
+            "rat",
+            "above",
+            "below",
+            "left",
+            "right"
+        ],
+        "trials": [
+            {
+                "id": "learn_dog",
+                "domain": [
+                    {
+                        "attributes": {
+                            "y": 0,
+                            "x": 0,
+                            "type": "dog"
+                        },
+                        "id": 0,
+                        "target": true
+                    }
+                ],
+                "string_description": "dog"
+            },
+            {
+                "id": "learn_sheep",
+                "domain": [
+                    {
+                        "attributes": {
+                            "y": 0,
+                            "x": 0,
+                            "type": "sheep"
+                        },
+                        "id": 0,
+                        "target": true
+                    }
+                ],
+                "string_description": "sheep"
+            },
+            {
+                "id": "learn_pig",
+                "domain": [
+                    {
+                        "attributes": {
+                            "y": 0,
+                            "x": 0,
+                            "type": "pig"
+                        },
+                        "id": 0,
+                        "target": true
+                    }
+                ],
+                "string_description": "pig"
+            },
+            {
+                "id": "learn_goat",
+                "domain": [
+                    {
+                        "attributes": {
+                            "y": 0,
+                            "x": 0,
+                            "type": "goat"
+                        },
+                        "id": 0,
+                        "target": true
+                    }
+                ],
+                "string_description": "goat"
+            },
+            {
+                "id": "learn_cow",
+                "domain": [
+                    {
+                        "attributes": {
+                            "y": 0,
+                            "x": 0,
+                            "type": "cow"
+                        },
+                        "id": 0,
+                        "target": true
+                    }
+                ],
+                "string_description": "cow"
+            },
+            {
+                "id": "learn_cat",
+                "domain": [
+                    {
+                        "attributes": {
+                            "y": 1,
+                            "x": 0,
+                            "type": "cat"
+                        },
+                        "id": 0,
+                        "target": true
+                    },
+                    {
+                        "attributes": {
+                            "y": 0,
+                            "x": 0,
+                            "type": "cow"
+                        },
+                        "id": 1,
+                        "target": false
+                    }
+                ],
+                "string_description": "cat"
+            },
+            {
+                "id": "learn_chicken",
+                "domain": [
+                    {
+                        "attributes": {
+                            "y": 5,
+                            "x": 3,
+                            "type": "dog"
+                        },
+                        "id": 0,
+                        "target": false
+                    },
+                    {
+                        "attributes": {
+                            "y": 3,
+                            "x": 4,
+                            "type": "chicken"
+                        },
+                        "id": 1,
+                        "target": true
+                    }
+                ],
+                "string_description": "chicken"
+            },
+            {
+                "id": "learn_donkey",
+                "domain": [
+                    {
+                        "attributes": {
+                            "y": 5,
+                            "x": 3,
+                            "type": "chicken"
+                        },
+                        "id": 0,
+                        "target": false
+                    },
+                    {
+                        "attributes": {
+                            "y": 1,
+                            "x": 1,
+                            "type": "donkey"
+                        },
+                        "id": 1,
+                        "target": true
+                    },
+                    {
+                        "attributes": {
+                            "y": 3,
+                            "x": 4,
+                            "type": "cow"
+                        },
+                        "id": 2,
+                        "target": false
+                    }
+                ],
+                "string_description": "donkey"
+            },
+            {
+                "id": "learn_duck",
+                "domain": [
+                    {
+                        "attributes": {
+                            "y": 4,
+                            "x": 9,
+                            "type": "duck"
+                        },
+                        "id": 0,
+                        "target": true
+                    },
+                    {
+                        "attributes": {
+                            "y": 3,
+                            "x": 5,
+                            "type": "cow"
+                        },
+                        "id": 1,
+                        "target": false
+                    }
+                ],
+                "string_description": "duck"
+            },
+            {
+                "id": "learn_horse",
+                "domain": [
+                    {
+                        "attributes": {
+                            "y": 5,
+                            "x": 3,
+                            "type": "chicken"
+                        },
+                        "id": 0,
+                        "target": false
+                    },
+                    {
+                        "attributes": {
+                            "y": 1,
+                            "x": 1,
+                            "type": "donkey"
+                        },
+                        "id": 1,
+                        "target": false
+                    },
+                    {
+                        "attributes": {
+                            "y": 3,
+                            "x": 4,
+                            "type": "cow"
+                        },
+                        "id": 2,
+                        "target": false
+                    },
+                    {
+                        "attributes": {
+                            "y": 1,
+                            "x": 2,
+                            "type": "horse"
+                        },
+                        "id": 3,
+                        "target": true
+                    }
+                ],
+                "string_description": "donkey"
+            },
+            {
+                "id": "learn_above_1",
+                "domain": [
+                  {
+                      "attributes": {
+                          "y": 6,
+                          "x": 3,
+                          "type": "chicken"
+                      },
+                      "id": 0,
+                      "target": true
+                  },
+                  {
+                      "attributes": {
+                          "y": 1,
+                          "x": 3,
+                          "type": "donkey"
+                      },
+                      "id": 1,
+                      "target": false
+                  }
+                ],
+                "string_description": "chicken above donkey"
+            },
+            {
+                "id": "learn_above_2",
+                "domain": [
+                  {
+                      "attributes": {
+                          "y": 1,
+                          "x": 5,
+                          "type": "dog"
+                      },
+                      "id": 0,
+                      "target": false
+                  },
+                  {
+                      "attributes": {
+                          "y": 2,
+                          "x": 5,
+                          "type": "cow"
+                      },
+                      "id": 1,
+                      "target": true
+                  }
+                ],
+                "string_description": "cow above dog"
+            },
+            {
+                "id": "learn_above_3",
+                "domain": [
+                  {
+                      "attributes": {
+                          "y": 1,
+                          "x": 7,
+                          "type": "cow"
+                      },
+                      "id": 0,
+                      "target": false
+                  },
+                  {
+                      "attributes": {
+                          "y": 9,
+                          "x": 7,
+                          "type": "dog"
+                      },
+                      "id": 1,
+                      "target": true
+                  }
+                ],
+                "string_description": "dog above cow"
+            },
+            {
+                "id": "learn_below_1",
+                "domain": [
+                  {
+                      "attributes": {
+                          "y": 6,
+                          "x": 3,
+                          "type": "duck"
+                      },
+                      "id": 0,
+                      "target": true
+                  },
+                  {
+                      "attributes": {
+                          "y": 7,
+                          "x": 3,
+                          "type": "cat"
+                      },
+                      "id": 1,
+                      "target": false
+                  }
+                ],
+                "string_description": "duck below cat"
+            },
+            {
+                "id": "learn_below_2",
+                "domain": [
+                  {
+                      "attributes": {
+                          "y": 9,
+                          "x": 2,
+                          "type": "goat"
+                      },
+                      "id": 0,
+                      "target": false
+                  },
+                  {
+                      "attributes": {
+                          "y": 2,
+                          "x": 2,
+                          "type": "donkey"
+                      },
+                      "id": 1,
+                      "target": true
+                  }
+                ],
+                "string_description": "donkey below goat"
+            },
+            {
+                "id": "learn_below_3",
+                "domain": [
+                  {
+                      "attributes": {
+                          "y": 1,
+                          "x": 7,
+                          "type": "dog"
+                      },
+                      "id": 0,
+                      "target": true
+                  },
+                  {
+                      "attributes": {
+                          "y": 9,
+                          "x": 7,
+                          "type": "cow"
+                      },
+                      "id": 1,
+                      "target": false
+                  }
+                ],
+                "string_description": "dog below cow"
+            },
+            {
+                "id": "learn_left_1",
+                "domain": [
+                  {
+                      "attributes": {
+                          "y": 2,
+                          "x": 5,
+                          "type": "sheep"
+                      },
+                      "id": 0,
+                      "target": true
+                  },
+                  {
+                      "attributes": {
+                          "y": 2,
+                          "x": 7,
+                          "type": "pig"
+                      },
+                      "id": 1,
+                      "target": false
+                  }
+                ],
+                "string_description": "sheep left pig"
+            },
+            {
+                "id": "learn_left_2",
+                "domain": [
+                  {
+                      "attributes": {
+                          "y": 5,
+                          "x": 5,
+                          "type": "cat"
+                      },
+                      "id": 0,
+                      "target": false
+                  },
+                  {
+                      "attributes": {
+                          "y": 5,
+                          "x": 3,
+                          "type": "dog"
+                      },
+                      "id": 1,
+                      "target": true
+                  }
+                ],
+                "string_description": "dog left cat"
+            },
+            {
+                "id": "learn_left_3",
+                "domain": [
+                  {
+                      "attributes": {
+                          "y": 2,
+                          "x": 5,
+                          "type": "cat"
+                      },
+                      "id": 0,
+                      "target": false
+                  },
+                  {
+                      "attributes": {
+                          "y": 2,
+                          "x": 3,
+                          "type": "dog"
+                      },
+                      "id": 1,
+                      "target": true
+                  }
+                ],
+                "string_description": "dog left cat"
+            },
+            {
+                "id": "learn_right_1",
+                "domain": [
+                  {
+                      "attributes": {
+                          "y": 7,
+                          "x": 5,
+                          "type": "chicken"
+                      },
+                      "id": 0,
+                      "target": true
+                  },
+                  {
+                      "attributes": {
+                          "y": 7,
+                          "x": 3,
+                          "type": "donkey"
+                      },
+                      "id": 1,
+                      "target": false
+                  }
+                ],
+                "string_description": "chicken right donkey"
+            },
+            {
+                "id": "learn_right_2",
+                "domain": [
+                  {
+                      "attributes": {
+                          "y": 4,
+                          "x": 1,
+                          "type": "cat"
+                      },
+                      "id": 0,
+                      "target": false
+                  },
+                  {
+                      "attributes": {
+                          "y": 4,
+                          "x": 3,
+                          "type": "donkey"
+                      },
+                      "id": 1,
+                      "target": true
+                  }
+                ],
+                "string_description": "donkey right cat"
+            },
+            {
+                "id": "learn_right_3",
+                "domain": [
+                  {
+                      "attributes": {
+                          "y": 2,
+                          "x": 5,
+                          "type": "sheep"
+                      },
+                      "id": 0,
+                      "target": false
+                  },
+                  {
+                      "attributes": {
+                          "y": 2,
+                          "x": 3,
+                          "type": "goat"
+                      },
+                      "id": 1,
+                      "target": true
+                  }
+                ],
+                "string_description": "goat right sheep"
+            },
+            {
+                "id": "test_1",
+                "domain": [
+                  {
+                      "attributes": {
+                          "y": 5,
+                          "x": 5,
+                          "type": "dog"
+                      },
+                      "id": 0,
+                      "target": false
+                  },
+                  {
+                      "attributes": {
+                          "y": 7,
+                          "x": 5,
+                          "type": "goose"
+                      },
+                      "id": 1,
+                      "target": true
+                  },
+                  {
+                      "attributes": {
+                          "y": 5,
+                          "x": 2,
+                          "type": "goldfish"
+                      },
+                      "id": 2,
+                      "target": false
+                  },
+                  {
+                      "attributes": {
+                          "y": 5,
+                          "x": 6,
+                          "type": "mouse"
+                      },
+                      "id": 3,
+                      "target": false
+                  },
+                  {
+                      "attributes": {
+                          "y": 1,
+                          "x": 5,
+                          "type": "hedgehog"
+                      },
+                      "id": 4,
+                      "target": false
+                  }
+                ],
+                "string_description": "goose above dog"
+            },
+            {
+                "id": "test_2",
+                "domain": [
+                  {
+                      "attributes": {
+                          "y": 5,
+                          "x": 5,
+                          "type": "dog"
+                      },
+                      "id": 0,
+                      "target": false
+                  },
+                  {
+                      "attributes": {
+                          "y": 7,
+                          "x": 5,
+                          "type": "goose"
+                      },
+                      "id": 1,
+                      "target": false
+                  },
+                  {
+                      "attributes": {
+                          "y": 5,
+                          "x": 2,
+                          "type": "goldfish"
+                      },
+                      "id": 2,
+                      "target": true
+                  },
+                  {
+                      "attributes": {
+                          "y": 5,
+                          "x": 6,
+                          "type": "mouse"
+                      },
+                      "id": 3,
+                      "target": false
+                  },
+                  {
+                      "attributes": {
+                          "y": 1,
+                          "x": 5,
+                          "type": "hedgehog"
+                      },
+                      "id": 4,
+                      "target": false
+                  }
+                ],
+                "string_description": "goldfish left dog"
+            },
+            {
+                "id": "test_3",
+                "domain": [
+                  {
+                      "attributes": {
+                          "y": 5,
+                          "x": 5,
+                          "type": "dog"
+                      },
+                      "id": 0,
+                      "target": false
+                  },
+                  {
+                      "attributes": {
+                          "y": 7,
+                          "x": 5,
+                          "type": "goose"
+                      },
+                      "id": 1,
+                      "target": false
+                  },
+                  {
+                      "attributes": {
+                          "y": 5,
+                          "x": 2,
+                          "type": "goldfish"
+                      },
+                      "id": 2,
+                      "target": false
+                  },
+                  {
+                      "attributes": {
+                          "y": 5,
+                          "x": 6,
+                          "type": "mouse"
+                      },
+                      "id": 3,
+                      "target": false
+                  },
+                  {
+                      "attributes": {
+                          "y": 1,
+                          "x": 5,
+                          "type": "hedgehog"
+                      },
+                      "id": 4,
+                      "target": true
+                  }
+                ],
+                "string_description": "hedgehog below dog"
+            },
+            {
+                "id": "test_4",
+                "domain": [
+                  {
+                      "attributes": {
+                          "y": 5,
+                          "x": 5,
+                          "type": "dog"
+                      },
+                      "id": 0,
+                      "target": false
+                  },
+                  {
+                      "attributes": {
+                          "y": 7,
+                          "x": 5,
+                          "type": "goose"
+                      },
+                      "id": 1,
+                      "target": false
+                  },
+                  {
+                      "attributes": {
+                          "y": 5,
+                          "x": 2,
+                          "type": "goldfish"
+                      },
+                      "id": 2,
+                      "target": false
+                  },
+                  {
+                      "attributes": {
+                          "y": 5,
+                          "x": 6,
+                          "type": "mouse"
+                      },
+                      "id": 3,
+                      "target": true
+                  },
+                  {
+                      "attributes": {
+                          "y": 1,
+                          "x": 5,
+                          "type": "hedgehog"
+                      },
+                      "id": 4,
+                      "target": false
+                  }
+                ],
+                "string_description": "mouse right dog"
+            }
+        ]
+    }
+}
