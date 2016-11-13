@@ -165,7 +165,10 @@ class TUNAWithLoTEnv(TUNAEnv):
                 `CHAIR`, `DESK`, etc.
         """
 
-        id_function = ("id", lambda x, y: x == y)
+        def id_fn(sources, candidate):
+            if len(sources) != 1: return False
+            return sources[0] == candidate
+        id_function = ("id", id_fn)
         self.lf_functions = [id_function] + sorted(functions or [])
         self.lf_atoms = sorted(self.attributes_to_idx[atom_attribute])
 
