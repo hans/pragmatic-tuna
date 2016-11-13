@@ -130,6 +130,79 @@ class TUNAEnv(gym.Env):
         return descs
 
 
+class TunaWithLOTEnv(TUNAEnv):
+    """
+    A TUNA environment in which "actions" consist of decoding internal logical
+    forms / language-of-thought code.
+
+    The code representation is very limited right now; we decode strings of the
+    form `FN(ATOM)`. Actions consist then of two classification decisions: over
+    the function space (possibly selecting a null/identity function) and the
+    atom-space.
+    """
+
+    def __init__(self, corpus_path, functions=None, atom_attribute="type",
+                 **kwargs):
+        """
+        Args:
+            functions: List of possible LF function types. Each list item is a
+                tuple of the form `(name, lambda)`, where `name` is a string
+                `name` and `lambda` ... TODO
+        """
+        super(TunaWithLOTEnv, self).__init__(corpus_path, **kwargs)
+
+        self.atom_attribute = atom_attribute
+        self._build_lfs(functions, atom_attribute)
+
+    def _build_lfs(self, functions, atom_attribute):
+        """
+        Prepare definition of logical form space.
+
+        Args:
+            atom_attribute: Item attribute which should be yield to produce
+                a collection of unique atoms. For example, if we use the TUNA
+                `TYPE` attribute here, we will derive unique atoms like
+                `CHAIR`, `DESK`, etc.
+        """
+
+        id_function = ("id", lambda x, y: x == y)
+        self.lf_functions = [id_function] + sorted(functions or [])
+        self.lf_atoms = sorted(self.attributes_to_idx[atom_attribute])
+
+        self.lf_function_from_id = {idx: func for idx, func
+                                    in enumerate(self.lf_functions)}
+        self.lf_atom_from_id = {idx: atom for idx, atom
+                                in enumerate(self.lf_atoms)}
+
+    def _resolve_atom(self, atom_str):
+        return [item for item in self._trial["domain"]
+                if item[self.atom_attribute] == atom_str]
+
+    @property
+    def action_space(self):
+        return spaces.Tuple(spaces.Discrete(len(self.lf_functions)),
+                            spaces.Discrete(len(self.lf_atoms)))
+
+    def _step(self, action):
+        lf_function, lf_atom = action
+        lf_function = self.lf_function_from_id[lf_function]
+        lf_atom = self.lf_atom_from_id[lf_atom]
+
+        finished = False
+        atom_objs = self._resolve_atom(lf_atom)
+        if atom_objs:
+            matches = [item for item in self._trial["domain"]
+                       if lf_function(atom_objs, item)]
+            finished = len(matches) == 1
+
+        success = finished and matches[0]["target"]
+        reward = 0.5 if success else -0.5
+        done = True
+        info = {}
+
+        return None, reward, done, info
+
+
 if __name__ == "__main__":
     env = TUNAEnv("data/tuna.json")
 
