@@ -130,7 +130,7 @@ class TUNAEnv(gym.Env):
         return descs
 
 
-class TunaWithLOTEnv(TUNAEnv):
+class TUNAWithLoTEnv(TUNAEnv):
     """
     A TUNA environment in which "actions" consist of decoding internal logical
     forms / language-of-thought code.
@@ -141,7 +141,7 @@ class TunaWithLOTEnv(TUNAEnv):
     atom-space.
     """
 
-    def __init__(self, corpus_path, functions=None, atom_attribute="type",
+    def __init__(self, corpus_path, functions=None, atom_attribute="shape",
                  **kwargs):
         """
         Args:
@@ -149,7 +149,7 @@ class TunaWithLOTEnv(TUNAEnv):
                 tuple of the form `(name, lambda)`, where `name` is a string
                 `name` and `lambda` ... TODO
         """
-        super(TunaWithLOTEnv, self).__init__(corpus_path, **kwargs)
+        super(TUNAWithLoTEnv, self).__init__(corpus_path, **kwargs)
 
         self.atom_attribute = atom_attribute
         self._build_lfs(functions, atom_attribute)
@@ -176,7 +176,7 @@ class TunaWithLOTEnv(TUNAEnv):
 
     def _resolve_atom(self, atom_str):
         return [item for item in self._trial["domain"]
-                if item[self.atom_attribute] == atom_str]
+                if item["attributes"][self.atom_attribute] == atom_str]
 
     @property
     def action_space(self):
@@ -185,7 +185,7 @@ class TunaWithLOTEnv(TUNAEnv):
 
     def _step(self, action):
         lf_function, lf_atom = action
-        lf_function = self.lf_function_from_id[lf_function]
+        lf_function_name, lf_function = self.lf_function_from_id[lf_function]
         lf_atom = self.lf_atom_from_id[lf_atom]
 
         finished = False
