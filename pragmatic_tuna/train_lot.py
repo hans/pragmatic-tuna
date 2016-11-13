@@ -14,11 +14,28 @@ def above_fn(sources, candidate):
     if len(sources) != 1:
         return False
     return sources[0]["attributes"]["y"] < candidate["attributes"]["y"]
-
+def right_fn(sources, candidate):
+    if len(sources) != 1:
+        return False
+    return sources[0]["attributes"]["x"] < candidate["attributes"]["x"]
+def left_fn(sources, candidate):
+    if len(sources) != 1:
+        return False
+    return sources[0]["attributes"]["x"] > candidate["attributes"]["x"]
+def below_fn(sources, candidate):
+    if len(sources) != 1:
+        return False
+    return sources[0]["attributes"]["y"] > candidate["attributes"]["y"]
 
 FUNCTIONS = {
     "spatial_simple": [
         ("above", above_fn)
+    ],
+    "spatial_complex": [
+        ("above", above_fn),
+        ("right", right_fn),
+        ("left", left_fn),
+        ("below", below_fn)
     ]
 }
 
@@ -42,7 +59,7 @@ def build_model(env, item_repr_dim=50, utterance_repr_dim=50):
         # don't know how this should be parameterized.
         scores = layers.fully_connected(inputs, n_outputs, tf.identity)
     else:
-        items = tf.placeholder(tf.float32, shape=(env.domain_size, env.attr_dim))
+        items = tf.placeholder(tf.float32, shape=(None, env.attr_dim))
         utterance = tf.placeholder(tf.float32, shape=(env.vocab_size,))
 
         scores = layers.fully_connected(tf.expand_dims(utterance, 0),
@@ -138,7 +155,8 @@ def analyze_weights(sess, env):
 
 def train(args):
     env = TUNAWithLoTEnv(args.corpus_path, corpus_selection=args.corpus_selection,
-                         bag=args.bag_env, functions=FUNCTIONS[args.fn_selection])
+                         bag=args.bag_env, functions=FUNCTIONS[args.fn_selection],
+                         atom_attribute=args.atom_attribute)
     model = build_model(env, args.item_repr_dim, args.utterance_repr_dim)
     train_op, global_step = build_train_graph(model, env, args)
 
@@ -165,6 +183,7 @@ if __name__ == "__main__":
     p.add_argument("--corpus_selection", default="furniture")
     p.add_argument("--fn_selection", default="spatial_simple",
                    choices=FUNCTIONS.keys())
+    p.add_argument("--atom_attribute", default="shape")
 
     p.add_argument("--bag_env", default=False, action="store_true")
     p.add_argument("--item_repr_dim", type=int, default=64)
