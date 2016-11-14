@@ -117,6 +117,8 @@ def run_trial(model, train_op, env, sess):
     atom_str = env.lf_atom_from_id[atom_choice]
     tqdm.write("%s => %s(%s)" % (env._trial["string_description"], fn_str, atom_str))
 
+    tqdm.write("%s" % (env.get_generative_lf_probs(),))
+
     _, reward, _, _ = env.step((fn_choice, atom_choice))
     tqdm.write("%f" % reward)
 

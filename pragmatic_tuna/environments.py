@@ -195,17 +195,45 @@ class TUNAWithLoTEnv(TUNAEnv):
         return spaces.Tuple(spaces.Discrete(len(self.lf_functions)),
                             spaces.Discrete(len(self.lf_atoms)))
 
+    def resolve_lf_form(self, lf_function, lf_atom):
+        atom_objs = self._resolve_atom(lf_atom)
+        if atom_objs:
+            return [item for item in self._trial["domain"]
+                    if lf_function(atom_objs, item)]
+        return []
+
+    def get_generative_lf_probs(self):
+        """
+        Build a generative model `p(z|r,w)` for the current world `w` with
+        referent `r`. This currently factors into
+
+            p(fn|..) p(atom|..)
+        """
+        domain = self._trial["domain"]
+        target = [item for item in domain if item["target"]][0]
+
+        p_function = np.zeros(len(self.lf_functions))
+        p_atom = np.zeros(len(self.lf_atoms))
+        for i, (fn_name, function) in enumerate(self.lf_functions):
+            for j, atom in enumerate(self.lf_atoms):
+                matches = self.resolve_lf_form(function, atom)
+                if matches and matches[0] == target:
+                    p_function[i] += 1
+                    p_atom[j] += 1
+
+        # Normalize.
+        p_function /= p_function.sum()
+        p_atom /= p_atom.sum()
+
+        return p_function, p_atom
+
     def _step(self, action):
         lf_function, lf_atom = action
         lf_function_name, lf_function = self.lf_function_from_id[lf_function]
         lf_atom = self.lf_atom_from_id[lf_atom]
 
-        finished = False
-        atom_objs = self._resolve_atom(lf_atom)
-        if atom_objs:
-            matches = [item for item in self._trial["domain"]
-                       if lf_function(atom_objs, item)]
-            finished = len(matches) == 1
+        matches = self.resolve_lf_form(lf_function, lf_atom)
+        finished = len(matches) == 1
 
         success = finished and matches[0]["target"]
         reward = 0.5 if success else -0.5
