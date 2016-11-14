@@ -12,7 +12,8 @@ UNK = "<unk>"
 
 class TUNAEnv(gym.Env):
 
-    def __init__(self, corpus_path, corpus_selection="furniture", bag=False):
+    def __init__(self, corpus_path, corpus_selection="furniture", bag=False,
+                 randomize=False):
         with open(corpus_path, "r") as corpus_f:
             corpus = json.load(corpus_f)[corpus_selection]
             self._trials = corpus["trials"]
@@ -46,6 +47,9 @@ class TUNAEnv(gym.Env):
             self._observation_space = spaces.Tuple(
                     (spaces.Box(low=0, high=1, shape=(self.domain_size, self.attr_dim)),
                      spaces.Box(low=0, high=1, shape=(self.vocab_size,))))
+
+        self.randomize = randomize
+        self._cursor = 0
 
     @property
     def action_space(self):
@@ -94,7 +98,12 @@ class TUNAEnv(gym.Env):
         return vec
 
     def _reset(self):
-        self._trial = random.choice(self._trials)
+        if self.randomize:
+            self._trial = random.choice(self._trials)
+        else:
+            self._cursor = self._cursor % len(self._trials)
+            self._trial = self._trials[self._cursor]
+            self._cursor += 1
         return self._observe()
 
     def _step(self, action):
