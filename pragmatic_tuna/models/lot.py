@@ -43,10 +43,9 @@ FUNCTIONS = {
 Model = namedtuple("Model", [# inputs for computation 1: action scores
                              "inputs",
                              # inputs for computation 2: REINFORCE gradient
-                             "fn_action", "atom_action", "reward",
+                             "action", "reward",
                              # outputs for computation 1: scores
-                             "fn_scores", "fn_probs",
-                             "atom_scores", "atom_probs",
+                             "scores", "probs",
                              # outputs for computation 2: gradients
                              "gradients"])
 def build_model(env, item_repr_dim=50, utterance_repr_dim=50):
@@ -65,37 +64,31 @@ def build_model(env, item_repr_dim=50, utterance_repr_dim=50):
         scores = layers.fully_connected(tf.expand_dims(utterance, 0),
                                         n_outputs, tf.identity)
 
-    fn_scores = tf.slice(scores, [0, 0], [-1, len(env.lf_functions)])
-    atom_scores = tf.slice(scores, [0, len(env.lf_functions)], [-1, -1])
-
-    fn_probs = tf.squeeze(tf.nn.softmax(fn_scores))
-    atom_probs = tf.squeeze(tf.nn.softmax(atom_scores))
+    probs = tf.squeeze(tf.nn.softmax(scores))
 
     ###########
 
-    fn_action = tf.placeholder(tf.int32, shape=(), name="fn_action")
-    atom_action = tf.placeholder(tf.int32, shape=(), name="atom_action")
+    action = tf.placeholder(tf.int32, shape=(), name="action")
     reward = tf.placeholder(tf.float32, shape=(), name="reward")
 
-    scores = [fn_scores, atom_scores]
-    actions = [fn_action, atom_action]
+    scores = [scores]
+    actions = [action]
     rewards = reward
     gradients = reinforce_episodic_gradients(scores, actions, reward)
 
 
     inputs = (inputs,) if env.bag else (items, utterance)
     return Model(inputs,
-                 fn_action, atom_action, reward,
-                 fn_scores, fn_probs,
-                 atom_scores, atom_probs,
+                 action, reward,
+                 scores, probs,
                  gradients)
 
 
 def run_trial(model, train_op, env, sess):
     inputs = env.reset()
 
-    partial_fetches = [model.fn_probs, model.atom_probs, train_op]
-    partial_feeds = [model.fn_action, model.atom_action, model.reward]
+    partial_fetches = [model.probs, train_op]
+    partial_feeds = [model.action, model.reward]
     partial_feeds += list(model.inputs)
     partial = sess.partial_run_setup(partial_fetches, partial_feeds)
 
@@ -104,27 +97,19 @@ def run_trial(model, train_op, env, sess):
     else:
         prob_feeds = {model.inputs[0]: inputs[0],
                       model.inputs[1]: inputs[1]}
-    probs = sess.partial_run(partial, [model.fn_probs, model.atom_probs],
-                             prob_feeds)
-    fn_probs, atom_probs = probs
+    probs = sess.partial_run(partial, model.probs, prob_feeds)
 
-    # Sample independent (fn, atom) from given distributions.
-    fn_choice = np.random.choice(len(env.lf_functions), p=fn_probs)
-    atom_choice = np.random.choice(len(env.lf_atoms), p=atom_probs)
-
-    # DEBUG: print string_desc -> sampled fn(atom)
-    fn_str = env.lf_function_from_id[fn_choice][0]
-    atom_str = env.lf_atom_from_id[atom_choice]
-    tqdm.write("%s => %s(%s)" % (env._trial["string_description"], fn_str, atom_str))
+    # Sample `fn(atom)` LF from the given distribution.
+    choice = np.random.choice(len(probs), p=probs)
 
     tqdm.write("%s" % (env.get_generative_lf_probs(),))
 
-    _, reward, _, _ = env.step((fn_choice, atom_choice))
+    _, reward, _, _ = env.step(choice)
     tqdm.write("%f" % reward)
 
     # Update parameters.
     _ = sess.partial_run(partial, [train_op],
-            {model.fn_action: fn_choice, model.atom_action: atom_choice,
+            {model.action: choice,
              model.reward: reward})
 
 

@@ -192,8 +192,7 @@ class TUNAWithLoTEnv(TUNAEnv):
 
     @property
     def action_space(self):
-        return spaces.Tuple(spaces.Discrete(len(self.lf_functions)),
-                            spaces.Discrete(len(self.lf_atoms)))
+        return spaces.Discrete(len(self.lf_functions) * len(self.lf_atoms))
 
     def resolve_lf_form(self, lf_function, lf_atom):
         atom_objs = self._resolve_atom(lf_atom)
@@ -228,9 +227,15 @@ class TUNAWithLoTEnv(TUNAEnv):
         return p_function, p_atom
 
     def _step(self, action):
-        lf_function, lf_atom = action
+        lf_function = action // len(self.lf_functions)
+        lf_atom = action % len(self.lf_functions)
+
         lf_function_name, lf_function = self.lf_function_from_id[lf_function]
         lf_atom = self.lf_atom_from_id[lf_atom]
+
+        # DEBUG: print string_desc -> sampled fn(atom)
+        print("%s => %s(%s)" % (self._trial["string_description"],
+                                lf_function_name, lf_atom))
 
         matches = self.resolve_lf_form(lf_function, lf_atom)
         finished = len(matches) == 1
