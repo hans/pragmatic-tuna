@@ -1,5 +1,5 @@
 from argparse import ArgumentParser
-from collections import namedtuple
+from collections import Counter, defaultdict, namedtuple
 
 import numpy as np
 import tensorflow as tf
@@ -18,7 +18,37 @@ Model = namedtuple("Model", [# inputs for computation 1: action scores
                              # outputs for computation 1: scores
                              "scores", "probs",
                              # outputs for computation 2: gradients
-                             "gradients"])
+                             "gradients",
+
+                             # sub-model: generative P(u | z)
+                             "generative_model"])
+
+
+class NaiveGenerativeModel(object):
+
+    """
+    A very stupid generative utterance model $P(u | z)$ which is intended to
+    map from bag-of-features $z$ representations to bag-of-words $u$
+    representations. Optionally performs add-1 smoothing.
+    """
+
+    def __init__(self, smooth=True):
+        self.smooth = smooth
+        self.counter = defaultdict(lambda: Counter())
+
+    def observe(self, z, u):
+        z, u = z, tuple(u)
+        self.counter[z][u] += 1
+
+    def score(self, z, u):
+        z, u = z, tuple(u)
+        score = self.counter[z][u]
+        if self.smooth:
+            # Add-1 smoothing.
+            score += 1
+        return score
+
+
 def build_model(env, item_repr_dim=50, utterance_repr_dim=50):
     n_outputs = len(env.lf_functions) + len(env.lf_atoms)
     if env.bag:
@@ -52,10 +82,11 @@ def build_model(env, item_repr_dim=50, utterance_repr_dim=50):
     return Model(inputs,
                  action, reward,
                  scores, probs,
-                 gradients)
+                 gradients,
+                 NaiveGenerativeModel())
 
 
-def run_trial(model, train_op, env, sess):
+def run_trial(model, train_op, env, sess, args):
     inputs = env.reset()
 
     partial_fetches = [model.probs, train_op]
@@ -70,16 +101,30 @@ def run_trial(model, train_op, env, sess):
                       model.inputs[1]: inputs[1]}
     probs = sess.partial_run(partial, model.probs, prob_feeds)
 
-    # Sample `fn(atom)` LF from the given distribution.
-    choice = np.random.choice(len(probs), p=probs)
+    # Sample multiple `fn(atom)` choices from the given distribution.
+    choices = np.random.choice(len(probs), p=probs,
+                               size=args.num_listener_samples)
+
+    # Rescore samples with generative model.
+    # TODO: The generative model should go all the way back to referent.
+    assert len(inputs) == 2
+    utterance = inputs[1]
+    scores = [model.generative_model.score(z, utterance) for z in choices]
+
+    # TODO: Should generative model weights also be updated by REINFORCE?
+
+    # Now select action based on maximum generative score.
+    choice = max(choices, key=lambda c: model.generative_model.score(c, utterance))
 
     _, reward, _, _ = env.step(choice)
     tqdm.write("%f\n" % reward)
 
-    # Update parameters.
+    # Update recognition parameters.
     _ = sess.partial_run(partial, [train_op],
             {model.action: choice,
              model.reward: reward})
+
+    # TODO: Update generation parameters.
 
 
 def build_train_graph(model, env, args):
@@ -123,7 +168,7 @@ def train(args):
             if supervisor.should_stop():
                 break
 
-            run_trial(model, train_op, env, sess)
+            run_trial(model, train_op, env, sess, args)
 
         if args.analyze_weights:
             analyze_weights(sess, env)
@@ -144,6 +189,8 @@ if __name__ == "__main__":
     p.add_argument("--bag_env", default=False, action="store_true")
     p.add_argument("--item_repr_dim", type=int, default=64)
     p.add_argument("--utterance_repr_dim", type=int, default=64)
+
+    p.add_argument("--num_listener_samples", type=int, default=5)
 
     p.add_argument("--num_trials", default=100, type=int)
     p.add_argument("--learning_rate", default=0.1, type=float)
