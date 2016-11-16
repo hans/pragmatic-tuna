@@ -102,10 +102,8 @@ def run_trial(model, train_op, env, sess):
     # Sample `fn(atom)` LF from the given distribution.
     choice = np.random.choice(len(probs), p=probs)
 
-    tqdm.write("%s" % (env.get_generative_lf_probs(),))
-
     _, reward, _, _ = env.step(choice)
-    tqdm.write("%f" % reward)
+    tqdm.write("%f\n" % reward)
 
     # Update parameters.
     _ = sess.partial_run(partial, [train_op],

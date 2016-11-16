@@ -211,20 +211,18 @@ class TUNAWithLoTEnv(TUNAEnv):
         domain = self._trial["domain"]
         target = [item for item in domain if item["target"]][0]
 
-        p_function = np.zeros(len(self.lf_functions))
-        p_atom = np.zeros(len(self.lf_atoms))
+        ps = np.zeros(len(self.lf_functions) * len(self.lf_atoms))
         for i, (fn_name, function) in enumerate(self.lf_functions):
             for j, atom in enumerate(self.lf_atoms):
                 matches = self.resolve_lf_form(function, atom)
                 if matches and matches[0] == target:
-                    p_function[i] += 1
-                    p_atom[j] += 1
+                    idx = i * len(self.lf_atoms) + j
+                    ps[idx] += 1
 
         # Normalize.
-        p_function /= p_function.sum()
-        p_atom /= p_atom.sum()
+        ps /= ps.sum()
 
-        return p_function, p_atom
+        return ps
 
     def _step(self, action):
         lf_function = action // len(self.lf_functions)
@@ -236,6 +234,8 @@ class TUNAWithLoTEnv(TUNAEnv):
         # DEBUG: print string_desc -> sampled fn(atom)
         print("%s => %s(%s)" % (self._trial["string_description"],
                                 lf_function_name, lf_atom))
+        # DEBUG: print generative r -> z probabilities
+        print(self.get_generative_lf_probs())
 
         matches = self.resolve_lf_form(lf_function, lf_atom)
         finished = len(matches) == 1
