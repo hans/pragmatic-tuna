@@ -110,8 +110,12 @@ def run_trial(model, train_op, env, sess, args):
     assert len(inputs) == 2
     utterance = inputs[1]
     scores = [model.generative_model.score(z, utterance) for z in choices]
+    # TODO: Should generative model weights also receive REINFORCE gradients?
 
-    # TODO: Should generative model weights also be updated by REINFORCE?
+    for choice, score in zip(choices, scores):
+        fn_id = choice // len(env.lf_functions)
+        atom_id = choice % len(env.lf_functions)
+        print("%s(%s) %f" % (env.lf_function_from_id[fn_id][0], env.lf_atoms[atom_id], score))
 
     # Now select action based on maximum generative score.
     choice = max(choices, key=lambda c: model.generative_model.score(c, utterance))
@@ -124,7 +128,9 @@ def run_trial(model, train_op, env, sess, args):
             {model.action: choice,
              model.reward: reward})
 
-    # TODO: Update generation parameters.
+    # Update generation parameters.
+    if reward > 0:
+        model.generative_model.observe(choice, utterance)
 
 
 def build_train_graph(model, env, args):
