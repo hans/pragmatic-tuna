@@ -97,28 +97,53 @@ def run_trial(model, train_op, env, sess, args):
     if env.bag:
         prob_feeds = {model.inputs[0]: inputs}
     else:
-        prob_feeds = {model.inputs[0]: inputs[0],
-                      model.inputs[1]: inputs[1]}
+        items, utterance = inputs
+        prob_feeds = {model.inputs[0]: items,
+                      model.inputs[1]: utterance}
     probs = sess.partial_run(partial, model.probs, prob_feeds)
 
     # Sample multiple `fn(atom)` choices from the given distribution.
     choices = np.random.choice(len(probs), p=probs,
                                size=args.num_listener_samples)
 
-    # Rescore samples with generative model.
-    # TODO: The generative model should go all the way back to referent.
-    assert len(inputs) == 2
-    utterance = inputs[1]
-    scores = [model.generative_model.score(z, utterance) for z in choices]
-    # TODO: Should generative model weights also receive REINFORCE gradients?
+    # ==== Generative rescoring ====
+    scores = []
+    for choice in choices:
+        # Resolve referents of sampled choices.
+        referent = env.resolve_lf_by_id(choice)
+        if not referent:
+            scores.append(-np.inf)
+            continue
+        referent = env._trial["domain"].index(referent[0])
 
-    for choice, score in zip(choices, scores):
+        # Get LF distribution.
+        lf_distr = env.get_generative_lf_probs(referent)
+        # Sample an LF.
+        # TODO: Can permit another round of multiple particles here.
+        lf = np.random.choice(len(lf_distr), p=lf_distr)
+        # Now score yielded LF with generative model.
+        score = model.generative_model.score(lf, utterance)
+
+        scores.append(score)
+
+        # Debug logging.
         fn_id = choice // len(env.lf_functions)
         atom_id = choice % len(env.lf_functions)
-        print("%s(%s) %f" % (env.lf_function_from_id[fn_id][0], env.lf_atoms[atom_id], score))
+
+        ref_name = env._trial["domain"][referent]["attributes"]["shape"]
+
+        g_fn_id = lf // len(env.lf_functions)
+        g_atom_id = lf % len(env.lf_functions)
+        print("%s(%s) => %s => %s(%s) => %f" %
+                (env.lf_function_from_id[fn_id][0], env.lf_atoms[atom_id],
+                 ref_name,
+                 env.lf_function_from_id[g_fn_id][0], env.lf_atoms[g_atom_id],
+                 score))
+
+    # TODO: Should generative model weights also receive REINFORCE gradients?
 
     # Now select action based on maximum generative score.
-    choice = max(choices, key=lambda c: model.generative_model.score(c, utterance))
+    choice = max(zip(choices, scores), key=lambda el: el[1])[0]
 
     _, reward, _, _ = env.step(choice)
     tqdm.write("%f\n" % reward)

@@ -201,21 +201,33 @@ class TUNAWithLoTEnv(TUNAEnv):
                     if lf_function(atom_objs, item)]
         return []
 
-    def get_generative_lf_probs(self):
+    def resolve_lf_by_id(self, lf_id):
+        lf_function = lf_id // len(self.lf_functions)
+        lf_atom = lf_id % len(self.lf_functions)
+        return self.resolve_lf_form(self.lf_function_from_id[lf_function][1],
+                                    self.lf_atom_from_id[lf_atom])
+
+    def get_generative_lf_probs(self, referent=None):
         """
         Build a generative model `p(z|r,w)` for the current world `w` with
-        referent `r`. This currently factors into
+        referent `r`.
 
-            p(fn|..) p(atom|..)
+        Args:
+            referent: ID of referent. If not given, the target referent for
+                this trial is used.
         """
         domain = self._trial["domain"]
-        target = [item for item in domain if item["target"]][0]
+
+        if referent is None:
+            referent = [item for item in domain if item["target"]][0]
+        else:
+            referent = domain[referent]
 
         ps = np.zeros(len(self.lf_functions) * len(self.lf_atoms))
         for i, (fn_name, function) in enumerate(self.lf_functions):
             for j, atom in enumerate(self.lf_atoms):
                 matches = self.resolve_lf_form(function, atom)
-                if matches and matches[0] == target:
+                if matches and matches[0] == referent:
                     idx = i * len(self.lf_atoms) + j
                     ps[idx] += 1
 
@@ -234,8 +246,6 @@ class TUNAWithLoTEnv(TUNAEnv):
         # DEBUG: print string_desc -> sampled fn(atom)
         print("%s => %s(%s)" % (self._trial["string_description"],
                                 lf_function_name, lf_atom))
-        # DEBUG: print generative r -> z probabilities
-        print(self.get_generative_lf_probs())
 
         matches = self.resolve_lf_form(lf_function, lf_atom)
         finished = len(matches) == 1
