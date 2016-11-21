@@ -212,7 +212,7 @@ if __name__ == "__main__":
     p.add_argument("--analyze_weights", default=False, action="store_true")
 
     p.add_argument("--corpus_path", required=True)
-    p.add_argument("--corpus_selection", default="furniture")
+    p.add_argument("--corpus_selection", default=None)
     p.add_argument("--fn_selection", default="spatial_simple",
                    choices=FUNCTIONS.keys())
     p.add_argument("--atom_attribute", default="shape")

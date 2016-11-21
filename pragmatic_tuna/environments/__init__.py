@@ -12,10 +12,14 @@ UNK = "<unk>"
 
 class TUNAEnv(gym.Env):
 
-    def __init__(self, corpus_path, corpus_selection="furniture", bag=False,
+    def __init__(self, corpus_path, corpus_selection=None, bag=False,
                  randomize=False):
         with open(corpus_path, "r") as corpus_f:
-            corpus = json.load(corpus_f)[corpus_selection]
+            corpus_data = json.load(corpus_f)
+            if corpus_selection is None:
+                corpus = next(iter(corpus_data.values()))
+            else:
+                corpus = corpus_data[corpus_selection]
             self._trials = corpus["trials"]
             self._attributes = corpus["attributes"]
 
