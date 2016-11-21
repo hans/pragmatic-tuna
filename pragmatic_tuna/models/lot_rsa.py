@@ -50,7 +50,7 @@ class NaiveGenerativeModel(object):
 
 
 def build_model(env, item_repr_dim=50, utterance_repr_dim=50):
-    n_outputs = len(env.lf_functions) + len(env.lf_atoms)
+    n_outputs = len(env.lf_functions) * len(env.lf_atoms)
     if env.bag:
         input_shape = (env.domain_size, env.attr_dim * env.vocab_size)
         inputs = tf.placeholder(tf.float32, shape=input_shape)
@@ -127,13 +127,13 @@ def run_trial(model, train_op, env, sess, args):
         scores.append(score)
 
         # Debug logging.
-        fn_id = choice // len(env.lf_functions)
-        atom_id = choice % len(env.lf_functions)
+        fn_id = choice // len(env.lf_atoms)
+        atom_id = choice % len(env.lf_atoms)
 
         ref_name = env._trial["domain"][referent]["attributes"][args.atom_attribute]
 
-        g_fn_id = lf // len(env.lf_functions)
-        g_atom_id = lf % len(env.lf_functions)
+        g_fn_id = lf // len(env.lf_atoms)
+        g_atom_id = lf % len(env.lf_atoms)
         print("%s(%s) => %s => %s(%s) => %f" %
                 (env.lf_function_from_id[fn_id][0], env.lf_atoms[atom_id],
                  ref_name,

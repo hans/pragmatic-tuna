@@ -206,8 +206,8 @@ class TUNAWithLoTEnv(TUNAEnv):
         return []
 
     def resolve_lf_by_id(self, lf_id):
-        lf_function = lf_id // len(self.lf_functions)
-        lf_atom = lf_id % len(self.lf_functions)
+        lf_function = lf_id // len(self.lf_atoms)
+        lf_atom = lf_id % len(self.lf_atoms)
         return self.resolve_lf_form(self.lf_function_from_id[lf_function][1],
                                     self.lf_atom_from_id[lf_atom])
 
@@ -241,8 +241,8 @@ class TUNAWithLoTEnv(TUNAEnv):
         return ps
 
     def _step(self, action):
-        lf_function = action // len(self.lf_functions)
-        lf_atom = action % len(self.lf_functions)
+        lf_function = action // len(self.lf_atoms)
+        lf_atom = action % len(self.lf_atoms)
 
         lf_function_name, lf_function = self.lf_function_from_id[lf_function]
         lf_atom = self.lf_atom_from_id[lf_atom]
