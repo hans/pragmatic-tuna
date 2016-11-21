@@ -130,7 +130,7 @@ def run_trial(model, train_op, env, sess, args):
         fn_id = choice // len(env.lf_functions)
         atom_id = choice % len(env.lf_functions)
 
-        ref_name = env._trial["domain"][referent]["attributes"]["shape"]
+        ref_name = env._trial["domain"][referent]["attributes"][args.atom_attribute]
 
         g_fn_id = lf // len(env.lf_functions)
         g_atom_id = lf % len(env.lf_functions)
