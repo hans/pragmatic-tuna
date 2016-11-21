@@ -77,7 +77,68 @@ class ListenerModel(object):
         return (action, reward), (gradients,)
 
 
-def run_trial(model, train_op, env, sess, args):
+def infer_trial(env, utterance, probs, generative_model, args):
+    """
+    Run RSA inference for a given trial.
+
+    Args:
+        env:
+        utterance:
+        probs: Literal listener model LF probabilities
+        generative_model:
+        args:
+
+    Returns:
+        lfs: LF IDs sampled from `probs`
+        weights: Associated importance weight `p(z, u) / q(z|u)` for each LF
+    """
+
+    # Sample multiple LFs from the predicted distribution.
+    lfs = np.random.choice(len(probs), p=probs,
+                           size=args.num_listener_samples)
+
+    # Reweight using generative model.
+    weights = []
+    for lf in lfs:
+        # Resolve referent.
+        referent = env.resolve_lf_by_id(lf)
+        if not referent:
+            # Dereference failed.
+            weights.append(-np.inf)
+            continue
+        referent = env._trial["domain"].index(referent[0])
+
+        # Get p(z|r).
+        g_lf_distr = env.get_generative_lf_probs(referent)
+        # Sample from the distribution.
+        g_lf = np.random.choice(len(g_lf_distr), p=g_lf_distr)
+        # Record unnormalized score p(u, z)
+        score = generative_model.score(g_lf, utterance)
+
+        # Create importance weight p(u, z) / q(z | u)
+        #
+        # TODO: this is funky importance sampling, because the two z's in the
+        # above expression are actually not the same
+        weight = score / probs[lf]
+        weights.append(weight)
+
+        # Debug logging.
+        fn_id = lf // len(env.lf_atoms)
+        atom_id = lf % len(env.lf_atoms)
+
+        g_fn_id = g_lf // len(env.lf_atoms)
+        g_atom_id = g_lf % len(env.lf_atoms)
+
+        print("%s(%s) => %s => %s(%s) => %f / %f = %f" %
+              (env.lf_function_from_id[fn_id][0], env.lf_atoms[atom_id],
+               env._trial["domain"][referent]["attributes"][args.atom_attribute],
+               env.lf_function_from_id[g_fn_id][0], env.lf_atoms[g_atom_id],
+               score, weight, score / weight))
+
+    return lfs, weights
+
+
+def run_trial(model, generative_model, train_op, env, sess, args):
     inputs = env.reset()
 
     partial_fetches = [model.probs, train_op]
@@ -90,60 +151,24 @@ def run_trial(model, train_op, env, sess, args):
                   model.utterance: utterance}
     probs = sess.partial_run(partial, model.probs, prob_feeds)
 
-    # Sample multiple `fn(atom)` choices from the given distribution.
-    choices = np.random.choice(len(probs), p=probs,
-                               size=args.num_listener_samples)
-
-    # ==== Generative rescoring ====
-    scores = []
-    for choice in choices:
-        # Resolve referents of sampled choices.
-        referent = env.resolve_lf_by_id(choice)
-        if not referent:
-            scores.append(-np.inf)
-            continue
-        referent = env._trial["domain"].index(referent[0])
-
-        # Get LF distribution.
-        lf_distr = env.get_generative_lf_probs(referent)
-        # Sample an LF.
-        # TODO: Can permit another round of multiple particles here.
-        lf = np.random.choice(len(lf_distr), p=lf_distr)
-        # Now score yielded LF with generative model.
-        score = model.generative_model.score(lf, utterance)
-
-        scores.append(score)
-
-        # Debug logging.
-        fn_id = choice // len(env.lf_atoms)
-        atom_id = choice % len(env.lf_atoms)
-
-        ref_name = env._trial["domain"][referent]["attributes"][args.atom_attribute]
-
-        g_fn_id = lf // len(env.lf_atoms)
-        g_atom_id = lf % len(env.lf_atoms)
-        print("%s(%s) => %s => %s(%s) => %f" %
-                (env.lf_function_from_id[fn_id][0], env.lf_atoms[atom_id],
-                 ref_name,
-                 env.lf_function_from_id[g_fn_id][0], env.lf_atoms[g_atom_id],
-                 score))
+    lfs, lf_weights = infer_trial(env, utterance, probs, generative_model, args)
 
     # TODO: Should generative model weights also receive REINFORCE gradients?
 
     # Now select action based on maximum generative score.
-    choice = max(zip(choices, scores), key=lambda el: el[1])[0]
+    lf_pred = max(zip(lfs, lf_weights), key=lambda el: el[1])[0]
 
-    _, reward, _, _ = env.step(choice)
+    _, reward, _, _ = env.step(lf_pred)
     tqdm.write("%f\n" % reward)
 
     # Update recognition parameters.
     _ = sess.partial_run(partial, [train_op],
-            {model.rl_action: choice,
+            {model.rl_action: lf_pred,
              model.rl_reward: reward})
 
     # Update generation parameters.
     if reward > 0:
-        model.generative_model.observe(choice, utterance)
+        generative_model.observe(lf_pred, utterance)
 
 
 def build_train_graph(model, env, args):
@@ -181,6 +206,7 @@ def train(args):
                          atom_attribute=args.atom_attribute)
     model = ListenerModel(env)
     train_op, global_step = build_train_graph(model, env, args)
+    generative_model = NaiveGenerativeModel()
 
     supervisor = tf.train.Supervisor(logdir=args.logdir, global_step=global_step,
                                      summary_op=None)
@@ -189,7 +215,7 @@ def train(args):
             if supervisor.should_stop():
                 break
 
-            run_trial(model, train_op, env, sess, args)
+            run_trial(model, generative_model, train_op, env, sess, args)
 
         if args.analyze_weights:
             analyze_weights(sess, env)
