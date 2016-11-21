@@ -13,7 +13,7 @@ UNK = "<unk>"
 class TUNAEnv(gym.Env):
 
     def __init__(self, corpus_path, corpus_selection=None, bag=False,
-                 randomize=False):
+                 randomize=False, repeat_until_success=True):
         with open(corpus_path, "r") as corpus_f:
             corpus_data = json.load(corpus_f)
             if corpus_selection is None:
@@ -53,6 +53,7 @@ class TUNAEnv(gym.Env):
                      spaces.Box(low=0, high=1, shape=(self.vocab_size,))))
 
         self.randomize = randomize
+        self.repeat_until_success = repeat_until_success
         self._cursor = 0
 
     @property
@@ -116,6 +117,9 @@ class TUNAEnv(gym.Env):
         reward = 0.5 if chosen["target"] else -0.5
         done = True
         info = {}
+
+        if self.repeat_until_success and not chosen:
+            self._cursor -= 1
 
         return None, reward, done, info
 
@@ -258,6 +262,9 @@ class TUNAWithLoTEnv(TUNAEnv):
         reward = 0.5 if success else -0.5
         done = True
         info = {}
+
+        if self.repeat_until_success and not success:
+            self._cursor -= 1
 
         return None, reward, done, info
 
