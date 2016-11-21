@@ -11,19 +11,6 @@ from pragmatic_tuna.environments.spatial import *
 from pragmatic_tuna.reinforce import reinforce_episodic_gradients
 
 
-Model = namedtuple("Model", [# inputs for computation 1: action scores
-                             "inputs",
-                             # inputs for computation 2: REINFORCE gradient
-                             "action", "reward",
-                             # outputs for computation 1: scores
-                             "scores", "probs",
-                             # outputs for computation 2: gradients
-                             "gradients",
-
-                             # sub-model: generative P(u | z)
-                             "generative_model"])
-
-
 class NaiveGenerativeModel(object):
 
     """
