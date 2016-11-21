@@ -49,57 +49,58 @@ class NaiveGenerativeModel(object):
         return score
 
 
-def build_model(env, item_repr_dim=50, utterance_repr_dim=50):
-    n_outputs = len(env.lf_functions) * len(env.lf_atoms)
-    if env.bag:
-        input_shape = (env.domain_size, env.attr_dim * env.vocab_size)
-        inputs = tf.placeholder(tf.float32, shape=input_shape)
+class ListenerModel(object):
 
-        # TODO can't treat as a batch anymore.. !?!
-        # don't know how this should be parameterized.
-        scores = layers.fully_connected(inputs, n_outputs, tf.identity)
-    else:
-        items = tf.placeholder(tf.float32, shape=(None, env.attr_dim))
-        utterance = tf.placeholder(tf.float32, shape=(env.vocab_size,))
+    def __init__(self, env, scope="listener"):
+        assert not env.bag
+        self.env = env
+        self._scope = tf.variable_scope(scope)
+        self._build_graph()
 
-        scores = layers.fully_connected(tf.expand_dims(utterance, 0),
-                                        n_outputs, tf.identity)
+    def _build_graph(self):
+        """
+        Build the core model graph.
+        """
+        n_outputs = len(self.env.lf_functions) * len(self.env.lf_atoms)
 
-    probs = tf.squeeze(tf.nn.softmax(scores))
+        with self._scope:
+            self.items = tf.placeholder(tf.float32, shape=(None, self.env.attr_dim))
+            self.utterance = tf.placeholder(tf.float32, shape=(self.env.vocab_size,))
 
-    ###########
+            self.scores = layers.fully_connected(tf.expand_dims(self.utterance, 0),
+                                                 n_outputs, tf.identity)
+            self.probs = tf.squeeze(tf.nn.softmax(self.scores))
 
-    action = tf.placeholder(tf.int32, shape=(), name="action")
-    reward = tf.placeholder(tf.float32, shape=(), name="reward")
+    def build_rl_gradients(self):
+        if hasattr(self, "rl_action"):
+            return (self.rl_action, self.rl_reward), (self.rl_gradients,)
 
-    scores = [scores]
-    actions = [action]
-    rewards = reward
-    gradients = reinforce_episodic_gradients(scores, actions, reward)
+        action = tf.placeholder(tf.int32, shape=(), name="action")
+        reward = tf.placeholder(tf.float32, shape=(), name="reward")
 
+        scores = [self.scores]
+        actions = [action]
+        rewards = reward
+        gradients = reinforce_episodic_gradients(scores, actions, reward)
 
-    inputs = (inputs,) if env.bag else (items, utterance)
-    return Model(inputs,
-                 action, reward,
-                 scores, probs,
-                 gradients,
-                 NaiveGenerativeModel())
+        self.rl_action = action
+        self.rl_reward = reward
+        self.rl_gradients = gradients
+
+        return (action, reward), (gradients,)
 
 
 def run_trial(model, train_op, env, sess, args):
     inputs = env.reset()
 
     partial_fetches = [model.probs, train_op]
-    partial_feeds = [model.action, model.reward]
-    partial_feeds += list(model.inputs)
+    partial_feeds = [model.items, model.utterance,
+                     model.rl_action, model.rl_reward]
     partial = sess.partial_run_setup(partial_fetches, partial_feeds)
 
-    if env.bag:
-        prob_feeds = {model.inputs[0]: inputs}
-    else:
-        items, utterance = inputs
-        prob_feeds = {model.inputs[0]: items,
-                      model.inputs[1]: utterance}
+    items, utterance = inputs
+    prob_feeds = {model.items: items,
+                  model.utterance: utterance}
     probs = sess.partial_run(partial, model.probs, prob_feeds)
 
     # Sample multiple `fn(atom)` choices from the given distribution.
@@ -150,8 +151,8 @@ def run_trial(model, train_op, env, sess, args):
 
     # Update recognition parameters.
     _ = sess.partial_run(partial, [train_op],
-            {model.action: choice,
-             model.reward: reward})
+            {model.rl_action: choice,
+             model.rl_reward: reward})
 
     # Update generation parameters.
     if reward > 0:
@@ -159,9 +160,11 @@ def run_trial(model, train_op, env, sess, args):
 
 
 def build_train_graph(model, env, args):
+    model.build_rl_gradients()
+
     global_step = tf.Variable(0, name="global_step", trainable=False)
     opt = tf.train.MomentumOptimizer(args.learning_rate, args.momentum)
-    train_op = opt.apply_gradients(model.gradients, global_step=global_step)
+    train_op = opt.apply_gradients(model.rl_gradients, global_step=global_step)
 
     # Make a dummy train_op that works with TF partial_run.
     with tf.control_dependencies([train_op]):
@@ -189,7 +192,7 @@ def train(args):
     env = TUNAWithLoTEnv(args.corpus_path, corpus_selection=args.corpus_selection,
                          bag=args.bag_env, functions=FUNCTIONS[args.fn_selection],
                          atom_attribute=args.atom_attribute)
-    model = build_model(env, args.item_repr_dim, args.utterance_repr_dim)
+    model = ListenerModel(env)
     train_op, global_step = build_train_graph(model, env, args)
 
     supervisor = tf.train.Supervisor(logdir=args.logdir, global_step=global_step,
