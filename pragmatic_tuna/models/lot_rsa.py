@@ -294,8 +294,9 @@ def train(args):
             tqdm.write("\n===========\nLISTENER TRIAL\n===========")
             run_listener_trial(model, generative_model, train_op, env, sess, args)
 
-            tqdm.write("\n===========\nDREAM TRIAL\n============")
-            run_dream_trial(model, generative_model, env, sess, args)
+            if args.dream:
+                tqdm.write("\n===========\nDREAM TRIAL\n============")
+                run_dream_trial(model, generative_model, env, sess, args)
 
         if args.analyze_weights:
             analyze_weights(sess, env)
@@ -317,6 +318,7 @@ if __name__ == "__main__":
     p.add_argument("--item_repr_dim", type=int, default=64)
     p.add_argument("--utterance_repr_dim", type=int, default=64)
 
+    p.add_argument("--dream", default=False, action="store_true")
     p.add_argument("--num_listener_samples", type=int, default=5)
 
     p.add_argument("--num_trials", default=100, type=int)
