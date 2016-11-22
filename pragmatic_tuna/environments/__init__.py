@@ -13,7 +13,7 @@ UNK = "<unk>"
 class TUNAEnv(gym.Env):
 
     def __init__(self, corpus_path, corpus_selection=None, bag=False,
-                 randomize=False, repeat_until_success=True):
+                 randomize=False, repeat_until_success=False):
         with open(corpus_path, "r") as corpus_f:
             corpus_data = json.load(corpus_f)
             if corpus_selection is None:
