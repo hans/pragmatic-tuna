@@ -1,3 +1,4 @@
+import copy
 import json
 import random
 
@@ -54,7 +55,9 @@ class TUNAEnv(gym.Env):
 
         self.randomize = randomize
         self.repeat_until_success = repeat_until_success
+
         self._cursor = 0
+        self.dreaming = False
 
     @property
     def action_space(self):
@@ -102,9 +105,44 @@ class TUNAEnv(gym.Env):
 
         return vec
 
+    def _configure(self, dreaming=False):
+        """Runtime configuration."""
+        self.dreaming = dreaming
+
+    @property
+    def _essential_attributes(self):
+        """
+        A collection of attributes which should not be modified in dream trials.
+        """
+        return []
+
+    def _dream_trial(self):
+        """
+        "Dream" a trial by recalling a seen trial and making minor
+        modifications. This is basically a data-augmentation trick.
+        """
+        # We don't support dreaming after randomized trials right now.
+        # Possible to implement; just need to track what has been observed
+        # so far explicitly
+        assert not self.randomize
+
+        # Dream about the most recent trial by default.
+        trial = copy.deepcopy(self._trials[self._cursor - 1])
+
+        # Modify trial, leaving "essential" attributes unchanged.
+        to_change = set(self._attributes.keys()) - set(self._essential_attributes)
+        for item in trial["domain"]:
+            for attribute in to_change:
+                values = self._attributes[attribute]
+                item["attributes"][attribute] = random.choice(values)
+
+        return trial
+
     def _reset(self):
         if self.randomize:
             self._trial = random.choice(self._trials)
+        elif self.dreaming:
+            self._trial = self._dream_trial()
         else:
             self._cursor = self._cursor % len(self._trials)
             self._trial = self._trials[self._cursor]
@@ -243,6 +281,10 @@ class TUNAWithLoTEnv(TUNAEnv):
         ps /= ps.sum()
 
         return ps
+
+    @property
+    def _essential_attributes(self):
+        return [self.atom_attribute]
 
     def _step(self, action):
         lf_function = action // len(self.lf_atoms)
