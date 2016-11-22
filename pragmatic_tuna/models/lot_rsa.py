@@ -19,21 +19,50 @@ class NaiveGenerativeModel(object):
     representations. Optionally performs add-1 smoothing.
     """
 
-    def __init__(self, smooth=True):
+    def __init__(self, vocab_size, smooth=True):
         self.smooth = smooth
         self.counter = defaultdict(lambda: Counter())
+        self.vocab_size = vocab_size
 
     def observe(self, z, u):
         z, u = z, tuple(u)
         self.counter[z][u] += 1
 
     def score(self, z, u):
+        """Retrieve unnormalized p(u|z)"""
+        # TODO: weight on Z?
         z, u = z, tuple(u)
         score = self.counter[z][u]
         if self.smooth:
             # Add-1 smoothing.
             score += 1
-        return score
+        return np.exp(score)
+
+    def predict(self, z, normalize=True):
+        """Predict a distribution p(u|z)"""
+        g_dict = self.counter[z]
+        keys = list(g_dict.keys())
+        if self.smooth:
+            values = [val + 1 for val in g_dict.values()]
+        else:
+            values = list(g_dict.values())
+
+        # Softmax.
+        distr = np.array(values)
+        distr = np.exp(distr - distr.max())
+
+        if not normalize:
+            return keys, distr
+
+        # If smoothing, we have to adapt partition function.
+        Z = distr.sum()
+        if self.smooth:
+            n_unseen = 2 ** self.vocab_size - len(keys)
+            Z += np.exp(1.0 - distr.max()) * n_unseen
+
+        print(Z, distr)
+        distr /= Z
+        return keys, distr
 
 
 class ListenerModel(object):
@@ -128,22 +157,16 @@ def infer_trial(env, utterance, probs, generative_model, args):
         weights.append(weight)
 
         # Debug logging.
-        fn_id = lf // len(env.lf_atoms)
-        atom_id = lf % len(env.lf_atoms)
-
-        g_fn_id = g_lf // len(env.lf_atoms)
-        g_atom_id = g_lf % len(env.lf_atoms)
-
-        print("%s(%s) => %s => %s(%s) => %f" %
-              (env.lf_function_from_id[fn_id][0], env.lf_atoms[atom_id],
+        print("LF %20s  =>  Referent %10s  =>  Gen LF %20s  =>  %f" %
+              (env.describe_lf_by_id(lf),
                env._trial["domain"][referent]["attributes"][args.atom_attribute],
-               env.lf_function_from_id[g_fn_id][0], env.lf_atoms[g_atom_id],
+               env.describe_lf_by_id(g_lf),
                weight))
 
     return lfs, weights
 
 
-def run_trial(model, generative_model, train_op, env, sess, args):
+def run_listener_trial(model, generative_model, train_op, env, sess, args):
     """
     Run single recognition trial.
 
@@ -151,6 +174,7 @@ def run_trial(model, generative_model, train_op, env, sess, args):
     2. Update listener model weights.
     3. Update speaker model weights.
     """
+    env.configure(dreaming=False)
     inputs = env.reset()
 
     partial_fetches = [model.probs, train_op]
@@ -182,6 +206,27 @@ def run_trial(model, generative_model, train_op, env, sess, args):
         generative_model.observe(lf_pred, utterance)
 
 
+def run_dream_trial(model, generative_model, env, sess, args):
+    """
+    Run a single dream trial.
+    """
+    env.configure(dreaming=True)
+    inputs = env.reset()
+
+    referent_idx = [i for i, referent in enumerate(env._trial["domain"])
+                    if referent["target"]][0]
+
+    # Sample an LF from p(z|r).
+    g_lf_distr = env.get_generative_lf_probs(referent_idx)
+    g_lf = np.random.choice(len(g_lf_distr), p=g_lf_distr)
+    print("gen", env.describe_lf_by_id(g_lf))
+
+    # Sample utterances from p(u|z).
+    g_uts, g_ut_distr = generative_model.predict(g_lf)
+    g_ut = g_uts[np.random.choice(len(g_uts), p=g_ut_distr)]
+    print(g_ut)
+
+
 def build_train_graph(model, env, args):
     model.build_rl_gradients()
 
@@ -202,7 +247,7 @@ def train(args):
                          atom_attribute=args.atom_attribute)
     model = ListenerModel(env)
     train_op, global_step = build_train_graph(model, env, args)
-    generative_model = NaiveGenerativeModel()
+    generative_model = NaiveGenerativeModel(env.vocab_size, smooth=False)
 
     supervisor = tf.train.Supervisor(logdir=args.logdir, global_step=global_step,
                                      summary_op=None)
@@ -211,7 +256,8 @@ def train(args):
             if supervisor.should_stop():
                 break
 
-            run_trial(model, generative_model, train_op, env, sess, args)
+            run_listener_trial(model, generative_model, train_op, env, sess, args)
+            run_dream_trial(model, generative_model, env, sess, args)
 
         if args.analyze_weights:
             analyze_weights(sess, env)

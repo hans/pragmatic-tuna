@@ -129,6 +129,8 @@ class TUNAEnv(gym.Env):
         # Dream about the most recent trial by default.
         trial = copy.deepcopy(self._trials[self._cursor - 1])
 
+        # TODO: randomly change referent?
+
         # Modify trial, leaving "essential" attributes unchanged.
         to_change = set(self._attributes.keys()) - set(self._essential_attributes)
         for item in trial["domain"]:
@@ -252,6 +254,12 @@ class TUNAWithLoTEnv(TUNAEnv):
         lf_atom = lf_id % len(self.lf_atoms)
         return self.resolve_lf_form(self.lf_function_from_id[lf_function][1],
                                     self.lf_atom_from_id[lf_atom])
+
+    def describe_lf_by_id(self, lf_id):
+        lf_function = lf_id // len(self.lf_atoms)
+        lf_atom = lf_id % len(self.lf_atoms)
+        return "%s(%s)" % (self.lf_function_from_id[lf_function][0],
+                           self.lf_atoms[lf_atom])
 
     def get_generative_lf_probs(self, referent=None):
         """
