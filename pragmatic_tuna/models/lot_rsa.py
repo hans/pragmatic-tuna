@@ -14,7 +14,7 @@ from pragmatic_tuna.reinforce import reinforce_episodic_gradients
 class NaiveGenerativeModel(object):
 
     """
-    A very stupid generative utterance model $P(u | z)$ which is intended to
+    A very stupid generative utterance model $p(u | z)$ which is intended to
     map from bag-of-features $z$ representations to bag-of-words $u$
     representations. Optionally performs add-1 smoothing.
     """
@@ -37,6 +37,11 @@ class NaiveGenerativeModel(object):
 
 
 class ListenerModel(object):
+
+    """
+    Parametric listener model $q_\\theta(z|u)$ which maps utterances to LF
+    representations.
+    """
 
     def __init__(self, env, scope="listener"):
         assert not env.bag
@@ -75,6 +80,11 @@ class ListenerModel(object):
         self.rl_gradients = gradients
 
         return (action, reward), (gradients,)
+
+    def build_xent_gradients(self):
+        # TODO. For a given gold-label referent, generate a gold-label LF by
+        # finding the highest-weight LF that resolves to that referent.
+        raise NotImplementedError
 
 
 def infer_trial(env, utterance, probs, generative_model, args):
