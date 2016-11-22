@@ -19,10 +19,13 @@ class NaiveGenerativeModel(object):
     representations. Optionally performs add-1 smoothing.
     """
 
-    def __init__(self, vocab_size, smooth=True):
+    smooth_val = 0.1
+
+    def __init__(self, vocab_size, max_length, smooth=True):
         self.smooth = smooth
         self.counter = defaultdict(lambda: Counter())
         self.vocab_size = vocab_size
+        self.max_length = max_length
 
     def observe(self, z, u):
         z, u = z, tuple(u)
@@ -35,34 +38,38 @@ class NaiveGenerativeModel(object):
         score = self.counter[z][u]
         if self.smooth:
             # Add-1 smoothing.
-            score += 1
+            score += self.smooth_val
         return np.exp(score)
 
-    def predict(self, z, normalize=True):
-        """Predict a distribution p(u|z)"""
+    def sample(self, z):
+        """Sample from the distribution p(u|z)"""
         g_dict = self.counter[z]
         keys = list(g_dict.keys())
+        values = np.array(list(g_dict.values()))
+
         if self.smooth:
-            values = [val + 1 for val in g_dict.values()]
-        else:
-            values = list(g_dict.values())
+            # Allow that we might sample one of the unseen u's.
+            mass_seen = np.exp(values + self.smooth_val).sum()
+            n_unseen = 2 ** self.max_length - len(g_dict)
+            mass_unseen = np.exp(self.smooth_val) * (n_unseen)
+            p_unseen = mass_unseen / (mass_unseen + mass_seen)
 
-        # Softmax.
-        distr = np.array(values)
-        distr = np.exp(distr - distr.max())
+            if np.random.random() < p_unseen:
+                print("Rejection!")
+                # Rejection-sample a random unseen utterance.
+                done = False
+                while not done:
+                    length = np.random.randint(1, self.max_length + 1)
+                    idxs = np.random.randint(self.vocab_size, size=length)
+                    utt = np.zeros(self.vocab_size)
+                    utt[idxs] = 1
+                    utt = tuple(utt)
+                    done = utt not in keys
+                return utt
 
-        if not normalize:
-            return keys, distr
-
-        # If smoothing, we have to adapt partition function.
-        Z = distr.sum()
-        if self.smooth:
-            n_unseen = 2 ** self.vocab_size - len(keys)
-            Z += np.exp(1.0 - distr.max()) * n_unseen
-
-        print(Z, distr)
-        distr /= Z
-        return keys, distr
+        distr = np.exp(values - values.max())
+        distr /= distr.sum()
+        return keys[np.random.choice(len(keys), p=distr)]
 
 
 class ListenerModel(object):
@@ -219,11 +226,11 @@ def run_dream_trial(model, generative_model, env, sess, args):
     # Sample an LF from p(z|r).
     g_lf_distr = env.get_generative_lf_probs(referent_idx)
     g_lf = np.random.choice(len(g_lf_distr), p=g_lf_distr)
+    print(env._trial["domain"][referent_idx])
     print("gen", env.describe_lf_by_id(g_lf))
 
     # Sample utterances from p(u|z).
-    g_uts, g_ut_distr = generative_model.predict(g_lf)
-    g_ut = g_uts[np.random.choice(len(g_uts), p=g_ut_distr)]
+    g_ut = generative_model.sample(g_lf)
     print(g_ut)
 
 
@@ -247,7 +254,7 @@ def train(args):
                          atom_attribute=args.atom_attribute)
     model = ListenerModel(env)
     train_op, global_step = build_train_graph(model, env, args)
-    generative_model = NaiveGenerativeModel(env.vocab_size, smooth=False)
+    generative_model = NaiveGenerativeModel(env.vocab_size, 3) # TODO fixed
 
     supervisor = tf.train.Supervisor(logdir=args.logdir, global_step=global_step,
                                      summary_op=None)
