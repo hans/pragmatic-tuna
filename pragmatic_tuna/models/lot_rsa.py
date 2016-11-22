@@ -90,7 +90,7 @@ def infer_trial(env, utterance, probs, generative_model, args):
 
     Returns:
         lfs: LF IDs sampled from `probs`
-        weights: Associated importance weight `p(z, u) / q(z|u)` for each LF
+        weights: Associated weight `p(z, u)` for each LF
     """
 
     # Sample multiple LFs from the predicted distribution.
@@ -112,14 +112,9 @@ def infer_trial(env, utterance, probs, generative_model, args):
         g_lf_distr = env.get_generative_lf_probs(referent)
         # Sample from the distribution.
         g_lf = np.random.choice(len(g_lf_distr), p=g_lf_distr)
-        # Record unnormalized score p(u, z)
-        score = generative_model.score(g_lf, utterance)
 
-        # Create importance weight p(u, z) / q(z | u)
-        #
-        # TODO: this is funky importance sampling, because the two z's in the
-        # above expression are actually not the same
-        weight = score / probs[lf]
+        # Record unnormalized score p(u, z)
+        weight = generative_model.score(g_lf, utterance)
         weights.append(weight)
 
         # Debug logging.
@@ -129,11 +124,11 @@ def infer_trial(env, utterance, probs, generative_model, args):
         g_fn_id = g_lf // len(env.lf_atoms)
         g_atom_id = g_lf % len(env.lf_atoms)
 
-        print("%s(%s) => %s => %s(%s) => %f / %f = %f" %
+        print("%s(%s) => %s => %s(%s) => %f" %
               (env.lf_function_from_id[fn_id][0], env.lf_atoms[atom_id],
                env._trial["domain"][referent]["attributes"][args.atom_attribute],
                env.lf_function_from_id[g_fn_id][0], env.lf_atoms[g_atom_id],
-               score, weight, score / weight))
+               weight))
 
     return lfs, weights
 
