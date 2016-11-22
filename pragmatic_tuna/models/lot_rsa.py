@@ -93,18 +93,16 @@ def infer_trial(env, utterance, probs, generative_model, args):
         weights: Associated weight `p(z, u)` for each LF
     """
 
-    # Sample multiple LFs from the predicted distribution.
-    lfs = np.random.choice(len(probs), p=probs,
-                           size=args.num_listener_samples)
+    # Sample N LFs from the predicted distribution, accepting only when they
+    # resolve to a referent in the scene.
+    lfs, weights = [], []
+    while len(weights) < args.num_listener_samples:
+        lf = np.random.choice(len(probs), p=probs)
 
-    # Reweight using generative model.
-    weights = []
-    for lf in lfs:
         # Resolve referent.
         referent = env.resolve_lf_by_id(lf)
         if not referent:
-            # Dereference failed.
-            weights.append(-np.inf)
+            # Dereference failed. No object matched.
             continue
         referent = env._trial["domain"].index(referent[0])
 
@@ -115,6 +113,8 @@ def infer_trial(env, utterance, probs, generative_model, args):
 
         # Record unnormalized score p(u, z)
         weight = generative_model.score(g_lf, utterance)
+
+        lfs.append(lf)
         weights.append(weight)
 
         # Debug logging.
