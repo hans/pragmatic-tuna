@@ -222,32 +222,44 @@ def run_dream_trial(model, generative_model, env, sess, args):
 
     referent_idx = [i for i, referent in enumerate(env._trial["domain"])
                     if referent["target"]][0]
-
-    # Sample an LF from p(z|r).
     g_lf_distr = env.get_generative_lf_probs(referent_idx)
-    g_lf = np.random.choice(len(g_lf_distr), p=g_lf_distr)
-    print(env._trial["domain"][referent_idx])
-    print("gen", env.describe_lf_by_id(g_lf))
 
-    # Sample utterances from p(u|z).
-    g_ut = generative_model.sample(g_lf)
-    words = [env.vocab[idx] for idx, count in enumerate(g_ut)
-             if count > 0]
-    print("utt", " ".join(words))
+    success = False
+    i = 0
+    while not success:
+        print("Dream trial %i" % i)
 
-    # Run listener model q(z|u).
-    probs = sess.run(model.probs, {model.utterance: g_ut})
-    # Literally dereference and see if we get the expected referent.
-    # TODO: run multiple particles through this whole process!
-    l_lf = np.random.choice(len(probs), p=probs)
-    print("list", env.describe_lf_by_id(l_lf))
-    l_referent = env.resolve_lf_by_id(l_lf)
-    if l_referent:
-        l_referent_id = env._trial["domain"].index(l_referent[0])
+        # Sample an LF from p(z|r).
+        g_lf = np.random.choice(len(g_lf_distr), p=g_lf_distr)
 
-        print("\t", l_referent_id, referent_idx, l_referent_id == referent_idx)
-    else:
-        print("\tDeref failed.")
+        # Sample utterances from p(u|z).
+        g_ut = generative_model.sample(g_lf)
+        words = [env.vocab[idx] for idx, count in enumerate(g_ut)
+                if count > 0]
+
+        # Run listener model q(z|u).
+        probs = sess.run(model.probs, {model.utterance: g_ut})
+        # Literally dereference and see if we get the expected referent.
+        # TODO: run multiple particles through this whole process!
+        l_lf = np.random.choice(len(probs), p=probs)
+        l_referent = env.resolve_lf_by_id(l_lf)
+        if l_referent:
+            l_referent_id = env._trial["domain"].index(l_referent[0])
+            success = l_referent_id == referent_idx
+
+        print(
+"""    Referent:\t\t%s
+    z ~ p(z|r):\t\t%s
+    u ~ p(u|z):\t\t%s
+    z' ~ q(z|u):\t%s
+    Deref:\t\t%s""" %
+              (env._trial["domain"][referent_idx],
+               env.describe_lf_by_id(g_lf),
+               " ".join([env.vocab[idx] for idx, count in enumerate(g_ut) if count]),
+               env.describe_lf_by_id(l_lf),
+               l_referent))
+
+        i += 1
 
 
 def build_train_graph(model, env, args):
