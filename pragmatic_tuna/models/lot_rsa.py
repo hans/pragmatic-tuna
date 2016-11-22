@@ -144,6 +144,13 @@ def infer_trial(env, utterance, probs, generative_model, args):
 
 
 def run_trial(model, generative_model, train_op, env, sess, args):
+    """
+    Run single recognition trial.
+
+    1. Predict a referent give an utterance.
+    2. Update listener model weights.
+    3. Update speaker model weights.
+    """
     inputs = env.reset()
 
     partial_fetches = [model.probs, train_op]
@@ -167,9 +174,8 @@ def run_trial(model, generative_model, train_op, env, sess, args):
     tqdm.write("%f\n" % reward)
 
     # Update recognition parameters.
-    _ = sess.partial_run(partial, [train_op],
-            {model.rl_action: lf_pred,
-             model.rl_reward: reward})
+    train_feeds = {model.rl_action: lf_pred, model.rl_reward: reward}
+    sess.partial_run(partial, train_op, train_feeds)
 
     # Update generation parameters.
     if reward > 0:
