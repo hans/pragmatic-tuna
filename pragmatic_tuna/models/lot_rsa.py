@@ -190,21 +190,6 @@ def build_train_graph(model, env, args):
     return train_op, global_step
 
 
-def analyze_weights(sess, env):
-    descs = env.describe_features()
-    weight_var = next(var for var in tf.trainable_variables()
-                      if var.get_shape().as_list()[0] == len(descs))
-    weight_var = sess.run(weight_var)
-
-    weights = zip(descs, weight_var)
-    weights = sorted(weights, key=lambda weight: -abs(weight[1]))
-
-    print("%20s\t%10s\t%10s\t%s" % ("WORD", "KEY", "VALUE", "WEIGHT"))
-    print("=" * 100)
-    for (word, key, value), weight in weights[:500]:
-        print("%20s\t%10s\t%10s\t%+.5f" % (word, key, value, weight))
-
-
 def train(args):
     env = TUNAWithLoTEnv(args.corpus_path, corpus_selection=args.corpus_selection,
                          bag=args.bag_env, functions=FUNCTIONS[args.fn_selection],
