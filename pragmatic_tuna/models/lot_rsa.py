@@ -202,7 +202,7 @@ def run_listener_trial(model, generative_model, train_op, env, sess, args):
     lf_pred = max(zip(lfs, lf_weights), key=lambda el: el[1])[0]
 
     _, reward, _, _ = env.step(lf_pred)
-    tqdm.write("%f\n" % reward)
+    tqdm.write("%f" % reward)
 
     # Update recognition parameters.
     train_feeds = {model.rl_action: lf_pred, model.rl_reward: reward}
@@ -231,7 +231,23 @@ def run_dream_trial(model, generative_model, env, sess, args):
 
     # Sample utterances from p(u|z).
     g_ut = generative_model.sample(g_lf)
-    print(g_ut)
+    words = [env.vocab[idx] for idx, count in enumerate(g_ut)
+             if count > 0]
+    print("utt", " ".join(words))
+
+    # Run listener model q(z|u).
+    probs = sess.run(model.probs, {model.utterance: g_ut})
+    # Literally dereference and see if we get the expected referent.
+    # TODO: run multiple particles through this whole process!
+    l_lf = np.random.choice(len(probs), p=probs)
+    print("list", env.describe_lf_by_id(l_lf))
+    l_referent = env.resolve_lf_by_id(l_lf)
+    if l_referent:
+        l_referent_id = env._trial["domain"].index(l_referent[0])
+
+        print("\t", l_referent_id, referent_idx, l_referent_id == referent_idx)
+    else:
+        print("\tDeref failed.")
 
 
 def build_train_graph(model, env, args):
@@ -263,7 +279,10 @@ def train(args):
             if supervisor.should_stop():
                 break
 
+            tqdm.write("\n===========\nLISTENER TRIAL\n===========")
             run_listener_trial(model, generative_model, train_op, env, sess, args)
+
+            tqdm.write("\n===========\nDREAM TRIAL\n============")
             run_dream_trial(model, generative_model, env, sess, args)
 
         if args.analyze_weights:
