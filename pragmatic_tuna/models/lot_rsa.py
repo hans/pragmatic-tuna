@@ -5,6 +5,7 @@ import numpy as np
 import tensorflow as tf
 from tensorflow.contrib.layers import layers
 from tqdm import trange, tqdm
+import nltk
 
 from pragmatic_tuna.environments import TUNAWithLoTEnv
 from pragmatic_tuna.environments.spatial import *
@@ -70,6 +71,112 @@ class NaiveGenerativeModel(object):
         distr = np.exp(values - values.max())
         distr /= distr.sum()
         return keys[np.random.choice(len(keys), p=distr)]
+        
+
+class DiscreteGenerativeModel(object):
+
+    """
+    A generative model that maps atoms and functions of a logical form
+    z to and words of an utterance u and scores the fluency of the utterance
+    using a bigram language model.
+    """
+
+    smooth_val = 0.1
+    unk_prob = 0.01
+    
+    START_TOKEN = "<s>"
+    END_TOKEN = "</s>"
+
+    def __init__(self, vocab_size, max_length, env, smooth=True):
+        self.smooth = smooth
+        self.counter = defaultdict(lambda: Counter())
+        self.bigramcounter = defaultdict(lambda: Counter())
+        self.unigramcounter = Counter()
+        self.vocab_size = vocab_size
+        self.max_length = max_length
+        #TODO: better way to pass the env to the model?
+        self.env = env
+
+    def observe(self, z, u):
+        lf_function, lf_atom = self.env.get_function_and_atom_by_id(z)
+        lf_function = lf_function + len(self.env.lf_atoms)
+        
+        words = []
+        words.extend(u)
+        words.append(self.END_TOKEN)
+        
+        prev_word = self.START_TOKEN
+        for word in words:
+            if word != self.END_TOKEN:
+                self.counter[lf_function][word] += 1
+                self.counter[lf_atom][word] += 1
+            self.bigramcounter[prev_word][word] +=1
+            self.unigramcounter[word] +=1
+            prev_word = word
+
+
+    def _score_word_atom(self, word, atom):
+        score = self.counter[atom][word]
+        denom = sum(self.counter[atom].values())
+        if self.smooth:
+          score += 1
+          denom += len(self.env.lf_atoms)
+        return float(score) / denom
+
+    def _score_bigram(self, w1, w2):
+        score = self.bigramcounter[w1][w2]
+        if score < 1:
+            return 0
+      
+        denom = sum(self.bigramcounter[w1].values())
+        return np.log(float(score) / denom)
+      
+    
+    def _score_unigram(self, w):
+        score = self.unigramcounter[w]
+        if score < 1:
+          prob = self.unk_prob
+        else:
+          prob = float(score) / sum(self.unigramcounter.values())
+      
+        return np.log(prob)
+      
+
+    def _score_sequence(self, u):
+        prev_word = self.START_TOKEN
+        
+        words = []
+        words.extend(u)
+        words.append(self.END_TOKEN)
+        prob = 0
+        for word in u:
+            p_bigram = self._score_bigram(prev_word, word)
+            p_bigram = p_bigram if p_bigram < 0 else self._score_unigram(word)
+            prob += p_bigram
+            prev_word = word
+    
+        return prob
+      
+    def score(self, z, u):
+        lf_function, lf_atom = self.env.get_function_and_atom_by_id(z)
+        lf_function = lf_function + len(self.env.lf_atoms)
+
+
+        #compute translation probability p(u|z)
+        words = u
+        p_trans = 0
+        for w in words:
+            p = self._score_word_atom(w, lf_function) + self._score_word_atom(w, lf_atom)
+            p_trans += np.log(p)
+
+        #compute fluency probability, i.e., lm probability
+        p_seq  = self._score_sequence(u)
+
+        return p_seq + p_trans
+
+    def sample(self, z):
+        #TODO: write method that samples utterance based on z and fluency
+        raise NotImplementedError
 
 
 class ListenerModel(object):
@@ -123,7 +230,7 @@ class ListenerModel(object):
         raise NotImplementedError
 
 
-def infer_trial(env, utterance, probs, generative_model, args):
+def infer_trial(env, utterance, probs, generative_model, args, words):
     """
     Run RSA inference for a given trial.
 
@@ -158,7 +265,7 @@ def infer_trial(env, utterance, probs, generative_model, args):
         g_lf = np.random.choice(len(g_lf_distr), p=g_lf_distr)
 
         # Record unnormalized score p(u, z)
-        weight = generative_model.score(g_lf, utterance)
+        weight = generative_model.score(g_lf, words)
 
         lfs.append(lf)
         weights.append(weight)
@@ -182,19 +289,19 @@ def run_listener_trial(model, generative_model, train_op, env, sess, args):
     3. Update speaker model weights.
     """
     env.configure(dreaming=False)
-    inputs = env.reset()
+    items, utterance, words = env.reset()
 
     partial_fetches = [model.probs, train_op]
     partial_feeds = [model.items, model.utterance,
                      model.rl_action, model.rl_reward]
     partial = sess.partial_run_setup(partial_fetches, partial_feeds)
 
-    items, utterance = inputs
+    #items, utterance = inputs
     prob_feeds = {model.items: items,
                   model.utterance: utterance}
     probs = sess.partial_run(partial, model.probs, prob_feeds)
 
-    lfs, lf_weights = infer_trial(env, utterance, probs, generative_model, args)
+    lfs, lf_weights = infer_trial(env, utterance, probs, generative_model, args, words)
 
     # TODO: Should generative model weights also receive REINFORCE gradients?
 
@@ -210,7 +317,7 @@ def run_listener_trial(model, generative_model, train_op, env, sess, args):
 
     # Update generation parameters.
     if reward > 0:
-        generative_model.observe(lf_pred, utterance)
+        generative_model.observe(lf_pred, words)
 
 
 def run_dream_trial(model, generative_model, env, sess, args):
@@ -218,7 +325,7 @@ def run_dream_trial(model, generative_model, env, sess, args):
     Run a single dream trial.
     """
     env.configure(dreaming=True)
-    inputs = env.reset()
+    inputs, words = env.reset()
 
     referent_idx = [i for i, referent in enumerate(env._trial["domain"])
                     if referent["target"]][0]
@@ -282,7 +389,7 @@ def train(args):
                          atom_attribute=args.atom_attribute)
     model = ListenerModel(env)
     train_op, global_step = build_train_graph(model, env, args)
-    generative_model = NaiveGenerativeModel(env.vocab_size, 3) # TODO fixed
+    generative_model = DiscreteGenerativeModel(env.vocab_size, 3, env) # TODO fixed
 
     supervisor = tf.train.Supervisor(logdir=args.logdir, global_step=global_step,
                                      summary_op=None)

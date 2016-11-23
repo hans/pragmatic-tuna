@@ -90,7 +90,7 @@ class TUNAEnv(gym.Env):
 
             return ret
         else:
-            return np.array(items), bag_of_words
+            return np.array(items), bag_of_words, desc_words
 
     def _item_to_vector(self, item):
         vec = np.zeros(self.attr_dim)
@@ -250,16 +250,19 @@ class TUNAWithLoTEnv(TUNAEnv):
         return []
 
     def resolve_lf_by_id(self, lf_id):
-        lf_function = lf_id // len(self.lf_atoms)
-        lf_atom = lf_id % len(self.lf_atoms)
+        lf_function, lf_atom = self.get_function_and_atom_by_id(lf_id)
         return self.resolve_lf_form(self.lf_function_from_id[lf_function][1],
                                     self.lf_atom_from_id[lf_atom])
 
     def describe_lf_by_id(self, lf_id):
-        lf_function = lf_id // len(self.lf_atoms)
-        lf_atom = lf_id % len(self.lf_atoms)
+        lf_function, lf_atom = self.get_function_and_atom_by_id(lf_id)
         return "%s(%s)" % (self.lf_function_from_id[lf_function][0],
                            self.lf_atoms[lf_atom])
+                           
+    def get_function_and_atom_by_id(self, lf_id):
+        lf_function = lf_id // len(self.lf_atoms)
+        lf_atom = lf_id % len(self.lf_atoms)
+        return lf_function, lf_atom
 
     def get_generative_lf_probs(self, referent=None):
         """
@@ -295,8 +298,7 @@ class TUNAWithLoTEnv(TUNAEnv):
         return [self.atom_attribute]
 
     def _step(self, action):
-        lf_function = action // len(self.lf_atoms)
-        lf_atom = action % len(self.lf_atoms)
+        lf_function, lf_atom = self.get_function_and_atom_by_id(action)
 
         lf_function_name, lf_function = self.lf_function_from_id[lf_function]
         lf_atom = self.lf_atom_from_id[lf_atom]
