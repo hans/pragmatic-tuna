@@ -1,5 +1,5 @@
 {
-    "spatial": {
+    "spatial_complex": {
         "attributes": {
             "y": [
                 0,
@@ -285,7 +285,7 @@
                         "target": true
                     }
                 ],
-                "string_description": "donkey"
+                "string_description": "horse"
             },
             {
                 "id": "learn_above_1",
