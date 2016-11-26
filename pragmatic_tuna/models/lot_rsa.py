@@ -83,6 +83,8 @@ class ListenerModel(object):
         assert not env.bag
         self.env = env
         self._scope = tf.variable_scope(scope)
+        self.feeds = []
+
         self._build_graph()
 
     def _build_graph(self):
@@ -98,6 +100,8 @@ class ListenerModel(object):
             self.scores = layers.fully_connected(tf.expand_dims(self.utterance, 0),
                                                  n_outputs, tf.identity)
             self.probs = tf.squeeze(tf.nn.softmax(self.scores))
+
+        self.feeds.extend([self.items, self.utterance])
 
     def build_rl_gradients(self):
         if hasattr(self, "rl_action"):
@@ -115,12 +119,29 @@ class ListenerModel(object):
         self.rl_reward = reward
         self.rl_gradients = gradients
 
+        self.feeds.extend([self.rl_action, self.rl_reward])
+
         return (action, reward), (gradients,)
 
     def build_xent_gradients(self):
-        # TODO. For a given gold-label referent, generate a gold-label LF by
-        # finding the highest-weight LF that resolves to that referent.
-        raise NotImplementedError
+        """
+        Assuming the client can determine some gold-standard LF for a given
+        trial, we can simply train by cross-entropy (maximize log prob of the
+        gold output).
+        """
+        gold_lf = tf.placeholder(tf.int32, shape=(), name="gold_lf")
+        loss = tf.nn.sparse_softmax_cross_entropy_with_logits(
+                tf.squeeze(self.scores), gold_lf)
+
+        params = tf.trainable_variables()
+        gradients = tf.gradients(loss, params)
+
+        self.xent_gold_lf = gold_lf
+        self.xent_gradients = zip(gradients, params)
+
+        self.feeds.extend([self.xent_gold_lf])
+
+        return (gold_lf,), (gradients,)
 
 
 def infer_trial(env, utterance, probs, generative_model, args):
@@ -185,8 +206,7 @@ def run_listener_trial(model, generative_model, train_op, env, sess, args):
     inputs = env.reset()
 
     partial_fetches = [model.probs, train_op]
-    partial_feeds = [model.items, model.utterance,
-                     model.rl_action, model.rl_reward]
+    partial_feeds = model.feeds
     partial = sess.partial_run_setup(partial_fetches, partial_feeds)
 
     items, utterance = inputs
@@ -195,18 +215,37 @@ def run_listener_trial(model, generative_model, train_op, env, sess, args):
     probs = sess.partial_run(partial, model.probs, prob_feeds)
 
     lfs, lf_weights = infer_trial(env, utterance, probs, generative_model, args)
+    lfs = sorted(zip(lfs, lf_weights), key=lambda el: el[1], reverse=True)
 
     # TODO: Should generative model weights also receive REINFORCE gradients?
 
     # Now select action based on maximum generative score.
-    lf_pred = max(zip(lfs, lf_weights), key=lambda el: el[1])[0]
-
+    lf_pred = lfs[0][0]
     _, reward, _, _ = env.step(lf_pred)
     tqdm.write("%f" % reward)
 
+    # Find the highest-scoring LF that dereferences to the correct referent.
+    gold_lf, gold_lf_pos = None, -1
+    for i, (lf_i, weight_i) in enumerate(lfs):
+        resolved = env.resolve_lf_by_id(lf_i)
+        if resolved and resolved[0]["target"]:
+            gold_lf = lf_i
+            gold_lf_pos = i
+            break
+    if gold_lf is not None:
+        print("gold", env.describe_lf_by_id(gold_lf), gold_lf_pos)
+
     # Update recognition parameters.
-    train_feeds = {model.rl_action: lf_pred, model.rl_reward: reward}
-    sess.partial_run(partial, train_op, train_feeds)
+    train_feeds = None
+    if args.learning_method == "rl":
+        train_feeds = {model.rl_action: lf_pred, model.rl_reward: reward}
+    elif args.learning_method == "xent":
+        # The "gold LF" is the highest-scoring LF which deref'd to the correct
+        # referent.
+        if gold_lf is not None:
+            train_feeds = {model.xent_gold_lf: gold_lf}
+    if train_feeds:
+        sess.partial_run(partial, train_op, train_feeds)
 
     # Update generation parameters.
     if reward > 0:
@@ -263,11 +302,18 @@ def run_dream_trial(model, generative_model, env, sess, args):
 
 
 def build_train_graph(model, env, args):
-    model.build_rl_gradients()
+    if args.learning_method == "rl":
+        model.build_rl_gradients()
+        gradients = model.rl_gradients
+    elif args.learning_method == "xent":
+        model.build_xent_gradients()
+        gradients = model.xent_gradients
+    else:
+        raise NotImplementedError("undefined learning method " + args.learning_method)
 
     global_step = tf.Variable(0, name="global_step", trainable=False)
     opt = tf.train.MomentumOptimizer(args.learning_rate, args.momentum)
-    train_op = opt.apply_gradients(model.rl_gradients, global_step=global_step)
+    train_op = opt.apply_gradients(gradients, global_step=global_step)
 
     # Make a dummy train_op that works with TF partial_run.
     with tf.control_dependencies([train_op]):
@@ -321,6 +367,7 @@ if __name__ == "__main__":
     p.add_argument("--dream", default=False, action="store_true")
     p.add_argument("--num_listener_samples", type=int, default=5)
 
+    p.add_argument("--learning_method", default="rl", choices=["rl", "xent"])
     p.add_argument("--num_trials", default=100, type=int)
     p.add_argument("--learning_rate", default=0.1, type=float)
     p.add_argument("--momentum", default=0.9, type=float)
