@@ -88,6 +88,18 @@ class ListenerModel(object):
         self._build_graph()
 
     def _build_graph(self):
+        raise NotImplementedError
+
+    def build_rl_gradients(self):
+        raise NotImplementedError
+
+    def build_xent_gradients(self):
+        raise NotImplementedError
+
+
+class SimpleListenerModel(ListenerModel):
+
+    def _build_graph(self):
         """
         Build the core model graph.
         """
@@ -142,6 +154,20 @@ class ListenerModel(object):
         self.feeds.extend([self.xent_gold_lf])
 
         return (gold_lf,), (gradients,)
+
+
+class SequenceListenerModel(ListenerModel):
+
+    """
+    Parametric listener model $q_\\theta(z|u) which maps utterances (sequences)
+    to LF representations (factored as sequences).
+
+    This model is a conditional language model with hand-engineered states (as
+    opposed to an RNNLM, which we'll also try later.)
+    """
+
+    # TODO
+    pass
 
 
 def infer_trial(env, utterance, probs, generative_model, args):
@@ -326,7 +352,7 @@ def train(args):
     env = TUNAWithLoTEnv(args.corpus_path, corpus_selection=args.corpus_selection,
                          bag=args.bag_env, functions=FUNCTIONS[args.fn_selection],
                          atom_attribute=args.atom_attribute)
-    model = ListenerModel(env)
+    model = SimpleListenerModel(env)
     train_op, global_step = build_train_graph(model, env, args)
     generative_model = NaiveGenerativeModel(env.vocab_size, 3) # TODO fixed
 
