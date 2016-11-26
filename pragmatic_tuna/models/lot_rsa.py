@@ -174,9 +174,8 @@ class WindowedSequenceListenerModel(ListenerModel):
     def _build_graph(self):
         with self._scope:
             # TODO: padding representation?
-            self.words = tf.placeholder(tf.int32, shape=(self.max_timesteps),
+            self.words = tf.placeholder(tf.int32, shape=(self.max_timesteps,),
                                         name="word_%i" % t)
-                          for t in range(self.max_timesteps)]
 
             emb_shape = (env.vocab_size, self.embedding_dim)
             word_embeddings = tf.get_variable("word_embeddings", shape=emb_shape)
@@ -230,8 +229,8 @@ class WindowedSequenceListenerModel(ListenerModel):
 
         self.feeds.extend([self.xent_gold_lf_tokens, self.xent_gold_lf_length])
 
-        return (self.xent_gold_lf_tokens, self.xent_gold_lf_length),
-               (self.xent_gradients,)
+        return ((self.xent_gold_lf_tokens, self.xent_gold_lf_length),
+                (self.xent_gradients,))
 
 
 def infer_trial(env, utterance, probs, generative_model, args):
