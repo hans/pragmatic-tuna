@@ -173,6 +173,7 @@ class WindowedSequenceListenerModel(ListenerModel):
 
     def _build_graph(self):
         with self._scope:
+            # TODO: padding representation?
             self.words = tf.placeholder(tf.int32, shape=(self.max_timesteps),
                                         name="word_%i" % t)
                           for t in range(self.max_timesteps)]
@@ -183,7 +184,31 @@ class WindowedSequenceListenerModel(ListenerModel):
             word_window = tf.nn.embedding_lookup(word_embeddings, self.words)
             word_window = tf.flatten(word_window)
 
-            # TODO more
+            # Create embeddings for LF tokens + 1 null/stop token
+            n_lf_embeddings = len(self.env.lf_functions) + len(self.env.lf_atoms) + 1
+            lf_emb_shape = (n_lf_embeddings, self.embedding_dim)
+            lf_embeddings = tf.get_variable("lf_embeddings", shape=lf_emb_shape)
+            null_embedding = tf.gather(lf_embeddings, 0)
+
+            # Now run a teeny LF decoder.
+            outputs, samples = [], []
+            output_dim = n_lf_embeddings
+            prev_sample = null_embedding
+            for t in range(self.max_timesteps):
+                with tf.variable_scope("recurrence", reuse=i > 0):
+                    input_t = tf.pack([prev_sample, word_window])
+                    output_t = layers.fully_connected(input_t, output_dim,
+                                                      tf.identity)
+
+                    # Sample an LF token and provide as feature to next timestep.
+                    sample_t = tf.multinomial(output_t)
+                    prev_sample = tf.nn.embedding_lookup(lf_embeddings, sample_t)
+
+                    outputs.append(output_t)
+                    samples.append(sample_t)
+
+            self.outputs = outputs
+            self.samples = samples
 
 
 def infer_trial(env, utterance, probs, generative_model, args):
