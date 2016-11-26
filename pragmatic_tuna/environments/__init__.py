@@ -240,7 +240,7 @@ class TUNAWithLoTEnv(TUNAEnv):
 
     @property
     def action_space(self):
-        return spaces.Discrete(len(self.lf_functions) * len(self.lf_atoms))
+        return spaces.Discrete(len(self.lf_functions)**2 * len(self.lf_atoms)**2)
 
     def resolve_lf_form(self, lf_function, lf_atom):
         atom_objs = self._resolve_atom(lf_atom)
@@ -250,19 +250,35 @@ class TUNAWithLoTEnv(TUNAEnv):
         return []
 
     def resolve_lf_by_id(self, lf_id):
-        lf_function, lf_atom = self.get_function_and_atom_by_id(lf_id)
-        return self.resolve_lf_form(self.lf_function_from_id[lf_function][1],
+        parts = self.get_functions_and_atoms_by_id(lf_id)
+        result = self._trial["domain"]
+        for part in parts:
+            lf_function, lf_atom = part
+            partial_result = self.resolve_lf_form(self.lf_function_from_id[lf_function][1],
                                     self.lf_atom_from_id[lf_atom])
+            result = self._intersect_lists(result, partial_result)
+        return result
 
     def describe_lf_by_id(self, lf_id):
-        lf_function, lf_atom = self.get_function_and_atom_by_id(lf_id)
-        return "%s(%s)" % (self.lf_function_from_id[lf_function][0],
-                           self.lf_atoms[lf_atom])
+        parts = self.get_functions_and_atoms_by_id(lf_id)
+        description = []
+        for (lf_function, lf_atom) in parts:
+            description.append("%s(%s)" % (self.lf_function_from_id[lf_function][0],
+                           self.lf_atoms[lf_atom]))
+        return " AND ".join(description)
                            
-    def get_function_and_atom_by_id(self, lf_id):
-        lf_function = lf_id // len(self.lf_atoms)
-        lf_atom = lf_id % len(self.lf_atoms)
-        return lf_function, lf_atom
+    def get_functions_and_atoms_by_id(self, lf_id):
+        lf_id1 = lf_id % (len(self.lf_atoms)* len(self.lf_functions))
+        lf_function1 = lf_id1 // len(self.lf_atoms)
+        lf_atom1 = lf_id1 % len(self.lf_atoms)
+        
+        lf_id2 = lf_id // (len(self.lf_atoms)* len(self.lf_functions))
+        lf_function2 = lf_id2 // len(self.lf_atoms)
+        lf_atom2 = lf_id2 % len(self.lf_atoms)
+    
+        parts = [(lf_function1, lf_atom1), (lf_function2, lf_atom2)]
+        #by turning this into a set [(f,x), (f,x)] is reduced to [(f,x)] 
+        return set(parts)
 
     def get_generative_lf_probs(self, referent=None):
         """
@@ -280,34 +296,44 @@ class TUNAWithLoTEnv(TUNAEnv):
         else:
             referent = domain[referent]
 
-        ps = np.zeros(len(self.lf_functions) * len(self.lf_atoms))
+        ps = np.zeros(len(self.lf_functions)**2 * len(self.lf_atoms)**2)
         for i, (fn_name, function) in enumerate(self.lf_functions):
             for j, atom in enumerate(self.lf_atoms):
-                matches = self.resolve_lf_form(function, atom)
-                if matches and matches[0] == referent:
-                    idx = i * len(self.lf_atoms) + j
-                    ps[idx] += 1
+                matches1 = self.resolve_lf_form(function, atom)
+                if matches1 and referent in matches1:
+                    for k, (fn_name2, function2) in enumerate(self.lf_functions):
+                        for l, atom2 in enumerate(self.lf_atoms):
+                            matches2 = self.resolve_lf_form(function2, atom2)
+                            matches = self._intersect_lists(matches1, matches2)
+                            if len(matches) == 1 and matches[0] == referent:
+                                idx1 = i * len(self.lf_atoms) + j
+                                idx2 = k * len(self.lf_atoms) + l
+                                idx = idx1 + idx2 * len(self.lf_atoms) * len(self.lf_functions)
+                                ps[idx] += 1
 
         # Normalize.
         ps /= ps.sum()
 
         return ps
 
+    def _intersect_lists(self, list1, list2):
+        result = []
+        for item in list1:
+            if item in list2:
+                result.append(item)
+        return result
+
     @property
     def _essential_attributes(self):
         return [self.atom_attribute]
 
     def _step(self, action):
-        lf_function, lf_atom = self.get_function_and_atom_by_id(action)
-
-        lf_function_name, lf_function = self.lf_function_from_id[lf_function]
-        lf_atom = self.lf_atom_from_id[lf_atom]
 
         # DEBUG: print string_desc -> sampled fn(atom)
-        print("%s => %s(%s)" % (self._trial["string_description"],
-                                lf_function_name, lf_atom))
+        print("%s => %s" % (self._trial["string_description"],
+                                self.describe_lf_by_id(action)))
 
-        matches = self.resolve_lf_form(lf_function, lf_atom)
+        matches = self.resolve_lf_by_id(action)
         finished = len(matches) == 1
 
         success = finished and matches[0]["target"]

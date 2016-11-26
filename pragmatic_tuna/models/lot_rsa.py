@@ -1,5 +1,6 @@
 from argparse import ArgumentParser
 from collections import Counter, defaultdict, namedtuple
+from itertools import permutations
 
 import numpy as np
 import tensorflow as tf
@@ -83,6 +84,7 @@ class DiscreteGenerativeModel(object):
 
     smooth_val = 0.1
     unk_prob = 0.01
+    backoff_factor = 0.1
     
     START_TOKEN = "<s>"
     END_TOKEN = "</s>"
@@ -98,8 +100,7 @@ class DiscreteGenerativeModel(object):
         self.env = env
 
     def observe(self, z, u):
-        lf_function, lf_atom = self.env.get_function_and_atom_by_id(z)
-        lf_function = lf_function + len(self.env.lf_atoms)
+        parts = self.env.get_functions_and_atoms_by_id(z)
         
         words = []
         words.extend(u)
@@ -108,19 +109,21 @@ class DiscreteGenerativeModel(object):
         prev_word = self.START_TOKEN
         for word in words:
             if word != self.END_TOKEN:
-                self.counter[lf_function][word] += 1
-                self.counter[lf_atom][word] += 1
+                for (lf_function, lf_atom) in parts:
+                    lf_function = lf_function + len(self.env.lf_atoms)
+                    self.counter[word][lf_function] += 1
+                    self.counter[word][lf_atom] += 1
             self.bigramcounter[prev_word][word] +=1
             self.unigramcounter[word] +=1
             prev_word = word
 
 
     def _score_word_atom(self, word, atom):
-        score = self.counter[atom][word]
-        denom = sum(self.counter[atom].values())
+        score = self.counter[word][atom]
+        denom = sum(self.counter[word].values())
         if self.smooth:
           score += 1
-          denom += len(self.env.lf_atoms)
+          denom += len(self.env.vocab)
         return float(score) / denom
 
     def _score_bigram(self, w1, w2):
@@ -151,23 +154,32 @@ class DiscreteGenerativeModel(object):
         prob = 0
         for word in u:
             p_bigram = self._score_bigram(prev_word, word)
-            p_bigram = p_bigram if p_bigram < 0 else self._score_unigram(word)
+            p_bigram = p_bigram + np.log(1-self.backoff_factor) if p_bigram < 0 else self._score_unigram(word) + np.log(self.backoff_factor)
             prob += p_bigram
             prev_word = word
     
         return prob
       
     def score(self, z, u):
-        lf_function, lf_atom = self.env.get_function_and_atom_by_id(z)
-        lf_function = lf_function + len(self.env.lf_atoms)
+        parts = self.env.get_functions_and_atoms_by_id(z)
+        lf = []
+        for (lf_function, lf_atom) in parts:
+            lf.append(lf_atom)
+            lf.append(lf_function + len(self.env.lf_atoms))
 
-
+        if len(u) > len(lf):
+            return -np.Inf
         #compute translation probability p(u|z)
         words = u
+        alignments = permutations(range(len(lf)))
         p_trans = 0
-        for w in words:
-            p = self._score_word_atom(w, lf_function) + self._score_word_atom(w, lf_atom)
-            p_trans += np.log(p)
+        for a in alignments:
+            p = 1
+            for i, w in enumerate(words):
+                p *= self._score_word_atom(w, lf[a[i]])
+            p_trans += p
+
+        p_trans = np.log(p_trans)
 
         #compute fluency probability, i.e., lm probability
         p_seq  = self._score_sequence(u)
@@ -196,7 +208,7 @@ class ListenerModel(object):
         """
         Build the core model graph.
         """
-        n_outputs = len(self.env.lf_functions) * len(self.env.lf_atoms)
+        n_outputs = len(self.env.lf_functions)**2 * len(self.env.lf_atoms)**2
 
         with self._scope:
             self.items = tf.placeholder(tf.float32, shape=(None, self.env.attr_dim))
@@ -263,7 +275,7 @@ def infer_trial(env, utterance, probs, generative_model, args, words):
         g_lf_distr = env.get_generative_lf_probs(referent)
         # Sample from the distribution.
         g_lf = np.random.choice(len(g_lf_distr), p=g_lf_distr)
-
+        
         # Record unnormalized score p(u, z)
         weight = generative_model.score(g_lf, words)
 
