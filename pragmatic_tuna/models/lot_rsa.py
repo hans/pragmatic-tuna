@@ -229,13 +229,12 @@ def run_listener_trial(model, generative_model, train_op, env, sess, args):
     3. Update speaker model weights.
     """
     env.configure(dreaming=False)
-    inputs = env.reset()
+    items, utterance, words = env.reset()
 
     partial_fetches = [model.probs, train_op]
     partial_feeds = model.feeds
     partial = sess.partial_run_setup(partial_fetches, partial_feeds)
 
-    items, utterance = inputs
     prob_feeds = {model.items: items,
                   model.utterance: utterance}
     probs = sess.partial_run(partial, model.probs, prob_feeds)
