@@ -210,6 +210,29 @@ class WindowedSequenceListenerModel(ListenerModel):
             self.outputs = outputs
             self.samples = samples
 
+    def build_xent_gradients(self):
+        gold_lf_tokens = [tf.zeros((), dtype=tf.int32, name="gold_lf_%i" % t)
+                          for t in range(self.max_timesteps)]
+        gold_lf_length = tf.placeholder(tf.int32, shape=(), name="gold_lf_length")
+        losses = [tf.to_float(t < gold_lf_length) *
+                  tf.nn.sparse_softmax_cross_entropy_with_logits(
+                          tf.squeeze(output_t), gold_lf_t)
+                  for t, (output_t, gold_lf_t)
+                  in enumerate(zip(self.outputs, gold_lf_tokens))]
+        loss = tf.add_n(losses) / gold_lf_length
+
+        params = tf.trainable_variables()
+        gradients = tf.gradients(loss, params)
+
+        self.xent_gold_lf_tokens = gold_lf_tokens
+        self.xent_gold_lf_length = gold_lf_length
+        self.xent_gradients = zip(gradients, params)
+
+        self.feeds.extend([self.xent_gold_lf_tokens, self.xent_gold_lf_length])
+
+        return (self.xent_gold_lf_tokens, self.xent_gold_lf_length),
+               (self.xent_gradients,)
+
 
 def infer_trial(env, utterance, probs, generative_model, args):
     """
