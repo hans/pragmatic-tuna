@@ -156,18 +156,34 @@ class SimpleListenerModel(ListenerModel):
         return (gold_lf,), (gradients,)
 
 
-class SequenceListenerModel(ListenerModel):
+class WindowedSequenceListenerModel(ListenerModel):
 
     """
     Parametric listener model $q_\\theta(z|u) which maps utterances (sequences)
     to LF representations (factored as sequences).
 
-    This model is a conditional language model with hand-engineered states (as
-    opposed to an RNNLM, which we'll also try later.)
+    This model takes a window of embedding inputs and outputs a sequence of LF
+    tokens.
     """
 
-    # TODO
-    pass
+    def __init__(self, env, scope="listener", max_timesteps=4, embedding_dim=10):
+        super(SequenceListenerModel, env, scope=scope)
+        self.max_timesteps = max_timesteps
+        self.embedding_dim = embedding_dim
+
+    def _build_graph(self):
+        with self._scope:
+            self.words = tf.placeholder(tf.int32, shape=(self.max_timesteps),
+                                        name="word_%i" % t)
+                          for t in range(self.max_timesteps)]
+
+            emb_shape = (env.vocab_size, self.embedding_dim)
+            word_embeddings = tf.get_variable("word_embeddings", shape=emb_shape)
+
+            word_window = tf.nn.embedding_lookup(word_embeddings, self.words)
+            word_window = tf.flatten(word_window)
+
+            # TODO more
 
 
 def infer_trial(env, utterance, probs, generative_model, args):
