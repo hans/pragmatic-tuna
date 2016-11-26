@@ -110,6 +110,7 @@ class DiscreteGenerativeModel(object):
         for word in words:
             if word != self.END_TOKEN:
                 for (lf_function, lf_atom) in parts:
+                    #compute lf vocab idx for lf_function
                     lf_function = lf_function + len(self.env.lf_atoms)
                     self.counter[word][lf_function] += 1
                     self.counter[word][lf_atom] += 1
@@ -154,7 +155,9 @@ class DiscreteGenerativeModel(object):
         prob = 0
         for word in u:
             p_bigram = self._score_bigram(prev_word, word)
-            p_bigram = p_bigram + np.log(1-self.backoff_factor) if p_bigram < 0 else self._score_unigram(word) + np.log(self.backoff_factor)
+            p_bigram = ((p_bigram + np.log(1-self.backoff_factor)) 
+                            if p_bigram < 0 
+                            else self._score_unigram(word) + np.log(self.backoff_factor))
             prob += p_bigram
             prev_word = word
     
@@ -186,9 +189,72 @@ class DiscreteGenerativeModel(object):
 
         return p_seq + p_trans
 
+
+    def sample_with_alignment(self, lf, alignment):
+        
+        unigram_denom = max(sum(self.unigramcounter.values()), 1.0)
+        unigram_probs = np.array(list(self.unigramcounter.values())) * self.backoff_factor / unigram_denom
+        keys = list(self.unigramcounter.keys())
+        
+        prev_word = self.START_TOKEN
+        
+        u = []
+        ps = []
+        i = 0
+        while prev_word != self.END_TOKEN:
+            #limit utterance length to the length of the lf
+            if i == len(lf):
+               word = self.END_TOKEN
+               u.append(word)
+               prev_word = word
+               #todo compute correct probability
+               ps.append(1.0)
+               break
+               
+            bigram_counts = np.array([self.bigramcounter[prev_word][w] 
+                                        for w in keys])
+            bigram_denom = sum(bigram_counts) if len(bigram_counts) > 0 else 1.0
+            bigram_probs = bigram_counts * (1 - self.backoff_factor) / bigram_denom
+            
+            
+            cond_probs = np.array([self._score_word_atom(w, lf[alignment[i]]) for w in keys])
+            
+            distr = (bigram_probs + unigram_probs) * cond_probs
+            
+            distr = distr / np.sum(distr)
+            
+            idx = np.random.choice(len(keys), p=distr)
+            word = keys[idx]
+            if len(u) < 1 and word == self.END_TOKEN:
+                continue
+            u.append(word)
+            prev_word = word
+            ps.append(distr[idx])
+            i += 1
+        
+        p = np.exp(np.sum(np.log(distr)))
+        return " ".join(u[0:-1]), p
+        
+        
+
     def sample(self, z):
-        #TODO: write method that samples utterance based on z and fluency
-        raise NotImplementedError
+        parts = self.env.get_functions_and_atoms_by_id(z)
+        lf = []
+        for (lf_function, lf_atom) in parts:
+            lf.append(lf_atom)
+            lf.append(lf_function + len(self.env.lf_atoms))
+        
+        alignments = permutations(range(len(lf)))
+        utterances = []
+        distr = []
+        for a in alignments:
+            u, p = self.sample_with_alignment(lf, a)
+            utterances.append(u)
+            distr.append(p)
+        
+        distr = np.array(distr) / np.sum(distr)
+        idx = np.random.choice(len(utterances), p=distr)
+        return utterances[idx]
 
 
 class ListenerModel(object):
@@ -337,7 +403,7 @@ def run_dream_trial(model, generative_model, env, sess, args):
     Run a single dream trial.
     """
     env.configure(dreaming=True)
-    inputs, words = env.reset()
+    items, utterance, words = env.reset()
 
     referent_idx = [i for i, referent in enumerate(env._trial["domain"])
                     if referent["target"]][0]
@@ -352,9 +418,13 @@ def run_dream_trial(model, generative_model, env, sess, args):
         g_lf = np.random.choice(len(g_lf_distr), p=g_lf_distr)
 
         # Sample utterances from p(u|z).
-        g_ut = generative_model.sample(g_lf)
-        words = [env.vocab[idx] for idx, count in enumerate(g_ut)
-                if count > 0]
+        words = generative_model.sample(g_lf).split()
+        word_ids = np.array([env.word2idx[word]
+                                  for word in words])
+
+        g_ut = np.zeros(env.vocab_size)
+        g_ut[word_ids] = 1
+        
 
         # Run listener model q(z|u).
         probs = sess.run(model.probs, {model.utterance: g_ut})
@@ -374,7 +444,7 @@ def run_dream_trial(model, generative_model, env, sess, args):
     Deref:\t\t%s""" %
               (env._trial["domain"][referent_idx],
                env.describe_lf_by_id(g_lf),
-               " ".join([env.vocab[idx] for idx, count in enumerate(g_ut) if count]),
+               " ".join(words),
                env.describe_lf_by_id(l_lf),
                l_referent))
 
