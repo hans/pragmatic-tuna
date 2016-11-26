@@ -84,7 +84,8 @@ class DiscreteGenerativeModel(object):
 
     smooth_val = 0.1
     unk_prob = 0.01
-    backoff_factor = 0.1
+    #if set to 0, use +1 smoothing of bigrams instead of backoff LM
+    backoff_factor = 0
     
     START_TOKEN = "<s>"
     END_TOKEN = "</s>"
@@ -129,10 +130,12 @@ class DiscreteGenerativeModel(object):
 
     def _score_bigram(self, w1, w2):
         score = self.bigramcounter[w1][w2]
-        if score < 1:
-            return 0
-      
         denom = sum(self.bigramcounter[w1].values())
+        if self.smooth and self.backoff_factor == 0:
+          score += 1
+          denom += len(self.env.vocab)
+        if score < 1 :
+            return 0      
         return np.log(float(score) / denom)
       
     
@@ -412,7 +415,7 @@ def run_dream_trial(model, generative_model, env, sess, args):
     success = False
     i = 0
     while not success:
-        print("Dream trial %i" % i)
+#        print("Dream trial %i" % i)
 
         # Sample an LF from p(z|r).
         g_lf = np.random.choice(len(g_lf_distr), p=g_lf_distr)
@@ -436,18 +439,18 @@ def run_dream_trial(model, generative_model, env, sess, args):
             l_referent_id = env._trial["domain"].index(l_referent[0])
             success = l_referent_id == referent_idx
 
-        print(
-"""    Referent:\t\t%s
-    z ~ p(z|r):\t\t%s
-    u ~ p(u|z):\t\t%s
-    z' ~ q(z|u):\t%s
-    Deref:\t\t%s""" %
-              (env._trial["domain"][referent_idx],
-               env.describe_lf_by_id(g_lf),
-               " ".join(words),
-               env.describe_lf_by_id(l_lf),
-               l_referent))
-
+#        print(
+#"""    Referent:\t\t%s
+#    z ~ p(z|r):\t\t%s
+#    u ~ p(u|z):\t\t%s
+#    z' ~ q(z|u):\t%s
+#    Deref:\t\t%s""" %
+#              (env._trial["domain"][referent_idx],
+#               env.describe_lf_by_id(g_lf),
+#               " ".join(words),
+#               env.describe_lf_by_id(l_lf),
+#               l_referent))
+#
         i += 1
 
 
