@@ -384,7 +384,7 @@ def run_listener_trial(listener_model, speaker_model, listener_train_op,
         speaker_model.observe(gold_lf, obs[1])
 
 
-def run_dream_trial(model, generative_model, env, sess, args):
+def run_dream_trial(listener_model, generative_model, env, sess, args):
     """
     Run a single dream trial.
     """
@@ -393,7 +393,7 @@ def run_dream_trial(model, generative_model, env, sess, args):
 
     referent_idx = [i for i, referent in enumerate(env._domain)
                     if referent["target"]][0]
-    g_lf_distr = env.get_generative_lf_probs(referent_idx)
+    referent = env._domain[referent_idx]
 
     success = False
     i = 0
@@ -401,7 +401,7 @@ def run_dream_trial(model, generative_model, env, sess, args):
         print("Dream trial %i" % i)
 
         # Sample an LF from p(z|r).
-        g_lf = np.random.choice(len(g_lf_distr), p=g_lf_distr)
+        g_lf = env.sample_lf(referent=referent_idx)
 
         # Sample utterances from p(u|z).
         g_ut = generative_model.sample(g_lf)
@@ -409,14 +409,12 @@ def run_dream_trial(model, generative_model, env, sess, args):
                 if count > 0]
 
         # Run listener model q(z|u).
-        probs = sess.run(model.probs, {model.utterance: g_ut})
+        l_lf = listener_model.sample(g_ut, None) # TODO ordered representation
         # Literally dereference and see if we get the expected referent.
         # TODO: run multiple particles through this whole process!
-        l_lf = np.random.choice(len(probs), p=probs)
-        l_referent = env.resolve_lf_by_id(l_lf)
+        l_referent = env.resolve_lf(l_lf)
         if l_referent:
-            l_referent_id = env._domain.index(l_referent[0])
-            success = l_referent_id == referent_idx
+            success = l_referent[0] == referent
 
         print(
 """    Referent:\t\t%s

@@ -141,18 +141,21 @@ class TUNAEnv(gym.Env):
         assert not self.randomize
 
         # Dream about the most recent trial by default.
-        trial = copy.deepcopy(self._trials[self._cursor - 1])
+        trial = self._trials[self._cursor - 1]
 
         # TODO: randomly change referent?
 
         # Modify trial, leaving "essential" attributes unchanged.
+        # TODO: this is super hacky because of frozendict. Change it.
         to_change = set(self._attributes.keys()) - set(self._essential_attributes)
+        new_items = []
         for item in trial["domain"]:
-            for attribute in to_change:
-                values = self._attributes[attribute]
-                item["attributes"][attribute] = random.choice(values)
+            new_attributes = {attr: random.choice(self._attributes[attr])
+                              for attr in to_change}
+            attributes = item["attributes"].copy(**new_attributes)
+            new_items.append(item.copy(attributes=attributes))
 
-        return trial
+        return trial.copy(items=new_items)
 
     def _reset(self):
         if self.randomize:
