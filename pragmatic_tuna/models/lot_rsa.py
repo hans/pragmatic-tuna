@@ -155,6 +155,28 @@ class SimpleListenerModel(ListenerModel):
 
         return (gold_lf,), (gradients,)
 
+    def sample(self, utterance_bag, words):
+        sess = tf.get_default_session()
+        probs = sess.run(self.probs, {self.utterance: utterance_bag})
+        return np.random.choice(len(probs), p=probs)
+
+    def observe(self, obs, lf_pred, reward, gold_lf, train_op):
+        if hasattr(self, "rl_action"):
+            train_feeds = {self.utterance: obs[1],
+                           self.rl_action: lf_pred,
+                           self.rl_reward: reward}
+        elif hasattr(self, "xent_gold_lf"):
+            if gold_lf is None:
+                # TODO log?
+                return
+            train_feeds = {self.utterance: obs[1],
+                           self.xent_gold_lf: gold_lf}
+        else:
+            raise RuntimeError("no gradients defined")
+
+        sess = tf.get_default_session()
+        sess.run(train_op, train_feeds)
+
 
 class WindowedSequenceListenerModel(ListenerModel):
 
@@ -233,27 +255,29 @@ class WindowedSequenceListenerModel(ListenerModel):
                 (self.xent_gradients,))
 
 
-def infer_trial(env, utterance, probs, generative_model, args):
+def infer_trial(env, obs, listener_model, speaker_model, args):
     """
     Run RSA inference for a given trial.
 
     Args:
         env:
-        utterance:
-        probs: Literal listener model LF probabilities
-        generative_model:
+        obs: Observation from environment
+        listener_model:
+        speaker_model:
         args:
 
     Returns:
-        lfs: LF IDs sampled from `probs`
+        lfs: LF IDs sampled from `listener_model`
         weights: Associated weight `p(z, u)` for each LF
     """
+
+    items, utterance_bag, words = obs
 
     # Sample N LFs from the predicted distribution, accepting only when they
     # resolve to a referent in the scene.
     lfs, weights = [], []
     while len(weights) < args.num_listener_samples:
-        lf = np.random.choice(len(probs), p=probs)
+        lf = listener_model.sample(utterance_bag, words)
 
         # Resolve referent.
         referent = env.resolve_lf_by_id(lf)
@@ -268,7 +292,7 @@ def infer_trial(env, utterance, probs, generative_model, args):
         g_lf = np.random.choice(len(g_lf_distr), p=g_lf_distr)
 
         # Record unnormalized score p(u, z)
-        weight = generative_model.score(g_lf, utterance)
+        weight = speaker_model.score(g_lf, utterance_bag)
 
         lfs.append(lf)
         weights.append(weight)
@@ -283,7 +307,8 @@ def infer_trial(env, utterance, probs, generative_model, args):
     return lfs, weights
 
 
-def run_listener_trial(model, generative_model, train_op, env, sess, args):
+def run_listener_trial(listener_model, speaker_model, listener_train_op,
+                       env, sess, args):
     """
     Run single recognition trial.
 
@@ -292,20 +317,10 @@ def run_listener_trial(model, generative_model, train_op, env, sess, args):
     3. Update speaker model weights.
     """
     env.configure(dreaming=False)
-    items, utterance, words = env.reset()
+    obs = env.reset()
 
-    partial_fetches = [model.probs, train_op]
-    partial_feeds = model.feeds
-    partial = sess.partial_run_setup(partial_fetches, partial_feeds)
-
-    prob_feeds = {model.items: items,
-                  model.utterance: utterance}
-    probs = sess.partial_run(partial, model.probs, prob_feeds)
-
-    lfs, lf_weights = infer_trial(env, utterance, probs, generative_model, args)
+    lfs, lf_weights = infer_trial(env, obs, listener_model, speaker_model, args)
     lfs = sorted(zip(lfs, lf_weights), key=lambda el: el[1], reverse=True)
-
-    # TODO: Should generative model weights also receive REINFORCE gradients?
 
     # Now select action based on maximum generative score.
     lf_pred = lfs[0][0]
@@ -323,21 +338,11 @@ def run_listener_trial(model, generative_model, train_op, env, sess, args):
     if gold_lf is not None:
         print("gold", env.describe_lf_by_id(gold_lf), gold_lf_pos)
 
-    # Update recognition parameters.
-    train_feeds = None
-    if args.learning_method == "rl":
-        train_feeds = {model.rl_action: lf_pred, model.rl_reward: reward}
-    elif args.learning_method == "xent":
-        # The "gold LF" is the highest-scoring LF which deref'd to the correct
-        # referent.
-        if gold_lf is not None:
-            train_feeds = {model.xent_gold_lf: gold_lf}
-    if train_feeds:
-        sess.partial_run(partial, train_op, train_feeds)
+    # Update listener parameters.
+    listener_model.observe(obs, lf_pred, reward, gold_lf, listener_train_op)
 
-    # Update generation parameters.
-    if reward > 0:
-        generative_model.observe(lf_pred, utterance)
+    # Update speaker parameters.
+    speaker_model.observe(gold_lf, obs[1])
 
 
 def run_dream_trial(model, generative_model, env, sess, args):
@@ -421,19 +426,17 @@ def train(args):
     supervisor = tf.train.Supervisor(logdir=args.logdir, global_step=global_step,
                                      summary_op=None)
     with supervisor.managed_session() as sess:
-        for i in trange(args.num_trials):
-            if supervisor.should_stop():
-                break
+        with sess.as_default():
+            for i in trange(args.num_trials):
+                if supervisor.should_stop():
+                    break
 
-            tqdm.write("\n===========\nLISTENER TRIAL\n===========")
-            run_listener_trial(model, generative_model, train_op, env, sess, args)
+                tqdm.write("\n===========\nLISTENER TRIAL\n===========")
+                run_listener_trial(model, generative_model, train_op, env, sess, args)
 
-            if args.dream:
-                tqdm.write("\n===========\nDREAM TRIAL\n============")
-                run_dream_trial(model, generative_model, env, sess, args)
-
-        if args.analyze_weights:
-            analyze_weights(sess, env)
+                if args.dream:
+                    tqdm.write("\n===========\nDREAM TRIAL\n============")
+                    run_dream_trial(model, generative_model, env, sess, args)
 
 
 if __name__ == "__main__":
