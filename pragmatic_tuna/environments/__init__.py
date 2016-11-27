@@ -1,7 +1,9 @@
 import copy
+import itertools
 import json
 import random
 
+from frozendict import frozendict
 import gym
 from gym import spaces
 import nltk
@@ -9,6 +11,17 @@ import numpy as np
 
 
 UNK = "<unk>"
+
+
+def freeze(val):
+    """
+    Recursively freeze dictionaries in the given structure.
+    """
+    if isinstance(val, dict):
+        return frozendict({k: freeze(v) for k, v in val.items()})
+    elif isinstance(val, list):
+        return [freeze(v) for v in val]
+    return val
 
 
 class TUNAEnv(gym.Env):
@@ -21,6 +34,7 @@ class TUNAEnv(gym.Env):
                 corpus = next(iter(corpus_data.values()))
             else:
                 corpus = corpus_data[corpus_selection]
+            corpus = freeze(corpus)
             self._trials = corpus["trials"]
             self._attributes = corpus["attributes"]
 
@@ -68,7 +82,7 @@ class TUNAEnv(gym.Env):
         return self._observation_space
 
     def _observe(self):
-        items = [self._item_to_vector(item) for item in self._trial["domain"]]
+        items = [self._item_to_vector(item) for item in self._domain]
 
         desc_words = nltk.word_tokenize(self._trial["string_description"])
         desc_word_ids = np.array([self.word2idx[desc_word]
@@ -149,10 +163,12 @@ class TUNAEnv(gym.Env):
             self._cursor = self._cursor % len(self._trials)
             self._trial = self._trials[self._cursor]
             self._cursor += 1
+
+        self._domain = self._trial["domain"]
         return self._observe()
 
     def _step(self, action):
-        chosen = self._trial["domain"][action]
+        chosen = self._domain[action]
 
         reward = 0.5 if chosen["target"] else -0.5
         done = True
@@ -199,7 +215,7 @@ class TUNAWithLoTEnv(TUNAEnv):
     """
 
     def __init__(self, corpus_path, functions=None, atom_attribute="shape",
-                 **kwargs):
+                 max_conjuncts=1, **kwargs):
         """
         Args:
             functions: List of possible LF function types. Each list item is a
@@ -209,6 +225,7 @@ class TUNAWithLoTEnv(TUNAEnv):
         super(TUNAWithLoTEnv, self).__init__(corpus_path, **kwargs)
 
         self.atom_attribute = atom_attribute
+        self.max_conjuncts = max_conjuncts
         self._build_lfs(functions, atom_attribute)
 
     def _build_lfs(self, functions, atom_attribute):
@@ -226,86 +243,116 @@ class TUNAWithLoTEnv(TUNAEnv):
             if len(sources) != 1: return False
             return sources[0] == candidate
         id_function = ("id", id_fn)
-        self.lf_functions = [id_function] + sorted(functions or [])
+        lf_functions = [id_function] + sorted(functions or [])
+        self.lf_functions = lf_functions
+        self.lf_functions_map = dict(lf_functions)
+
         self.lf_atoms = sorted(self.attributes_to_idx[atom_attribute])
 
-        self.lf_function_from_id = {idx: func for idx, func
-                                    in enumerate(self.lf_functions)}
-        self.lf_atom_from_id = {idx: atom for idx, atom
-                                in enumerate(self.lf_atoms)}
+        # Also prepare a unified LF-language vocabulary
+        self.lf_vocab = list(self.lf_functions_map.keys()) + self.lf_atoms
+        # No overlap between function and atom names
+        assert len(self.lf_vocab) == len(set(self.lf_vocab))
+        self.lf_token_to_id = {token: idx for idx, token in enumerate(self.lf_vocab)}
 
     def _resolve_atom(self, atom_str):
-        return [item for item in self._trial["domain"]
+        return [item for item in self._domain
                 if item["attributes"][self.atom_attribute] == atom_str]
 
     @property
     def action_space(self):
-        return spaces.Discrete(len(self.lf_functions) * len(self.lf_atoms))
+        return spaces.DiscreteSequence(len(self.lf_vocab), self.max_conjuncts * 2)
 
-    def resolve_lf_form(self, lf_function, lf_atom):
+    def resolve_lf_part(self, lf_function, lf_atom):
         atom_objs = self._resolve_atom(lf_atom)
         if atom_objs:
-            return [item for item in self._trial["domain"]
+            return [item for item in self._domain
                     if lf_function(atom_objs, item)]
         return []
 
-    def resolve_lf_by_id(self, lf_id):
-        lf_function = lf_id // len(self.lf_atoms)
-        lf_atom = lf_id % len(self.lf_atoms)
-        return self.resolve_lf_form(self.lf_function_from_id[lf_function][1],
-                                    self.lf_atom_from_id[lf_atom])
+    def resolve_lf(self, id_list):
+        matches = self._domain
+        for fn_id, atom_id in zip(id_list[::2], id_list[1::2]):
+            fn = self.lf_functions_map[self.lf_vocab[fn_id]]
+            atom = self.lf_vocab[atom_id]
+            assert atom in self.lf_atoms
 
-    def describe_lf_by_id(self, lf_id):
-        lf_function = lf_id // len(self.lf_atoms)
-        lf_atom = lf_id % len(self.lf_atoms)
-        return "%s(%s)" % (self.lf_function_from_id[lf_function][0],
-                           self.lf_atoms[lf_atom])
+            matches = self._intersect_list(matches,
+                                           self.resolve_lf_part(fn, atom))
 
-    def get_generative_lf_probs(self, referent=None):
+        return matches
+
+    def _intersect_list(self, xs, ys):
+        ret = []
+        for x in xs:
+            if x in ys:
+                ret.append(x)
+        return ret
+
+    def describe_lf(self, id_list):
+        parts = ["%s(%s)" % (self.lf_vocab[fn_id], self.lf_vocab[atom_id])
+                 for fn_id, atom_id in zip(id_list[::2], id_list[1::2])]
+        return " AND ".join(parts)
+
+    def sample_part(self, available_atoms=None):
         """
-        Build a generative model `p(z|r,w)` for the current world `w` with
-        referent `r`.
+        Uniformly sample an LF part (optionally scoping atom space).
+        """
+        if available_atoms is None:
+            available_atoms = self.lf_atoms
+        fn_name, _ = random.choice(self.lf_functions)
+        atom = random.choice(available_atoms)
+
+        # Convert to LF token IDs.
+        return [self.lf_token_to_id[fn_name], self.lf_token_to_id[atom]]
+
+    def sample_lf(self, referent=None):
+        """
+        Sample a logical form representation `z ~ p(z|r, w)` for the current
+        world `w` with referent `r`.
 
         Args:
             referent: ID of referent. If not given, the target referent for
                 this trial is used.
         """
-        domain = self._trial["domain"]
-
         if referent is None:
-            referent = [item for item in domain if item["target"]][0]
+            referent = [item for item in self._domain if item["target"]][0]
         else:
-            referent = domain[referent]
+            referent = self._domain[referent]
 
-        ps = np.zeros(len(self.lf_functions) * len(self.lf_atoms))
-        for i, (fn_name, function) in enumerate(self.lf_functions):
-            for j, atom in enumerate(self.lf_atoms):
-                matches = self.resolve_lf_form(function, atom)
-                if matches and matches[0] == referent:
-                    idx = i * len(self.lf_atoms) + j
-                    ps[idx] += 1
+        # Find possible atoms to use.
+        available_atoms = list(set([item["attributes"][self.atom_attribute]
+                                    for item in self._domain]))
 
-        # Normalize.
-        ps /= ps.sum()
+        # Rejection-sample an LF.
+        i = 0
+        while True:
+            if i > 100:
+                raise RuntimeError("Failed to sample a valid LF after 100 "
+                                   "attempts")
 
-        return ps
+            # TODO magic here: sampling # of parts
+            n_parts = min(np.random.geometric(0.5), self.max_conjuncts)
+            lf = list(itertools.chain.from_iterable(
+                self.sample_part(available_atoms) for _ in range(n_parts)))
+
+            matches = self.resolve_lf(lf)
+            print(self.describe_lf(lf), matches)
+            if matches and matches[0] == referent:
+                return lf
+
+            i += 1
 
     @property
     def _essential_attributes(self):
         return [self.atom_attribute]
 
     def _step(self, action):
-        lf_function = action // len(self.lf_atoms)
-        lf_atom = action % len(self.lf_atoms)
-
-        lf_function_name, lf_function = self.lf_function_from_id[lf_function]
-        lf_atom = self.lf_atom_from_id[lf_atom]
-
         # DEBUG: print string_desc -> sampled fn(atom)
-        print("%s => %s(%s)" % (self._trial["string_description"],
-                                lf_function_name, lf_atom))
+        print("%s => %s" % (self._trial["string_description"],
+                            self.describe_lf(action)))
 
-        matches = self.resolve_lf_form(lf_function, lf_atom)
+        matches = self.resolve_lf(action)
         finished = len(matches) == 1
 
         success = finished and matches[0]["target"]

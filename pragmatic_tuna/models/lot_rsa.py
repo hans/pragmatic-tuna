@@ -34,7 +34,7 @@ class NaiveGenerativeModel(object):
     def score(self, z, u):
         """Retrieve unnormalized p(u|z)"""
         # TODO: weight on Z?
-        z, u = z, tuple(u)
+        z, u = tuple(z), tuple(u)
         score = self.counter[z][u]
         if self.smooth:
             # Add-1 smoothing.
@@ -43,7 +43,7 @@ class NaiveGenerativeModel(object):
 
     def sample(self, z):
         """Sample from the distribution p(u|z)"""
-        g_dict = self.counter[z]
+        g_dict = self.counter[tuple(z)]
         keys = list(g_dict.keys())
         values = np.array(list(g_dict.values()))
 
@@ -94,6 +94,12 @@ class ListenerModel(object):
         raise NotImplementedError
 
     def build_xent_gradients(self):
+        raise NotImplementedError
+
+    def sample(self, utterance_bag, words):
+        raise NotImplementedError
+
+    def observe(self, obs, lf_pred, reward, gold_lf, train_op):
         raise NotImplementedError
 
 
@@ -158,7 +164,16 @@ class SimpleListenerModel(ListenerModel):
     def sample(self, utterance_bag, words):
         sess = tf.get_default_session()
         probs = sess.run(self.probs, {self.utterance: utterance_bag})
-        return np.random.choice(len(probs), p=probs)
+        lf = np.random.choice(len(probs), p=probs)
+
+        # Jump through some hoops to make sure we sample a valid fn(atom) LF
+        fn_id = lf // len(self.env.lf_atoms)
+        atom_id = lf % len(self.env.lf_atoms)
+        fn_name = self.env.lf_functions[fn_id][0]
+        atom_name = self.env.lf_atoms[atom_id]
+        token_ids = [self.env.lf_token_to_id[fn_name],
+                     self.env.lf_token_to_id[atom_name]]
+        return token_ids
 
     def observe(self, obs, lf_pred, reward, gold_lf, train_op):
         if hasattr(self, "rl_action"):
@@ -280,16 +295,14 @@ def infer_trial(env, obs, listener_model, speaker_model, args):
         lf = listener_model.sample(utterance_bag, words)
 
         # Resolve referent.
-        referent = env.resolve_lf_by_id(lf)
+        referent = env.resolve_lf(lf)
         if not referent:
             # Dereference failed. No object matched.
             continue
-        referent = env._trial["domain"].index(referent[0])
+        referent = env._domain.index(referent[0])
 
-        # Get p(z|r).
-        g_lf_distr = env.get_generative_lf_probs(referent)
-        # Sample from the distribution.
-        g_lf = np.random.choice(len(g_lf_distr), p=g_lf_distr)
+        # Sample an LF z' ~ p(z|r).
+        g_lf = env.sample_lf(referent=referent)
 
         # Record unnormalized score p(u, z)
         weight = speaker_model.score(g_lf, utterance_bag)
@@ -299,9 +312,9 @@ def infer_trial(env, obs, listener_model, speaker_model, args):
 
         # Debug logging.
         print("LF %20s  =>  Referent %10s  =>  Gen LF %20s  =>  %f" %
-              (env.describe_lf_by_id(lf),
-               env._trial["domain"][referent]["attributes"][args.atom_attribute],
-               env.describe_lf_by_id(g_lf),
+              (env.describe_lf(lf),
+               env._domain[referent]["attributes"][args.atom_attribute],
+               env.describe_lf(g_lf),
                weight))
 
     return lfs, weights
@@ -330,13 +343,13 @@ def run_listener_trial(listener_model, speaker_model, listener_train_op,
     # Find the highest-scoring LF that dereferences to the correct referent.
     gold_lf, gold_lf_pos = None, -1
     for i, (lf_i, weight_i) in enumerate(lfs):
-        resolved = env.resolve_lf_by_id(lf_i)
+        resolved = env.resolve_lf(lf_i)
         if resolved and resolved[0]["target"]:
             gold_lf = lf_i
             gold_lf_pos = i
             break
     if gold_lf is not None:
-        print("gold", env.describe_lf_by_id(gold_lf), gold_lf_pos)
+        print("gold", env.describe_lf(gold_lf), gold_lf_pos)
 
     # Update listener parameters.
     listener_model.observe(obs, lf_pred, reward, gold_lf, listener_train_op)
@@ -352,7 +365,7 @@ def run_dream_trial(model, generative_model, env, sess, args):
     env.configure(dreaming=True)
     inputs = env.reset()
 
-    referent_idx = [i for i, referent in enumerate(env._trial["domain"])
+    referent_idx = [i for i, referent in enumerate(env._domain)
                     if referent["target"]][0]
     g_lf_distr = env.get_generative_lf_probs(referent_idx)
 
@@ -376,7 +389,7 @@ def run_dream_trial(model, generative_model, env, sess, args):
         l_lf = np.random.choice(len(probs), p=probs)
         l_referent = env.resolve_lf_by_id(l_lf)
         if l_referent:
-            l_referent_id = env._trial["domain"].index(l_referent[0])
+            l_referent_id = env._domain.index(l_referent[0])
             success = l_referent_id == referent_idx
 
         print(
@@ -385,10 +398,10 @@ def run_dream_trial(model, generative_model, env, sess, args):
     u ~ p(u|z):\t\t%s
     z' ~ q(z|u):\t%s
     Deref:\t\t%s""" %
-              (env._trial["domain"][referent_idx],
-               env.describe_lf_by_id(g_lf),
+              (env._domain[referent_idx],
+               env.describe_lf(g_lf),
                " ".join([env.vocab[idx] for idx, count in enumerate(g_ut) if count]),
-               env.describe_lf_by_id(l_lf),
+               env.describe_lf(l_lf),
                l_referent))
 
         i += 1
