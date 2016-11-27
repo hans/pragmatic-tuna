@@ -337,7 +337,6 @@ class TUNAWithLoTEnv(TUNAEnv):
                 self.sample_part(available_atoms) for _ in range(n_parts)))
 
             matches = self.resolve_lf(lf)
-            print(self.describe_lf(lf), matches)
             if matches and matches[0] == referent:
                 return lf
 
