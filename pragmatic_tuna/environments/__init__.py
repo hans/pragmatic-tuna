@@ -233,6 +233,7 @@ class TUNAWithLoTEnv(TUNAEnv):
         Prepare definition of logical form space.
 
         Args:
+            functions: List of pairs `(name, fn)`
             atom_attribute: Item attribute which should be yield to produce
                 a collection of unique atoms. For example, if we use the TUNA
                 `TYPE` attribute here, we will derive unique atoms like
@@ -242,15 +243,17 @@ class TUNAWithLoTEnv(TUNAEnv):
         def id_fn(sources, candidate):
             if len(sources) != 1: return False
             return sources[0] == candidate
-        id_function = ("id", id_fn)
-        lf_functions = [id_function] + sorted(functions or [])
-        self.lf_functions = lf_functions
-        self.lf_functions_map = dict(lf_functions)
+
+        function_map = dict(functions or [])
+        function_map["id"] = id_fn
+
+        self.lf_functions = sorted(function_map.keys())
+        self.lf_function_map = function_map
 
         self.lf_atoms = sorted(self.attributes_to_idx[atom_attribute])
 
         # Also prepare a unified LF-language vocabulary
-        self.lf_vocab = list(self.lf_functions_map.keys()) + self.lf_atoms
+        self.lf_vocab = self.lf_functions + self.lf_atoms
         # No overlap between function and atom names
         assert len(self.lf_vocab) == len(set(self.lf_vocab))
         self.lf_token_to_id = {token: idx for idx, token in enumerate(self.lf_vocab)}
@@ -273,7 +276,7 @@ class TUNAWithLoTEnv(TUNAEnv):
     def resolve_lf(self, id_list):
         matches = self._domain
         for fn_id, atom_id in zip(id_list[::2], id_list[1::2]):
-            fn = self.lf_functions_map[self.lf_vocab[fn_id]]
+            fn = self.lf_function_map[self.lf_vocab[fn_id]]
             atom = self.lf_vocab[atom_id]
             assert atom in self.lf_atoms
 
@@ -300,7 +303,7 @@ class TUNAWithLoTEnv(TUNAEnv):
         """
         if available_atoms is None:
             available_atoms = self.lf_atoms
-        fn_name, _ = random.choice(self.lf_functions)
+        fn_name = random.choice(self.lf_functions)
         atom = random.choice(available_atoms)
 
         # Convert to LF token IDs.

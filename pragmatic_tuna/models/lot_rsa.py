@@ -28,7 +28,7 @@ class NaiveGenerativeModel(object):
         self.max_length = max_length
 
     def observe(self, z, u):
-        z, u = z, tuple(u)
+        z, u = tuple(z), tuple(u)
         self.counter[z][u] += 1
 
     def score(self, z, u):
@@ -161,21 +161,46 @@ class SimpleListenerModel(ListenerModel):
 
         return (gold_lf,), (gradients,)
 
+    def _list_to_id(self, id_list):
+        """
+        Convert an LF token ID list to an action ID.
+        """
+        fn_tok_id, atom_tok_id = id_list
+
+        # Convert ID sequence back to our hacky space.
+        fn_name = self.env.lf_vocab[fn_tok_id]
+        fn_id = self.env.lf_functions.index(fn_name)
+        atom = self.env.lf_vocab[atom_tok_id]
+        atom_id = self.env.lf_atoms.index(atom)
+
+        action_id = fn_id * len(self.env.lf_atoms) + atom_id
+        return action_id
+
+    def _id_to_list(self, idx):
+        """
+        Convert an action ID to an LF token ID list.
+        """
+        fn_id = idx // len(self.env.lf_atoms)
+        atom_id = idx % len(self.env.lf_atoms)
+        fn_name = self.env.lf_functions[fn_id]
+        atom_name = self.env.lf_atoms[atom_id]
+        token_ids = [self.env.lf_token_to_id[fn_name],
+                     self.env.lf_token_to_id[atom_name]]
+        return token_ids
+
     def sample(self, utterance_bag, words):
         sess = tf.get_default_session()
         probs = sess.run(self.probs, {self.utterance: utterance_bag})
         lf = np.random.choice(len(probs), p=probs)
 
         # Jump through some hoops to make sure we sample a valid fn(atom) LF
-        fn_id = lf // len(self.env.lf_atoms)
-        atom_id = lf % len(self.env.lf_atoms)
-        fn_name = self.env.lf_functions[fn_id][0]
-        atom_name = self.env.lf_atoms[atom_id]
-        token_ids = [self.env.lf_token_to_id[fn_name],
-                     self.env.lf_token_to_id[atom_name]]
-        return token_ids
+        return self._id_to_list(lf)
 
     def observe(self, obs, lf_pred, reward, gold_lf, train_op):
+        lf_pred = self._list_to_id(lf_pred)
+        if gold_lf is not None:
+            gold_lf = self._list_to_id(gold_lf)
+
         if hasattr(self, "rl_action"):
             train_feeds = {self.utterance: obs[1],
                            self.rl_action: lf_pred,
@@ -355,7 +380,8 @@ def run_listener_trial(listener_model, speaker_model, listener_train_op,
     listener_model.observe(obs, lf_pred, reward, gold_lf, listener_train_op)
 
     # Update speaker parameters.
-    speaker_model.observe(gold_lf, obs[1])
+    if gold_lf is not None:
+        speaker_model.observe(gold_lf, obs[1])
 
 
 def run_dream_trial(model, generative_model, env, sess, args):
