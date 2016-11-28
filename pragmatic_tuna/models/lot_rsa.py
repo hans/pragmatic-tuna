@@ -565,7 +565,7 @@ def run_dream_trial(listener_model, generative_model, env, sess, args):
     Run a single dream trial.
     """
     env.configure(dreaming=True)
-    items, utterance, words = env.reset()
+    items, _, _ = env.reset()
 
     referent_idx = [i for i, referent in enumerate(env._domain)
                     if referent["target"]][0]
@@ -574,7 +574,7 @@ def run_dream_trial(listener_model, generative_model, env, sess, args):
     success = False
     i = 0
     while not success:
-#        print("Dream trial %i" % i)
+        print("Dream trial %i" % i)
 
         # Sample an LF from p(z|r).
         g_lf = env.sample_lf(referent=referent_idx)
@@ -587,9 +587,8 @@ def run_dream_trial(listener_model, generative_model, env, sess, args):
         g_ut = np.zeros(env.vocab_size)
         g_ut[word_ids] = 1
 
-
         # Run listener model q(z|u).
-        l_lf = listener_model.sample(g_ut, None) # TODO ordered representation
+        l_lf = listener_model.sample(g_ut, words)
         # Literally dereference and see if we get the expected referent.
         # TODO: run multiple particles through this whole process!
         l_referent = env.resolve_lf(l_lf)
@@ -609,6 +608,10 @@ def run_dream_trial(listener_model, generative_model, env, sess, args):
                l_referent))
 
         i += 1
+
+    # Construct an "observation" for the generative model.
+    obs = (items, g_ut, words)
+    generative_model.observe(obs, g_lf)
 
 
 def build_train_graph(model, env, args):
