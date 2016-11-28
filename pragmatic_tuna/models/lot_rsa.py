@@ -1,10 +1,12 @@
 from argparse import ArgumentParser
 from collections import Counter, defaultdict, namedtuple
+from itertools import permutations
 
 import numpy as np
 import tensorflow as tf
 from tensorflow.contrib.layers import layers
 from tqdm import trange, tqdm
+import nltk
 
 from pragmatic_tuna.environments import TUNAWithLoTEnv
 from pragmatic_tuna.environments.spatial import *
@@ -72,6 +74,192 @@ class NaiveGenerativeModel(object):
         return keys[np.random.choice(len(keys), p=distr)]
 
 
+class DiscreteGenerativeModel(object):
+
+    """
+    A generative model that maps atoms and functions of a logical form
+    z to and words of an utterance u and scores the fluency of the utterance
+    using a bigram language model.
+    """
+
+    smooth_val = 0.1
+    unk_prob = 0.01
+    #if set to 0, use +1 smoothing of bigrams instead of backoff LM
+    backoff_factor = 0
+
+    START_TOKEN = "<s>"
+    END_TOKEN = "</s>"
+
+    def __init__(self, vocab_size, max_length, env, smooth=True):
+        self.smooth = smooth
+        self.counter = defaultdict(lambda: Counter())
+        self.bigramcounter = defaultdict(lambda: Counter())
+        self.unigramcounter = Counter()
+        self.vocab_size = vocab_size
+        self.max_length = max_length
+        #TODO: better way to pass the env to the model?
+        self.env = env
+
+    def observe(self, z, u):
+        parts = self.env.get_functions_and_atoms_by_id(z)
+
+        words = []
+        words.extend(u)
+        words.append(self.END_TOKEN)
+
+        prev_word = self.START_TOKEN
+        for word in words:
+            if word != self.END_TOKEN:
+                for (lf_function, lf_atom) in parts:
+                    #compute lf vocab idx for lf_function
+                    lf_function = lf_function + len(self.env.lf_atoms)
+                    self.counter[word][lf_function] += 1
+                    self.counter[word][lf_atom] += 1
+            self.bigramcounter[prev_word][word] +=1
+            self.unigramcounter[word] +=1
+            prev_word = word
+
+
+    def _score_word_atom(self, word, atom):
+        score = self.counter[word][atom]
+        denom = sum(self.counter[word].values())
+        if self.smooth:
+          score += 1
+          denom += len(self.env.vocab)
+        return float(score) / denom
+
+    def _score_bigram(self, w1, w2):
+        score = self.bigramcounter[w1][w2]
+        denom = sum(self.bigramcounter[w1].values())
+        if self.smooth and self.backoff_factor == 0:
+          score += 1
+          denom += len(self.env.vocab)
+        if score < 1 :
+            return 0
+        return np.log(float(score) / denom)
+
+
+    def _score_unigram(self, w):
+        score = self.unigramcounter[w]
+        if score < 1:
+          prob = self.unk_prob
+        else:
+          prob = float(score) / sum(self.unigramcounter.values())
+
+        return np.log(prob)
+
+
+    def _score_sequence(self, u):
+        prev_word = self.START_TOKEN
+
+        words = []
+        words.extend(u)
+        words.append(self.END_TOKEN)
+        prob = 0
+        for word in u:
+            p_bigram = self._score_bigram(prev_word, word)
+            p_bigram = ((p_bigram + np.log(1-self.backoff_factor))
+                            if p_bigram < 0
+                            else self._score_unigram(word) + np.log(self.backoff_factor))
+            prob += p_bigram
+            prev_word = word
+
+        return prob
+
+    def score(self, z, u):
+        parts = self.env.get_functions_and_atoms_by_id(z)
+        lf = []
+        for (lf_function, lf_atom) in parts:
+            lf.append(lf_atom)
+            lf.append(lf_function + len(self.env.lf_atoms))
+
+        if len(u) > len(lf):
+            return -np.Inf
+        #compute translation probability p(u|z)
+        words = u
+        alignments = permutations(range(len(lf)))
+        p_trans = 0
+        for a in alignments:
+            p = 1
+            for i, w in enumerate(words):
+                p *= self._score_word_atom(w, lf[a[i]])
+            p_trans += p
+
+        p_trans = np.log(p_trans)
+
+        #compute fluency probability, i.e., lm probability
+        p_seq  = self._score_sequence(u)
+
+        return p_seq + p_trans
+
+
+    def sample_with_alignment(self, lf, alignment):
+
+        unigram_denom = max(sum(self.unigramcounter.values()), 1.0)
+        unigram_probs = np.array(list(self.unigramcounter.values())) * self.backoff_factor / unigram_denom
+        keys = list(self.unigramcounter.keys())
+
+        prev_word = self.START_TOKEN
+
+        u = []
+        ps = []
+        i = 0
+        while prev_word != self.END_TOKEN:
+            #limit utterance length to the length of the lf
+            if i == len(lf):
+               word = self.END_TOKEN
+               u.append(word)
+               prev_word = word
+               #todo compute correct probability
+               ps.append(1.0)
+               break
+
+            bigram_counts = np.array([self.bigramcounter[prev_word][w]
+                                        for w in keys])
+            bigram_denom = sum(bigram_counts) if len(bigram_counts) > 0 else 1.0
+            bigram_probs = bigram_counts * (1 - self.backoff_factor) / bigram_denom
+
+
+            cond_probs = np.array([self._score_word_atom(w, lf[alignment[i]]) for w in keys])
+
+            distr = (bigram_probs + unigram_probs) * cond_probs
+
+            distr = distr / np.sum(distr)
+
+            idx = np.random.choice(len(keys), p=distr)
+            word = keys[idx]
+            if len(u) < 1 and word == self.END_TOKEN:
+                continue
+            u.append(word)
+            prev_word = word
+            ps.append(distr[idx])
+            i += 1
+
+        p = np.exp(np.sum(np.log(distr)))
+        return " ".join(u[0:-1]), p
+
+
+
+    def sample(self, z):
+        parts = self.env.get_functions_and_atoms_by_id(z)
+        lf = []
+        for (lf_function, lf_atom) in parts:
+            lf.append(lf_atom)
+            lf.append(lf_function + len(self.env.lf_atoms))
+
+        alignments = permutations(range(len(lf)))
+        utterances = []
+        distr = []
+        for a in alignments:
+            u, p = self.sample_with_alignment(lf, a)
+            utterances.append(u)
+            distr.append(p)
+
+        distr = np.array(distr) / np.sum(distr)
+        idx = np.random.choice(len(utterances), p=distr)
+        return utterances[idx]
+
+
 class ListenerModel(object):
 
     """
@@ -109,7 +297,7 @@ class SimpleListenerModel(ListenerModel):
         """
         Build the core model graph.
         """
-        n_outputs = len(self.env.lf_functions) * len(self.env.lf_atoms)
+        n_outputs = len(self.env.lf_functions)**2 * len(self.env.lf_atoms)**2
 
         with self._scope:
             self.items = tf.placeholder(tf.float32, shape=(None, self.env.attr_dim))
@@ -389,7 +577,7 @@ def run_dream_trial(listener_model, generative_model, env, sess, args):
     Run a single dream trial.
     """
     env.configure(dreaming=True)
-    inputs = env.reset()
+    items, utterance, words = env.reset()
 
     referent_idx = [i for i, referent in enumerate(env._domain)
                     if referent["target"]][0]
@@ -398,15 +586,19 @@ def run_dream_trial(listener_model, generative_model, env, sess, args):
     success = False
     i = 0
     while not success:
-        print("Dream trial %i" % i)
+#        print("Dream trial %i" % i)
 
         # Sample an LF from p(z|r).
         g_lf = env.sample_lf(referent=referent_idx)
 
         # Sample utterances from p(u|z).
-        g_ut = generative_model.sample(g_lf)
-        words = [env.vocab[idx] for idx, count in enumerate(g_ut)
-                if count > 0]
+        words = generative_model.sample(g_lf).split()
+        word_ids = np.array([env.word2idx[word]
+                                  for word in words])
+
+        g_ut = np.zeros(env.vocab_size)
+        g_ut[word_ids] = 1
+
 
         # Run listener model q(z|u).
         l_lf = listener_model.sample(g_ut, None) # TODO ordered representation
@@ -458,7 +650,7 @@ def train(args):
                          atom_attribute=args.atom_attribute)
     model = SimpleListenerModel(env)
     train_op, global_step = build_train_graph(model, env, args)
-    generative_model = NaiveGenerativeModel(env.vocab_size, 3) # TODO fixed
+    generative_model = DiscreteGenerativeModel(env.vocab_size, 3, env) # TODO fixed
 
     supervisor = tf.train.Supervisor(logdir=args.logdir, global_step=global_step,
                                      summary_op=None)

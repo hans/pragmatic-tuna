@@ -348,6 +348,13 @@ class TUNAWithLoTEnv(TUNAEnv):
 
             i += 1
 
+    def _intersect_lists(self, list1, list2):
+        result = []
+        for item in list1:
+            if item in list2:
+                result.append(item)
+        return result
+
     @property
     def _essential_attributes(self):
         return [self.atom_attribute]
