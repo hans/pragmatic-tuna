@@ -90,31 +90,29 @@ class DiscreteGenerativeModel(object):
     START_TOKEN = "<s>"
     END_TOKEN = "</s>"
 
-    def __init__(self, vocab_size, max_length, env, smooth=True):
+    def __init__(self, vocab_size, max_conjuncts, env, smooth=True):
         self.smooth = smooth
         self.counter = defaultdict(lambda: Counter())
         self.bigramcounter = defaultdict(lambda: Counter())
         self.unigramcounter = Counter()
         self.vocab_size = vocab_size
-        self.max_length = max_length
+        self.max_conjuncts = max_conjuncts
         #TODO: better way to pass the env to the model?
         self.env = env
 
-    def observe(self, z, u):
-        parts = self.env.get_functions_and_atoms_by_id(z)
+    def observe(self, obs, gold_lf):
+        u = obs[2]
+        z = gold_lf
 
         words = []
         words.extend(u)
         words.append(self.END_TOKEN)
 
+        lf_tokens = z
         prev_word = self.START_TOKEN
         for word in words:
             if word != self.END_TOKEN:
-                for (lf_function, lf_atom) in parts:
-                    #compute lf vocab idx for lf_function
-                    lf_function = lf_function + len(self.env.lf_atoms)
-                    self.counter[word][lf_function] += 1
-                    self.counter[word][lf_atom] += 1
+                self.counter[word].update(lf_tokens)
             self.bigramcounter[prev_word][word] +=1
             self.unigramcounter[word] +=1
             prev_word = word
@@ -166,23 +164,19 @@ class DiscreteGenerativeModel(object):
 
         return prob
 
-    def score(self, z, u):
-        parts = self.env.get_functions_and_atoms_by_id(z)
-        lf = []
-        for (lf_function, lf_atom) in parts:
-            lf.append(lf_atom)
-            lf.append(lf_function + len(self.env.lf_atoms))
-
-        if len(u) > len(lf):
+    def score(self, z, u_bag, u):
+        # Limit utterance lengths to LF length.
+        print(z, u)
+        if len(u) > len(z):
             return -np.Inf
         #compute translation probability p(u|z)
         words = u
-        alignments = permutations(range(len(lf)))
+        alignments = permutations(range(len(z)))
         p_trans = 0
         for a in alignments:
             p = 1
             for i, w in enumerate(words):
-                p *= self._score_word_atom(w, lf[a[i]])
+                p *= self._score_word_atom(w, z[a[i]])
             p_trans += p
 
         p_trans = np.log(p_trans)
@@ -193,8 +187,7 @@ class DiscreteGenerativeModel(object):
         return p_seq + p_trans
 
 
-    def sample_with_alignment(self, lf, alignment):
-
+    def sample_with_alignment(self, z, alignment):
         unigram_denom = max(sum(self.unigramcounter.values()), 1.0)
         unigram_probs = np.array(list(self.unigramcounter.values())) * self.backoff_factor / unigram_denom
         keys = list(self.unigramcounter.keys())
@@ -206,7 +199,7 @@ class DiscreteGenerativeModel(object):
         i = 0
         while prev_word != self.END_TOKEN:
             #limit utterance length to the length of the lf
-            if i == len(lf):
+            if i == len(z):
                word = self.END_TOKEN
                u.append(word)
                prev_word = word
@@ -220,7 +213,7 @@ class DiscreteGenerativeModel(object):
             bigram_probs = bigram_counts * (1 - self.backoff_factor) / bigram_denom
 
 
-            cond_probs = np.array([self._score_word_atom(w, lf[alignment[i]]) for w in keys])
+            cond_probs = np.array([self._score_word_atom(w, z[alignment[i]]) for w in keys])
 
             distr = (bigram_probs + unigram_probs) * cond_probs
 
@@ -238,20 +231,12 @@ class DiscreteGenerativeModel(object):
         p = np.exp(np.sum(np.log(distr)))
         return " ".join(u[0:-1]), p
 
-
-
     def sample(self, z):
-        parts = self.env.get_functions_and_atoms_by_id(z)
-        lf = []
-        for (lf_function, lf_atom) in parts:
-            lf.append(lf_atom)
-            lf.append(lf_function + len(self.env.lf_atoms))
-
-        alignments = permutations(range(len(lf)))
+        alignments = permutations(range(len(z)))
         utterances = []
         distr = []
         for a in alignments:
-            u, p = self.sample_with_alignment(lf, a)
+            u, p = self.sample_with_alignment(z, a)
             utterances.append(u)
             distr.append(p)
 
@@ -297,7 +282,7 @@ class SimpleListenerModel(ListenerModel):
         """
         Build the core model graph.
         """
-        n_outputs = len(self.env.lf_functions)**2 * len(self.env.lf_atoms)**2
+        n_outputs = len(self.env.lf_functions) * len(self.env.lf_atoms)
 
         with self._scope:
             self.items = tf.placeholder(tf.float32, shape=(None, self.env.attr_dim))
@@ -518,7 +503,7 @@ def infer_trial(env, obs, listener_model, speaker_model, args):
         g_lf = env.sample_lf(referent=referent)
 
         # Record unnormalized score p(u, z)
-        weight = speaker_model.score(g_lf, utterance_bag)
+        weight = speaker_model.score(g_lf, utterance_bag, words)
 
         lfs.append(lf)
         weights.append(weight)
@@ -569,7 +554,7 @@ def run_listener_trial(listener_model, speaker_model, listener_train_op,
 
     # Update speaker parameters.
     if gold_lf is not None:
-        speaker_model.observe(gold_lf, obs[1])
+        speaker_model.observe(obs, gold_lf)
 
 
 def run_dream_trial(listener_model, generative_model, env, sess, args):
