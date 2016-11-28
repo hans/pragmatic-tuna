@@ -29,11 +29,14 @@ class NaiveGenerativeModel(object):
         self.vocab_size = vocab_size
         self.max_length = max_length
 
-    def observe(self, z, u):
+    def observe(self, obs, gold_lf):
+        u = obs[1]
+        z = gold_lf
+
         z, u = tuple(z), tuple(u)
         self.counter[z][u] += 1
 
-    def score(self, z, u):
+    def score(self, z, u, u_seq):
         """Retrieve unnormalized p(u|z)"""
         # TODO: weight on Z?
         z, u = tuple(z), tuple(u)
