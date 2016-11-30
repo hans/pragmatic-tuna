@@ -405,41 +405,42 @@ class WindowedSequenceListenerModel(ListenerModel):
     """
 
     def __init__(self, env, scope="listener", max_timesteps=4, embedding_dim=10):
-        super(SequenceListenerModel, env, scope=scope)
         self.max_timesteps = max_timesteps
         self.embedding_dim = embedding_dim
+        super(WindowedSequenceListenerModel, self).__init__(env, scope=scope)
 
     def _build_graph(self):
         with self._scope:
             # TODO: padding representation?
             self.words = tf.placeholder(tf.int32, shape=(self.max_timesteps,),
-                                        name="word_%i" % t)
+                                        name="words")
 
-            emb_shape = (env.vocab_size, self.embedding_dim)
+            emb_shape = (self.env.vocab_size, self.embedding_dim)
             word_embeddings = tf.get_variable("word_embeddings", shape=emb_shape)
 
             word_window = tf.nn.embedding_lookup(word_embeddings, self.words)
-            word_window = tf.flatten(word_window)
+            word_window = tf.reshape(word_window, (-1,))
 
-            # Create embeddings for LF tokens + 1 null/stop token
-            n_lf_embeddings = len(self.env.lf_functions) + len(self.env.lf_atoms) + 1
-            lf_emb_shape = (n_lf_embeddings, self.embedding_dim)
+            # Create embeddings for LF tokens + null/stop token (id 0)
+            lf_emb_shape = (len(self.env.lf_vocab) + 1, self.embedding_dim)
             lf_embeddings = tf.get_variable("lf_embeddings", shape=lf_emb_shape)
             null_embedding = tf.gather(lf_embeddings, 0)
 
             # Now run a teeny LF decoder.
             outputs, samples = [], []
-            output_dim = n_lf_embeddings
+            output_dim = lf_emb_shape[0]
             prev_sample = null_embedding
             for t in range(self.max_timesteps):
-                with tf.variable_scope("recurrence", reuse=i > 0):
-                    input_t = tf.pack([prev_sample, word_window])
-                    output_t = layers.fully_connected(input_t, output_dim,
-                                                      tf.identity)
+                with tf.variable_scope("recurrence", reuse=t > 0):
+                    input_t = tf.concat(0, [prev_sample, word_window])
+                    output_t = layers.fully_connected(tf.expand_dims(input_t, 0),
+                                                      output_dim, tf.identity)
 
                     # Sample an LF token and provide as feature to next timestep.
-                    sample_t = tf.multinomial(output_t)
+                    sample_t = tf.squeeze(tf.multinomial(output_t, num_samples=1))
                     prev_sample = tf.nn.embedding_lookup(lf_embeddings, sample_t)
+
+                    # TODO support stop token here?
 
                     outputs.append(output_t)
                     samples.append(sample_t)
@@ -456,7 +457,7 @@ class WindowedSequenceListenerModel(ListenerModel):
                           tf.squeeze(output_t), gold_lf_t)
                   for t, (output_t, gold_lf_t)
                   in enumerate(zip(self.outputs, gold_lf_tokens))]
-        loss = tf.add_n(losses) / gold_lf_length
+        loss = tf.add_n(losses) / tf.to_float(gold_lf_length)
 
         params = tf.trainable_variables()
         gradients = tf.gradients(loss, params)
@@ -639,7 +640,7 @@ def train(args):
     env = TUNAWithLoTEnv(args.corpus_path, corpus_selection=args.corpus_selection,
                          bag=args.bag_env, functions=FUNCTIONS[args.fn_selection],
                          atom_attribute=args.atom_attribute)
-    model = SimpleListenerModel(env)
+    model = WindowedSequenceListenerModel(env)
     train_op, global_step = build_train_graph(model, env, args)
     generative_model = DiscreteGenerativeModel(env.vocab_size, 3, env) # TODO fixed
 
