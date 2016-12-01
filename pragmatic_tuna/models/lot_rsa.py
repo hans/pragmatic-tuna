@@ -471,6 +471,59 @@ class WindowedSequenceListenerModel(ListenerModel):
         return ((self.xent_gold_lf_tokens, self.xent_gold_lf_length),
                 (self.xent_gradients,))
 
+    def _get_word_idxs(self, words):
+        # Look up word indices. TODO: padding with something other than UNK..?
+        word_idxs = [self.env.word2idx[word] for word in words]
+        assert len(word_idxs) <= self.max_timesteps
+        word_idxs += [0] * (self.max_timesteps - len(word_idxs))
+        return word_idxs
+
+    def sample(self, utterance_bag, words):
+        sess = tf.get_default_session()
+        feed = {self.words: self._get_word_idxs(words)}
+        # Rejection-sample a valid LF (alternating fn-atom-fn-atom..)
+        while True:
+            sample = sess.run(self.samples, feed)
+            ret_sample = []
+            valid = True
+            for i, sample_i in enumerate(sample):
+                stop = sample_i == 0
+                if stop and i > 0 and i % 2 == 0:
+                    # Valid stopping point. Truncate and end.
+                    ret_sample = ret_sample[:i]
+                    break
+
+                lf_voc_idx = sample_i - 1
+                ret_sample.append(lf_voc_idx)
+                sample_i_str = self.env.lf_vocab[lf_voc_idx]
+                if i % 2 == 0 and sample_i_str not in self.env.lf_function_map:
+                    valid = False
+                elif i % 2 == 1 and sample_i_str not in self.env.lf_atoms:
+                    valid = False
+
+            if valid:
+                print(ret_sample)
+                print(" ".join(self.env.lf_vocab[idx] for idx in ret_sample))
+                return ret_sample
+
+    def observe(self, obs, lf_pred, reward, gold_lf, train_op):
+        if gold_lf is None:
+            return
+
+        # Convert LF to internal space (shift IDs; add STOP token)
+        gold_lf = [idx + 1 for idx in gold_lf]
+        real_length = min(self.max_timesteps, len(gold_lf) + 1) # train to output a single stop token
+        if len(gold_lf) < self.max_timesteps:
+            gold_lf.extend([0] * (self.max_timesteps - len(gold_lf)))
+
+        feed = {self.words: self._get_word_idxs(obs[2]),
+                self.xent_gold_lf_length: real_length}
+        feed.update({self.xent_gold_lf_tokens[t]: gold_lf[t]
+                     for t in range(self.max_timesteps)})
+
+        sess = tf.get_default_session()
+        sess.run(train_op, feed)
+
 
 def infer_trial(env, obs, listener_model, speaker_model, args):
     """
