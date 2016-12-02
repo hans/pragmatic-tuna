@@ -598,7 +598,11 @@ def run_listener_trial(listener_model, speaker_model, listener_train_op,
         # Now select action based on maximum generative score.
         lf_pred = lfs[0][0]
         _, reward, _, _ = env.step(lf_pred)
-        tqdm.write("%f" % reward)
+
+        success = reward > 0
+        color = colors.OKGREEN if success else colors.FAIL
+        print("%s%s => %s%s" % (colors.BOLD + color, env._trial["string_description"],
+                                env.describe_lf(lf_pred), colors.ENDC))
 
         # Find the highest-scoring LF that dereferences to the correct referent.
         gold_lf, gold_lf_pos = None, -1

@@ -367,10 +367,6 @@ class TUNAWithLoTEnv(TUNAEnv):
         return [self.atom_attribute]
 
     def _step(self, action):
-        # DEBUG: print string_desc -> sampled fn(atom)
-        print("%s => %s" % (self._trial["string_description"],
-                            self.describe_lf(action)))
-
         matches = self.resolve_lf(action)
         finished = len(matches) == 1
 
