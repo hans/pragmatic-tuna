@@ -11,6 +11,7 @@ import numpy as np
 
 
 UNK = "<unk>"
+EOS = "<eos>"
 
 
 def freeze(val):
@@ -25,6 +26,9 @@ def freeze(val):
 
 
 class TUNAEnv(gym.Env):
+
+    UNK = UNK
+    EOS = EOS
 
     def __init__(self, corpus_path, corpus_selection=None, bag=False,
                  randomize=False, repeat_until_success=False):
@@ -41,9 +45,10 @@ class TUNAEnv(gym.Env):
         self.domain_size = len(self._trials[0]["domain"])
         self.attr_dim = sum(len(values) for values in self._attributes.values())
 
-        self.vocab = [UNK] + corpus["vocab"]
+        self.vocab = [UNK, EOS] + corpus["vocab"]
         self.word2idx = {word: idx for idx, word in enumerate(self.vocab)}
         self.word_unk_id = self.word2idx[UNK]
+        self.word_eos_id = self.word2idx[EOS]
         self.vocab_size = len(self.vocab)
 
         self.attributes_to_idx = {key: {value: idx for idx, value
@@ -256,10 +261,12 @@ class TUNAWithLoTEnv(TUNAEnv):
         self.lf_atoms = sorted(self.attributes_to_idx[atom_attribute])
 
         # Also prepare a unified LF-language vocabulary
-        self.lf_vocab = self.lf_functions + self.lf_atoms
+        self.lf_vocab = [EOS] + self.lf_functions + self.lf_atoms
         # No overlap between function and atom names
         assert len(self.lf_vocab) == len(set(self.lf_vocab))
         self.lf_token_to_id = {token: idx for idx, token in enumerate(self.lf_vocab)}
+
+        self.lf_eos_id = self.lf_token_to_id[EOS]
 
     def _resolve_atom(self, atom_str):
         return [item for item in self._domain

@@ -420,8 +420,8 @@ class WindowedSequenceListenerModel(ListenerModel):
             word_window = tf.nn.embedding_lookup(word_embeddings, self.words)
             word_window = tf.reshape(word_window, (-1,))
 
-            # Create embeddings for LF tokens + null/stop token (id 0)
-            lf_emb_shape = (len(self.env.lf_vocab) + 1, self.embedding_dim)
+            # Create embeddings for LF tokens
+            lf_emb_shape = (len(self.env.lf_vocab), self.embedding_dim)
             lf_embeddings = tf.get_variable("lf_embeddings", shape=lf_emb_shape)
             null_embedding = tf.gather(lf_embeddings, 0)
 
@@ -486,15 +486,14 @@ class WindowedSequenceListenerModel(ListenerModel):
             ret_sample = []
             valid = True
             for i, sample_i in enumerate(sample):
-                stop = sample_i == 0
+                stop = sample_i == self.env.lf_eos_id
                 if stop and i > 0 and i % 2 == 0:
                     # Valid stopping point. Truncate and end.
                     ret_sample = ret_sample[:i]
                     break
 
-                lf_voc_idx = sample_i - 1
-                ret_sample.append(lf_voc_idx)
-                sample_i_str = self.env.lf_vocab[lf_voc_idx]
+                ret_sample.append(sample_i)
+                sample_i_str = self.env.lf_vocab[sample_i]
                 if i % 2 == 0 and sample_i_str not in self.env.lf_function_map:
                     valid = False
                 elif i % 2 == 1 and sample_i_str not in self.env.lf_atoms:
@@ -507,11 +506,10 @@ class WindowedSequenceListenerModel(ListenerModel):
         if gold_lf is None:
             return
 
-        # Convert LF to internal space (shift IDs; add STOP token)
-        gold_lf = [idx + 1 for idx in gold_lf]
+        # Pad with stop tokens
         real_length = min(self.max_timesteps, len(gold_lf) + 1) # train to output a single stop token
         if len(gold_lf) < self.max_timesteps:
-            gold_lf.extend([0] * (self.max_timesteps - len(gold_lf)))
+            gold_lf.extend([self.env.lf_eos_id] * (self.max_timesteps - len(gold_lf)))
 
         feed = {self.words: self._get_word_idxs(obs[2]),
                 self.xent_gold_lf_length: real_length}
