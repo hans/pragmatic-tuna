@@ -541,7 +541,7 @@ def infer_trial(env, obs, listener_model, speaker_model, args):
 
     # Sample N LFs from the predicted distribution, accepting only when they
     # resolve to a referent in the scene.
-    lfs, weights = [], []
+    lfs, g_lfs, weights = [], [], []
     while len(weights) < args.num_listener_samples:
         lf = listener_model.sample(utterance_bag, words)
 
@@ -559,12 +559,15 @@ def infer_trial(env, obs, listener_model, speaker_model, args):
         weight = speaker_model.score(g_lf, utterance_bag, words)
 
         lfs.append(lf)
+        g_lfs.append(g_lf)
         weights.append(weight)
 
-        # Debug logging.
+    # Debug logging.
+    data = sorted(zip(lfs, g_lfs, weights), key=lambda xs: xs[2], reverse=True)
+    for lf, g_lf, weight in data:
         print("LF %30s  =>  Referent %10s  =>  Gen LF %30s  =>  %f" %
               (env.describe_lf(lf),
-               env._domain[referent]["attributes"][args.atom_attribute],
+               env.resolve_lf(lf)[0]["attributes"][args.atom_attribute],
                env.describe_lf(g_lf),
                weight))
 
