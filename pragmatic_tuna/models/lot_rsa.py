@@ -11,6 +11,7 @@ import nltk
 from pragmatic_tuna.environments import TUNAWithLoTEnv
 from pragmatic_tuna.environments.spatial import *
 from pragmatic_tuna.reinforce import reinforce_episodic_gradients
+from pragmatic_tuna.util import colors
 
 
 class NaiveGenerativeModel(object):
@@ -654,11 +655,11 @@ def run_dream_trial(listener_model, generative_model, env, sess, args):
     u ~ p(u|z):\t\t%s
     z' ~ q(z|u):\t%s
     Deref:\t\t%s""" %
-              (env._domain[referent_idx],
+              (referent["attributes"][args.atom_attribute],
                env.describe_lf(g_lf),
                " ".join([env.vocab[idx] for idx, count in enumerate(g_ut) if count]),
                env.describe_lf(l_lf),
-               l_referent))
+               [l_referent_i["attributes"][args.atom_attribute] for l_referent_i in l_referent]))
 
         i += 1
 
@@ -698,18 +699,22 @@ def train(args):
 
     supervisor = tf.train.Supervisor(logdir=args.logdir, global_step=global_step,
                                      summary_op=None)
-    with supervisor.managed_session() as sess:
-        with sess.as_default():
-            for i in trange(args.num_trials):
-                if supervisor.should_stop():
-                    break
+    for run_i in range(args.num_runs):
+        tqdm.write("%sBeginning training run %i.%s\n\n" % (colors.BOLD, run_i, colors.ENDC))
+        with supervisor.managed_session() as sess:
+            with sess.as_default():
+                for i in trange(args.num_trials):
+                    if supervisor.should_stop():
+                        break
 
-                tqdm.write("\n===========\nLISTENER TRIAL\n===========")
-                run_listener_trial(model, generative_model, train_op, env, sess, args)
+                    tqdm.write("\n%s===========\nLISTENER TRIAL\n===========%s"
+                            % (colors.HEADER, colors.ENDC))
+                    run_listener_trial(model, generative_model, train_op, env, sess, args)
 
-                if args.dream:
-                    tqdm.write("\n===========\nDREAM TRIAL\n============")
-                    run_dream_trial(model, generative_model, env, sess, args)
+                    if args.dream:
+                        tqdm.write("\n%s===========\nDREAM TRIAL\n===========%s"
+                                % (colors.HEADER, colors.ENDC))
+                        run_dream_trial(model, generative_model, env, sess, args)
 
 
 if __name__ == "__main__":
@@ -731,6 +736,8 @@ if __name__ == "__main__":
     p.add_argument("--dream", default=False, action="store_true")
     p.add_argument("--num_listener_samples", type=int, default=5)
 
+    p.add_argument("--num_runs", default=1, type=int,
+                   help="Number of times to repeat entire training process")
     p.add_argument("--learning_method", default="rl", choices=["rl", "xent"])
     p.add_argument("--num_trials", default=100, type=int)
     p.add_argument("--learning_rate", default=0.1, type=float)
