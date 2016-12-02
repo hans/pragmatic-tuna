@@ -293,6 +293,7 @@ class SimpleListenerModel(ListenerModel):
 
             self.scores = layers.fully_connected(tf.expand_dims(self.utterance, 0),
                                                  n_outputs, tf.identity)
+                                                 #weights_regularizer=tf.contrib.layers.l2_regularizer(100))
             self.probs = tf.squeeze(tf.nn.softmax(self.scores))
 
         self.feeds.extend([self.items, self.utterance])
@@ -326,6 +327,10 @@ class SimpleListenerModel(ListenerModel):
         gold_lf = tf.placeholder(tf.int32, shape=(), name="gold_lf")
         loss = tf.nn.sparse_softmax_cross_entropy_with_logits(
                 tf.squeeze(self.scores), gold_lf)
+        
+        
+        
+        loss += regularization_strength * tf.nn.l2_loss(self.scores)
 
         params = tf.trainable_variables()
         gradients = tf.gradients(loss, params)
@@ -482,6 +487,10 @@ class WindowedSequenceListenerModel(ListenerModel):
         sess = tf.get_default_session()
         feed = {self.words: self._get_word_idxs(words)}
         # Rejection-sample a valid LF (alternating fn-atom-fn-atom..)
+        
+        correction_factor = len(self.env.lf_atoms)*len(self.env.lf_function_map) \
+                          * 1.0 / (len(self.env.lf_atoms)+len(self.env.lf_function_map))**2
+        
         while True:
             sample = sess.run(self.samples, feed)
             ret_sample = []
@@ -501,9 +510,10 @@ class WindowedSequenceListenerModel(ListenerModel):
                 elif i % 2 == 1 and sample_i_str not in self.env.lf_atoms:
                     valid = False
 
-            if valid:
-                print(ret_sample)
-                print(" ".join(self.env.lf_vocab[idx] for idx in ret_sample))
+
+            if valid and (len(ret_sample) > 2 or np.random.random() < correction_factor):
+                #print(ret_sample)
+                #print(" ".join(self.env.lf_vocab[idx] for idx in ret_sample))
                 return ret_sample
 
     def observe(self, obs, lf_pred, reward, gold_lf, train_op):
@@ -692,7 +702,7 @@ def build_train_graph(model, env, args):
 def train(args):
     env = TUNAWithLoTEnv(args.corpus_path, corpus_selection=args.corpus_selection,
                          bag=args.bag_env, functions=FUNCTIONS[args.fn_selection],
-                         atom_attribute=args.atom_attribute)
+                         atom_attribute=args.atom_attribute, randomize=False)
     model = WindowedSequenceListenerModel(env)
     train_op, global_step = build_train_graph(model, env, args)
     generative_model = DiscreteGenerativeModel(env.vocab_size, 3, env) # TODO fixed
@@ -736,5 +746,6 @@ if __name__ == "__main__":
     p.add_argument("--num_trials", default=100, type=int)
     p.add_argument("--learning_rate", default=0.1, type=float)
     p.add_argument("--momentum", default=0.9, type=float)
+    p.add_argument("--l2_reg", default=0.01, type=float)
 
     train(p.parse_args())

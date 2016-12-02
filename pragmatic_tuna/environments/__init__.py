@@ -333,15 +333,19 @@ class TUNAWithLoTEnv(TUNAEnv):
         # Rejection-sample an LF.
         i = 0
         while True:
-            if i > 100:
-                raise RuntimeError("Failed to sample a valid LF after 100 "
+            if i > 1000:
+                raise RuntimeError("Failed to sample a valid LF after 1000 "
                                    "attempts")
 
             # TODO magic here: sampling # of parts
-            n_parts = min(np.random.geometric(0.5), self.max_conjuncts)
+            #n_parts = min(np.random.geometric(0.25), self.max_conjuncts * 2)
+            n_parts = self.max_conjuncts * 2
             lf = list(itertools.chain.from_iterable(
                 self.sample_part(available_atoms) for _ in range(n_parts)))
 
+            #TODO: Don't hardcode length of 4
+            #if lf[0:1] == lf[2:3]:
+            #    lf = list(lf[0:1])
             matches = self.resolve_lf(lf)
             if matches and matches[0] == referent:
                 return lf
