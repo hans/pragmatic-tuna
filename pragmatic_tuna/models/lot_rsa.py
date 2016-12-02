@@ -541,6 +541,7 @@ def infer_trial(env, obs, listener_model, speaker_model, args):
     # Sample N LFs from the predicted distribution, accepting only when they
     # resolve to a referent in the scene.
     lfs, g_lfs, weights = [], [], []
+    num_rejections = 0
     while len(weights) < args.num_listener_samples:
         lf = listener_model.sample(utterance_bag, words)
 
@@ -548,6 +549,7 @@ def infer_trial(env, obs, listener_model, speaker_model, args):
         referent = env.resolve_lf(lf)
         if not referent:
             # Dereference failed. No object matched.
+            num_rejections += 1
             continue
         referent = env._domain.index(referent[0])
 
@@ -570,7 +572,9 @@ def infer_trial(env, obs, listener_model, speaker_model, args):
                env.describe_lf(g_lf),
                weight))
 
-    return lfs, weights
+    print("%sNum rejections: %i%s" % (colors.BOLD + colors.WARNING, num_rejections, colors.ENDC))
+
+    return lfs, weights, num_rejections
 
 
 def run_listener_trial(listener_model, speaker_model, listener_train_op,
