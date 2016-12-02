@@ -22,17 +22,9 @@
                     {
                         "attributes": {
                             "y": 0,
-                            "shape": "circle"
-                        },
-                        "id": 0,
-                        "target": false
-                    },
-                    {
-                        "attributes": {
-                            "y": 0,
                             "shape": "square"
                         },
-                        "id": 1,
+                        "id": 0,
                         "target": true
                     }
                 ],
@@ -48,14 +40,6 @@
                         },
                         "id": 0,
                         "target": true
-                    },
-                    {
-                        "attributes": {
-                            "y": 1,
-                            "shape": "square"
-                        },
-                        "id": 1,
-                        "target": false
                     }
                 ],
                 "string_description": "circle"
