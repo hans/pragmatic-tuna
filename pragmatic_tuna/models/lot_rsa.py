@@ -695,16 +695,13 @@ def train(args):
     speaker_model = DiscreteGenerativeModel(env)
 
     train_op, global_step = build_train_graph(listener_model, env, args)
-    supervisor = tf.train.Supervisor(logdir=args.logdir, global_step=global_step,
-                                     summary_op=None)
-    for run_i in range(args.num_runs):
-        tqdm.write("%sBeginning training run %i.%s\n\n" % (colors.BOLD, run_i, colors.ENDC))
-        with supervisor.managed_session() as sess:
-            with sess.as_default():
-                for i in trange(args.num_trials):
-                    if supervisor.should_stop():
-                        break
+    with tf.Session() as sess:
+        with sess.as_default():
+            for run_i in range(args.num_runs):
+                tqdm.write("%sBeginning training run %i.%s\n\n" % (colors.BOLD, run_i, colors.ENDC))
+                sess.run(tf.initialize_all_variables())
 
+                for i in trange(args.num_trials):
                     tqdm.write("\n%s===========\nLISTENER TRIAL\n===========%s"
                             % (colors.HEADER, colors.ENDC))
                     run_listener_trial(listener_model, speaker_model, train_op,
