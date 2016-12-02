@@ -589,31 +589,34 @@ def run_listener_trial(listener_model, speaker_model, listener_train_op,
     env.configure(dreaming=False)
     obs = env.reset()
 
-    lfs, lf_weights = infer_trial(env, obs, listener_model, speaker_model, args)
-    lfs = sorted(zip(lfs, lf_weights), key=lambda el: el[1], reverse=True)
+    num_rejections = np.inf
+    while num_rejections > 50:
+        lfs, lf_weights, num_rejections = \
+                infer_trial(env, obs, listener_model, speaker_model, args)
+        lfs = sorted(zip(lfs, lf_weights), key=lambda el: el[1], reverse=True)
 
-    # Now select action based on maximum generative score.
-    lf_pred = lfs[0][0]
-    _, reward, _, _ = env.step(lf_pred)
-    tqdm.write("%f" % reward)
+        # Now select action based on maximum generative score.
+        lf_pred = lfs[0][0]
+        _, reward, _, _ = env.step(lf_pred)
+        tqdm.write("%f" % reward)
 
-    # Find the highest-scoring LF that dereferences to the correct referent.
-    gold_lf, gold_lf_pos = None, -1
-    for i, (lf_i, weight_i) in enumerate(lfs):
-        resolved = env.resolve_lf(lf_i)
-        if resolved and resolved[0]["target"]:
-            gold_lf = lf_i
-            gold_lf_pos = i
-            break
-    if gold_lf is not None:
-        print("gold", env.describe_lf(gold_lf), gold_lf_pos)
+        # Find the highest-scoring LF that dereferences to the correct referent.
+        gold_lf, gold_lf_pos = None, -1
+        for i, (lf_i, weight_i) in enumerate(lfs):
+            resolved = env.resolve_lf(lf_i)
+            if resolved and resolved[0]["target"]:
+                gold_lf = lf_i
+                gold_lf_pos = i
+                break
+        if gold_lf is not None:
+            print("gold", env.describe_lf(gold_lf), gold_lf_pos)
 
-    # Update listener parameters.
-    listener_model.observe(obs, lf_pred, reward, gold_lf, listener_train_op)
+        # Update listener parameters.
+        listener_model.observe(obs, lf_pred, reward, gold_lf, listener_train_op)
 
-    # Update speaker parameters.
-    if gold_lf is not None:
-        speaker_model.observe(obs, gold_lf)
+        # Update speaker parameters.
+        if gold_lf is not None:
+            speaker_model.observe(obs, gold_lf)
 
 
 def run_dream_trial(listener_model, generative_model, env, sess, args):
@@ -627,47 +630,48 @@ def run_dream_trial(listener_model, generative_model, env, sess, args):
                     if referent["target"]][0]
     referent = env._domain[referent_idx]
 
-    success = False
-    i = 0
-    while not success:
-        print("Dream trial %i" % i)
+    for run_i in range(2):
+        success = False
+        i = 0
+        while not success:
+            print("Dream trial %i" % i)
 
-        # Sample an LF from p(z|r).
-        g_lf = env.sample_lf(referent=referent_idx)
+            # Sample an LF from p(z|r).
+            g_lf = env.sample_lf(referent=referent_idx)
 
-        # Sample utterances from p(u|z).
-        words = generative_model.sample(g_lf).split()
-        word_ids = np.array([env.word2idx[word]
-                                  for word in words])
+            # Sample utterances from p(u|z).
+            words = generative_model.sample(g_lf).split()
+            word_ids = np.array([env.word2idx[word]
+                                    for word in words])
 
-        g_ut = np.zeros(env.vocab_size)
-        g_ut[word_ids] = 1
+            g_ut = np.zeros(env.vocab_size)
+            g_ut[word_ids] = 1
 
-        # Run listener model q(z|u).
-        l_lf = listener_model.sample(g_ut, words)
-        # Literally dereference and see if we get the expected referent.
-        # TODO: run multiple particles through this whole process!
-        l_referent = env.resolve_lf(l_lf)
-        if l_referent:
-            success = l_referent[0] == referent
+            # Run listener model q(z|u).
+            l_lf = listener_model.sample(g_ut, words)
+            # Literally dereference and see if we get the expected referent.
+            # TODO: run multiple particles through this whole process!
+            l_referent = env.resolve_lf(l_lf)
+            if l_referent:
+                success = l_referent[0] == referent
 
-        print(
-"""    Referent:\t\t%s
+            print(
+    """    Referent:\t\t%s
     z ~ p(z|r):\t\t%s
     u ~ p(u|z):\t\t%s
     z' ~ q(z|u):\t%s
     Deref:\t\t%s""" %
-              (referent["attributes"][args.atom_attribute],
-               env.describe_lf(g_lf),
-               " ".join([env.vocab[idx] for idx, count in enumerate(g_ut) if count]),
-               env.describe_lf(l_lf),
-               [l_referent_i["attributes"][args.atom_attribute] for l_referent_i in l_referent]))
+                (referent["attributes"][args.atom_attribute],
+                env.describe_lf(g_lf),
+                " ".join([env.vocab[idx] for idx, count in enumerate(g_ut) if count]),
+                env.describe_lf(l_lf),
+                [l_referent_i["attributes"][args.atom_attribute] for l_referent_i in l_referent]))
 
-        i += 1
+            i += 1
 
-    # Construct an "observation" for the generative model.
-    obs = (items, g_ut, words)
-    generative_model.observe(obs, g_lf)
+        # Construct an "observation" for the generative model.
+        obs = (items, g_ut, words)
+        generative_model.observe(obs, g_lf)
 
 
 def build_train_graph(model, env, args):
