@@ -590,7 +590,8 @@ def run_listener_trial(listener_model, speaker_model, listener_train_op,
     obs = env.reset()
 
     num_rejections = np.inf
-    while num_rejections > 50:
+    # TODO: magic number
+    while num_rejections > 30:
         lfs, lf_weights, num_rejections = \
                 infer_trial(env, obs, listener_model, speaker_model, args)
         lfs = sorted(zip(lfs, lf_weights), key=lambda el: el[1], reverse=True)
