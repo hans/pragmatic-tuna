@@ -107,23 +107,22 @@ class DiscreteGenerativeModel(object):
         u = obs[2]
         z = gold_lf
 
+        for lf_token in z:
+            self.counter[lf_token].update(u)
+
         words = []
         words.extend(u)
         words.append(self.END_TOKEN)
 
-        lf_tokens = z
         prev_word = self.START_TOKEN
         for word in words:
-            if word != self.END_TOKEN:
-                self.counter[word].update(lf_tokens)
             self.bigramcounter[prev_word][word] +=1
             self.unigramcounter[word] +=1
             prev_word = word
 
-
     def _score_word_atom(self, word, atom):
-        score = self.counter[word][atom]
-        denom = sum(self.counter[word].values())
+        score = self.counter[atom][word]
+        denom = sum(self.counter[atom].values())
         if self.smooth:
           score += 1
           denom += len(self.env.vocab)
@@ -563,7 +562,7 @@ def infer_trial(env, obs, listener_model, speaker_model, args):
         weights.append(weight)
 
         # Debug logging.
-        print("LF %20s  =>  Referent %10s  =>  Gen LF %20s  =>  %f" %
+        print("LF %30s  =>  Referent %10s  =>  Gen LF %30s  =>  %f" %
               (env.describe_lf(lf),
                env._domain[referent]["attributes"][args.atom_attribute],
                env.describe_lf(g_lf),
