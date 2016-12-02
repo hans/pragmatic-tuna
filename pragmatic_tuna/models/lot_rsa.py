@@ -169,7 +169,6 @@ class DiscreteGenerativeModel(object):
 
     def score(self, z, u_bag, u):
         # Limit utterance lengths to LF length.
-        print(z, u)
         if len(u) > len(z):
             return -np.Inf
         #compute translation probability p(u|z)
@@ -502,8 +501,6 @@ class WindowedSequenceListenerModel(ListenerModel):
                     valid = False
 
             if valid:
-                print(ret_sample)
-                print(" ".join(self.env.lf_vocab[idx] for idx in ret_sample))
                 return ret_sample
 
     def observe(self, obs, lf_pred, reward, gold_lf, train_op):
