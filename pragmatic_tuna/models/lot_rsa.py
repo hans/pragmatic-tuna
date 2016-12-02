@@ -94,15 +94,15 @@ class DiscreteGenerativeModel(object):
     START_TOKEN = "<s>"
     END_TOKEN = "</s>"
 
-    def __init__(self, vocab_size, max_conjuncts, env, smooth=True):
+    def __init__(self, env, max_timesteps=4, smooth=True):
         self.smooth = smooth
+        self.vocab_size = env.vocab_size
+        self.max_conjuncts = max_timesteps / 2
+        self.env = env
+
         self.counter = defaultdict(lambda: Counter())
         self.bigramcounter = defaultdict(lambda: Counter())
         self.unigramcounter = Counter()
-        self.vocab_size = vocab_size
-        self.max_conjuncts = max_conjuncts
-        #TODO: better way to pass the env to the model?
-        self.env = env
 
     def observe(self, obs, gold_lf):
         u = obs[2]
@@ -691,10 +691,10 @@ def train(args):
     env = TUNAWithLoTEnv(args.corpus_path, corpus_selection=args.corpus_selection,
                          bag=args.bag_env, functions=FUNCTIONS[args.fn_selection],
                          atom_attribute=args.atom_attribute)
-    model = WindowedSequenceListenerModel(env)
-    train_op, global_step = build_train_graph(model, env, args)
-    generative_model = DiscreteGenerativeModel(env.vocab_size, 3, env) # TODO fixed
+    listener_model = WindowedSequenceListenerModel(env)
+    speaker_model = DiscreteGenerativeModel(env)
 
+    train_op, global_step = build_train_graph(listener_model, env, args)
     supervisor = tf.train.Supervisor(logdir=args.logdir, global_step=global_step,
                                      summary_op=None)
     for run_i in range(args.num_runs):
@@ -707,12 +707,14 @@ def train(args):
 
                     tqdm.write("\n%s===========\nLISTENER TRIAL\n===========%s"
                             % (colors.HEADER, colors.ENDC))
-                    run_listener_trial(model, generative_model, train_op, env, sess, args)
+                    run_listener_trial(listener_model, speaker_model, train_op,
+                                       env, sess, args)
 
                     if args.dream:
                         tqdm.write("\n%s===========\nDREAM TRIAL\n===========%s"
                                 % (colors.HEADER, colors.ENDC))
-                        run_dream_trial(model, generative_model, env, sess, args)
+                        run_dream_trial(listener_model, speaker_model,
+                                        env, sess, args)
 
 
 if __name__ == "__main__":
