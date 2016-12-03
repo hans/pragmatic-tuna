@@ -534,6 +534,7 @@ def infer_trial(env, obs, listener_model, speaker_model, args):
     Returns:
         lfs: LF IDs sampled from `listener_model`
         weights: Associated weight `p(z, u)` for each LF
+        rejs_per_sample:
     """
 
     items, utterance_bag, words = obs
@@ -572,9 +573,11 @@ def infer_trial(env, obs, listener_model, speaker_model, args):
                env.describe_lf(g_lf),
                weight))
 
-    print("%sNum rejections: %i%s" % (colors.BOLD + colors.WARNING, num_rejections, colors.ENDC))
+    rejs_per_sample = num_rejections / args.num_listener_samples
+    print("%sRejections per sample: %.2f%s" % (colors.BOLD + colors.WARNING,
+                                             rejs_per_sample, colors.ENDC))
 
-    return lfs, weights, num_rejections
+    return lfs, weights, rejs_per_sample
 
 
 def run_listener_trial(listener_model, speaker_model, listener_train_op,
@@ -589,10 +592,10 @@ def run_listener_trial(listener_model, speaker_model, listener_train_op,
     env.configure(dreaming=False)
     obs = env.reset()
 
-    num_rejections = np.inf
+    rejs_per_sample = np.inf
     # TODO: magic number
-    while num_rejections > 30:
-        lfs, lf_weights, num_rejections = \
+    while rejs_per_sample > 3:
+        lfs, lf_weights, rejs_per_sample = \
                 infer_trial(env, obs, listener_model, speaker_model, args)
         lfs = sorted(zip(lfs, lf_weights), key=lambda el: el[1], reverse=True)
 
@@ -735,7 +738,7 @@ def train(args):
                 sess.run(tf.initialize_all_variables())
 
                 for i in trange(args.num_trials):
-                    tqdm.write("\n%s===========\nLISTENER TRIAL\n===========%s"
+                    tqdm.write("\n%s==============\nLISTENER TRIAL\n==============%s"
                             % (colors.HEADER, colors.ENDC))
                     run_listener_trial(listener_model, speaker_model, train_op,
                                        env, sess, args)
