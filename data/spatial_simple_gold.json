@@ -1,0 +1,6 @@
+[
+    ["square", ["id(square)", "id(square) AND id(square)"]],
+    ["circle", ["id(circle)", "id(circle) AND id(circle)"]],
+    ["above square", ["id(circle) AND above(square)", "above(square) AND id(circle)", "above(square)", "above(square) AND above(square)"]],
+    ["above circle", ["id(square) AND above(circle)", "above(circle) AND id(square)", "above(circle)", "above(circle) AND above(circle)"]]
+]

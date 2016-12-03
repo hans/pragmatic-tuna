@@ -1,6 +1,8 @@
 from argparse import ArgumentParser
 from collections import Counter, defaultdict, namedtuple
 from itertools import permutations
+import json
+import re
 
 import numpy as np
 import tensorflow as tf
@@ -682,7 +684,7 @@ def run_dream_trial(listener_model, generative_model, env, sess, args):
         generative_model.observe(obs, g_lf)
 
 
-def eval_models(listener_model, speaker_model, env, args):
+def sample_models(listener_model, speaker_model, env, args):
     listener_samples = []
     for num_trials in range(5):
         env.configure(dreaming=False)
@@ -700,6 +702,35 @@ def eval_models(listener_model, speaker_model, env, args):
         speaker_samples.append((words, env.describe_lf(lf)))
 
     return listener_samples, speaker_samples
+
+
+def eval_model(listener_model, examples, env):
+    """
+    Evaluate the listener model relative to ground-truth utterance-LF pairs.
+
+    Args:
+        listener_model:
+        examples: Pairs of `(words_string, lf_candidates)`
+    """
+    results = []
+    for words_string, lf_candidates in examples:
+        words = words_string.strip().split()
+
+        lf_candidate_tok_ids = []
+        for lf_candidate in lf_candidates:
+            tokens = re.split("[()]| AND ", lf_candidate.strip())
+            ids = [env.lf_token_to_id[token] for token in tokens if token]
+            lf_candidate_tok_ids.append(tuple(ids))
+
+        # DEV: assumes we're using a non-BOW listener model
+        sampled_lf = listener_model.sample(None, words)
+        success = tuple(sampled_lf) in lf_candidate_tok_ids
+        results.append((words_string, env.describe_lf(sampled_lf), success))
+
+        color = colors.OKGREEN if success else colors.FAIL
+        print("\t%s%30s => %30s%s" % (color, words_string, env.describe_lf(sampled_lf), colors.ENDC))
+
+    return results
 
 
 def build_train_graph(model, env, args):
@@ -749,17 +780,28 @@ def train(args):
                         run_dream_trial(listener_model, speaker_model,
                                         env, sess, args)
 
-                # DEV: print samples from listener, speaker model
+                # Print samples from listener, speaker model
                 print("\n%s=======\nSAMPLES\n=======%s"
                       % (colors.HEADER, colors.ENDC))
                 listener_samples, speaker_samples = \
-                        eval_models(listener_model, speaker_model, env, args)
+                        sample_models(listener_model, speaker_model, env, args)
                 print("%sListener model (u -> z)%s" % (colors.BOLD, colors.ENDC))
                 for words, lf in listener_samples:
                     print("\t%30s => %30s" % (words, lf))
                 print("%sSpeaker model (z -> u)%s" % (colors.BOLD, colors.ENDC))
                 for words, lf in speaker_samples:
                     print("\t%30s => %30s" % (lf, words))
+
+                if args.gold_path:
+                    with open(args.gold_path, "r") as gold_f:
+                        listener_examples = json.load(gold_f)
+
+                        print("\n%s==========\nEVALUATION\n==========%s"
+                              % (colors.HEADER, colors.ENDC))
+                        eval_results = eval_model(listener_model, listener_examples, env)
+                        n_success = len([result for _, _, result in eval_results if result])
+                        accuracy = n_success / len(eval_results)
+                        print("%sAccuracy: %.3f%%%s" % (colors.BOLD, accuracy * 100, colors.ENDC))
 
 
 if __name__ == "__main__":
@@ -773,6 +815,9 @@ if __name__ == "__main__":
     p.add_argument("--fn_selection", default="spatial_simple",
                    choices=FUNCTIONS.keys())
     p.add_argument("--atom_attribute", default="shape")
+    p.add_argument("--gold_path",
+                   help=("Path to JSON file containing gold listener "
+                         "utterance -> LF interpretations"))
 
     p.add_argument("--bag_env", default=False, action="store_true")
     p.add_argument("--item_repr_dim", type=int, default=64)
