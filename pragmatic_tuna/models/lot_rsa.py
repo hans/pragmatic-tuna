@@ -249,6 +249,32 @@ class DiscreteGenerativeModel(object):
         return utterances[idx]
 
 
+class OracleSpatialSimpleGenerativeModel(object):
+    
+    def __init__(self, env, max_timesteps=4, smooth=True):
+        self.env = env
+        
+    def observe(self, obs, gold_lf):
+        pass
+    
+    def score(self, z, u_bag, u):
+        gold_u = self.sample(z)
+        if u == gold_u.split():
+            return 1
+        else:
+            return 0
+     
+    def sample(self, z):
+        if len(z) == 4 and z[0:1] == z[2:3]:
+            z = z[0:1]
+        
+        if self.env.lf_vocab[z[0]] == "id":
+            return self.env.lf_vocab[z[1]]
+        else:
+            return self.env.lf_vocab[z[0]] + " " + self.env.lf_vocab[z[1]]
+        
+
+
 class ListenerModel(object):
 
     """
@@ -758,10 +784,11 @@ def train(args):
     env = TUNAWithLoTEnv(args.corpus_path, corpus_selection=args.corpus_selection,
                          bag=args.bag_env, functions=FUNCTIONS[args.fn_selection],
                          atom_attribute=args.atom_attribute)
-    listener_model = WindowedSequenceListenerModel(env)
-    speaker_model = DiscreteGenerativeModel(env)
+    listener_model = WindowedSequenceListenerModel(env, embedding_dim=args.embedding_dim)
+    speaker_model = OracleSpatialSimpleGenerativeModel(env)
 
     train_op, global_step = build_train_graph(listener_model, env, args)
+    accuracies = []
     with tf.Session() as sess:
         with sess.as_default():
             for run_i in range(args.num_runs):
@@ -801,8 +828,15 @@ def train(args):
                         eval_results = eval_model(listener_model, listener_examples, env)
                         n_success = len([result for _, _, result in eval_results if result])
                         accuracy = n_success / len(eval_results)
+                        accuracies.append(accuracy)
                         print("%sAccuracy: %.3f%%%s" % (colors.BOLD, accuracy * 100, colors.ENDC))
-
+                        
+    if args.gold_path:
+        print("\n%s==========\nOVERALL EVALUATION\n==========%s"
+              % (colors.HEADER, colors.ENDC))
+        avg_accuracy = np.mean(accuracies)
+        print("%sAverage accuracy: %.3f%%%s" % (colors.BOLD, avg_accuracy * 100, colors.ENDC))
+        
 
 if __name__ == "__main__":
     p = ArgumentParser()
@@ -832,5 +866,6 @@ if __name__ == "__main__":
     p.add_argument("--num_trials", default=100, type=int)
     p.add_argument("--learning_rate", default=0.1, type=float)
     p.add_argument("--momentum", default=0.9, type=float)
+    p.add_argument("--embedding_dim", default=10, type=int)
 
     train(p.parse_args())
