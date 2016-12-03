@@ -294,7 +294,7 @@ class WindowedSequenceSpeakerModel(object):
             null_embedding = tf.gather(self.word_embeddings, self.env.word_unk_id)
 
             # Now run a teeny utterance decoder.
-            outputs, samples = [], []
+            outputs, probs, samples = [], [], []
             output_dim = self.env.vocab_size
             prev_sample = null_embedding
             for t in range(self.max_timesteps):
@@ -302,6 +302,7 @@ class WindowedSequenceSpeakerModel(object):
                     input_t = tf.concat(0, [prev_sample, lf_window])
                     output_t = layers.fully_connected(tf.expand_dims(input_t, 0),
                                                       output_dim, tf.identity)
+                    probs_t = tf.squeeze(tf.nn.softmax(output_t))
 
                     # Sample an LF token and provide as feature to next timestep.
                     sample_t = tf.squeeze(tf.multinomial(output_t, num_samples=1))
@@ -310,9 +311,11 @@ class WindowedSequenceSpeakerModel(object):
                     # TODO support stop token here?
 
                     outputs.append(output_t)
+                    probs.append(probs_t)
                     samples.append(sample_t)
 
             self.outputs = outputs
+            self.probs = probs
             self.samples = samples
 
     def build_xent_gradients(self):
@@ -350,6 +353,19 @@ class WindowedSequenceSpeakerModel(object):
         ret = sample[:stop_idx]
 
         return " ".join(self.env.vocab[idx] for idx in ret)
+
+    def score(self, z, u_bag, u):
+        sess = tf.get_default_session()
+
+        z = self._pad_lf_idxs(z)
+        words = [self.env.word2idx[word] for word in u]
+
+        feed = {self.lf_toks: z}
+        feed.update({self.samples[t]: word for t, word in enumerate(words)})
+
+        probs = sess.run(self.probs[:len(words)], feed)
+        probs = [probs_t[word_t] for probs_t, word_t in zip(probs, words)]
+        return np.prod(probs)
 
 
 class ListenerModel(object):
