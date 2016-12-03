@@ -285,6 +285,9 @@ class TUNAWithLoTEnv(TUNAEnv):
         return []
 
     def resolve_lf(self, id_list):
+        if len(id_list) == 0:
+            return []
+
         matches = self._domain
         for fn_id, atom_id in zip(id_list[::2], id_list[1::2]):
             fn = self.lf_function_map[self.lf_vocab[fn_id]]
