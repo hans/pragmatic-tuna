@@ -553,6 +553,8 @@ class WindowedSequenceListenerModel(ListenerModel):
 
     def _build_graph(self):
         with self._scope:
+            self.is_testing = tf.constant(False)
+
             # TODO: padding representation?
             self.words = tf.placeholder(tf.int32, shape=(self.max_timesteps,),
                                         name="words")
@@ -578,8 +580,15 @@ class WindowedSequenceListenerModel(ListenerModel):
                     output_t = layers.fully_connected(tf.expand_dims(input_t, 0),
                                                       output_dim, tf.identity)
 
-                    # Sample an LF token and provide as feature to next timestep.
-                    sample_t = tf.squeeze(tf.multinomial(output_t, num_samples=1))
+                    # If testing: argmax-select decoded token.
+                    #
+                    # If training: sample an LF token and provide as feature to
+                    # next timestep.
+                    sample_t = tf.squeeze(tf.cond(self.is_testing,
+                            lambda: tf.argmax(output_t, 1),
+                            lambda: tf.multinomial(output_t, num_samples=1)))
+                    # Hack shape.
+                    sample_t.set_shape(())
                     prev_sample = tf.nn.embedding_lookup(lf_embeddings, sample_t)
 
                     # TODO support stop token here?
@@ -623,9 +632,10 @@ class WindowedSequenceListenerModel(ListenerModel):
         word_idxs += [0] * (self.max_timesteps - len(word_idxs))
         return word_idxs
 
-    def sample(self, utterance_bag, words):
+    def sample(self, utterance_bag, words, is_testing=False):
         sess = tf.get_default_session()
-        feed = {self.words: self._get_word_idxs(words)}
+        feed = {self.words: self._get_word_idxs(words),
+                self.is_testing: is_testing}
         # Rejection-sample a valid LF (alternating fn-atom-fn-atom..)
         while True:
             sample = sess.run(self.samples, feed)
@@ -647,6 +657,11 @@ class WindowedSequenceListenerModel(ListenerModel):
 
             if valid:
                 return ret_sample
+            elif is_testing:
+                sample_str = " ".join(self.env.lf_vocab[idx] for idx in sample)
+                print("%sArgmax decoder decoded invalid expression %r. Dying.%s"
+                      % (colors.WARNING, sample_str, colors.ENDC))
+                return []
 
     def observe(self, obs, lf_pred, reward, gold_lf):
         if gold_lf is None:
@@ -868,7 +883,7 @@ def eval_model(listener_model, examples, env):
             lf_candidate_tok_ids.append(tuple(ids))
 
         # DEV: assumes we're using a non-BOW listener model
-        sampled_lf = listener_model.sample(None, words)
+        sampled_lf = listener_model.sample(None, words, is_testing=True)
         success = tuple(sampled_lf) in lf_candidate_tok_ids
         results.append((words_string, env.describe_lf(sampled_lf), success))
 
