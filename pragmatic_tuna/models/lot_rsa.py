@@ -820,7 +820,7 @@ def run_dream_trial(listener_model, generative_model, env, sess, args):
                 g_ut[word_ids] = 1
 
             # Run listener model q(z|u).
-            l_lf = listener_model.sample(g_ut, words)
+            l_lf = listener_model.sample(g_ut, words, is_testing=True)
             # Literally dereference and see if we get the expected referent.
             # TODO: run multiple particles through this whole process!
             l_referent = env.resolve_lf(l_lf)
