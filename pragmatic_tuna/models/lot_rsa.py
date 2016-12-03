@@ -555,7 +555,8 @@ class WindowedSequenceListenerModel(ListenerModel):
 
     def _build_graph(self):
         with self._scope:
-            self.is_testing = tf.constant(False)
+            self.temperature = tf.constant(1.0, name="sampling_temperature")
+            self.is_testing = tf.constant(False, name="is_testing")
 
             # TODO: padding representation?
             self.words = tf.placeholder(tf.int32, shape=(self.max_timesteps,),
@@ -581,6 +582,8 @@ class WindowedSequenceListenerModel(ListenerModel):
                     input_t = tf.concat(0, [prev_sample, word_window])
                     output_t = layers.fully_connected(tf.expand_dims(input_t, 0),
                                                       output_dim, tf.identity)
+
+                    output_t = tf.div(output_t, self.temperature)
 
                     # If testing: argmax-select decoded token.
                     #
@@ -634,11 +637,13 @@ class WindowedSequenceListenerModel(ListenerModel):
         word_idxs += [0] * (self.max_timesteps - len(word_idxs))
         return word_idxs
 
-    def sample(self, utterance_bag, words, is_testing=False):
+    def sample(self, utterance_bag, words, temperature=1.0, is_testing=False):
         sess = tf.get_default_session()
         feed = {self.words: self._get_word_idxs(words),
+                self.temperature: temperature,
                 self.is_testing: is_testing}
         # Rejection-sample a valid LF (alternating fn-atom-fn-atom..)
+        attempts = 0
         while True:
             sample = sess.run(self.samples, feed)
             ret_sample = []
@@ -664,6 +669,11 @@ class WindowedSequenceListenerModel(ListenerModel):
                 print("%sArgmax decoder decoded invalid expression %r. Dying.%s"
                       % (colors.WARNING, sample_str, colors.ENDC))
                 return []
+
+            attempts += 1
+            if attempts > 1000:
+                print("%sFailed to sample LF for %r after 1000 attempts. Dying.%s"
+                      % (colors.FAIL, " ".join(words), colors.ENDC))
 
     def observe(self, obs, lf_pred, reward, gold_lf):
         if gold_lf is None:
@@ -820,7 +830,7 @@ def run_dream_trial(listener_model, generative_model, env, sess, args):
                 g_ut[word_ids] = 1
 
             # Run listener model q(z|u).
-            l_lf = listener_model.sample(g_ut, words, is_testing=True)
+            l_lf = listener_model.sample(g_ut, words, temperature=0.5)
             # Literally dereference and see if we get the expected referent.
             # TODO: run multiple particles through this whole process!
             l_referent = env.resolve_lf(l_lf)
@@ -843,10 +853,12 @@ def run_dream_trial(listener_model, generative_model, env, sess, args):
             if i > 1000:
                 print("%sFailed to dream successfully after 1000 trials. Dying.%s"
                       % (colors.FAIL, colors.ENDC))
+                break
 
-        # Construct an "observation" for the generative model.
-        obs = (items, g_ut, words)
-        generative_model.observe(obs, g_lf)
+        if success:
+            # Construct an "observation" for the generative model.
+            obs = (items, g_ut, words)
+            generative_model.observe(obs, g_lf)
 
 
 def sample_models(listener_model, speaker_model, env, args):
