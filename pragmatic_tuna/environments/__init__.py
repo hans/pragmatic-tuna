@@ -261,11 +261,12 @@ class TUNAWithLoTEnv(TUNAEnv):
         self.lf_atoms = sorted(self.attributes_to_idx[atom_attribute])
 
         # Also prepare a unified LF-language vocabulary
-        self.lf_vocab = [EOS] + self.lf_functions + self.lf_atoms
+        self.lf_vocab = [UNK, EOS] + self.lf_functions + self.lf_atoms
         # No overlap between function and atom names
         assert len(self.lf_vocab) == len(set(self.lf_vocab))
         self.lf_token_to_id = {token: idx for idx, token in enumerate(self.lf_vocab)}
 
+        self.lf_unk_id = self.lf_token_to_id[UNK]
         self.lf_eos_id = self.lf_token_to_id[EOS]
 
     def _resolve_atom(self, atom_str):

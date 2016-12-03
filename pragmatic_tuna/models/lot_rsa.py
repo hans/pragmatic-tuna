@@ -249,6 +249,109 @@ class DiscreteGenerativeModel(object):
         return utterances[idx]
 
 
+class WindowedSequenceSpeakerModel(object):
+
+    """
+    Windowed sequence speaker/decoder model that mirrors
+    `WindowedSequenceListenerModel`.
+    """
+    # could probably be unified with WindowedSequenceListenerModel if there is
+    # sufficient motivation.
+
+    def __init__(self, env, scope="speaker", max_timesteps=4,
+                 word_embeddings=None, lf_embeddings=None, embedding_dim=10):
+        self.env = env
+        self._scope_name = scope
+        self.max_timesteps = max_timesteps
+        self.embedding_dim = embedding_dim
+
+        self._build_embeddings(word_embeddings, lf_embeddings)
+        self._build_graph()
+
+    def _build_embeddings(self, word_embeddings, lf_embeddings):
+        with tf.variable_scope(self._scope_name):
+            emb_shape = (self.env.vocab_size, self.embedding_dim)
+            if word_embeddings is None:
+                word_embeddings = tf.get_variable("word_embeddings", emb_shape)
+            assert tuple(word_embeddings.get_shape().as_list()) == emb_shape
+
+            lf_emb_shape = (len(self.env.lf_vocab), self.embedding_dim)
+            if lf_embeddings is None:
+                lf_embeddings = tf.get_variable("lf_embeddings", shape=lf_emb_shape)
+            assert tuple(lf_embeddings.get_shape().as_list()) == lf_emb_shape
+
+            self.word_embeddings = word_embeddings
+            self.lf_embeddings = lf_embeddings
+
+    def _build_graph(self):
+        with tf.variable_scope(self._scope_name):
+            self.lf_toks = tf.placeholder(tf.int32, shape=(self.max_timesteps,),
+                                          name="lf_toks")
+
+            lf_window = tf.nn.embedding_lookup(self.lf_embeddings, self.lf_toks)
+            lf_window = tf.reshape(lf_window, (-1,))
+
+            null_embedding = tf.gather(self.word_embeddings, self.env.word_unk_id)
+
+            # Now run a teeny utterance decoder.
+            outputs, samples = [], []
+            output_dim = self.env.vocab_size
+            prev_sample = null_embedding
+            for t in range(self.max_timesteps):
+                with tf.variable_scope("recurrence", reuse=t > 0):
+                    input_t = tf.concat(0, [prev_sample, lf_window])
+                    output_t = layers.fully_connected(tf.expand_dims(input_t, 0),
+                                                      output_dim, tf.identity)
+
+                    # Sample an LF token and provide as feature to next timestep.
+                    sample_t = tf.squeeze(tf.multinomial(output_t, num_samples=1))
+                    prev_sample = tf.nn.embedding_lookup(self.word_embeddings, sample_t)
+
+                    # TODO support stop token here?
+
+                    outputs.append(output_t)
+                    samples.append(sample_t)
+
+            self.outputs = outputs
+            self.samples = samples
+
+    def build_xent_gradients(self):
+        gold_words = [tf.zeros((), dtype=tf.int32, name="gold_word_%i" % t)
+                      for t in range(self.max_timesteps)]
+        gold_length = tf.placeholder(tf.int32, shape=(), name="gold_length")
+        losses = [tf.to_float(t < gold_length) *
+                  tf.nn.sparse_softmax_cross_entropy_with_logits(
+                          tf.squeeze(output_t), gold_word_t)
+                  for t, (output_t, gold_word_t)
+                  in enumerate(zip(self.outputs, gold_words))]
+        loss = tf.add_n(losses) / tf.to_float(gold_length)
+
+        params = tf.trainable_variables()
+        gradients = tf.gradients(loss, params)
+
+        self.xent_gold_words = gold_words
+        self.xent_gold_length = gold_length
+        self.xent_gradients = zip(gradients, params)
+
+        return ((self.xent_gold_words, self.xent_gold_length),
+                (self.xent_gradients,))
+
+    def _pad_lf_idxs(self, z):
+        assert len(z) <= self.max_timesteps
+        z_new = z + [self.env.lf_unk_id] * (self.max_timesteps - len(z))
+        return z_new
+
+    def sample(self, z):
+        sess = tf.get_default_session()
+        feed = {self.lf_toks: self._pad_lf_idxs(z)}
+
+        sample = sess.run(self.samples, feed)
+        stop_idx = sample.index(self.env.word_eos_id)
+        ret = sample[:stop_idx]
+
+        return " ".join(self.env.vocab[idx] for idx in ret)
+
+
 class ListenerModel(object):
 
     """
@@ -445,6 +548,9 @@ class WindowedSequenceListenerModel(ListenerModel):
 
                     outputs.append(output_t)
                     samples.append(sample_t)
+
+            self.word_embeddings = word_embeddings
+            self.lf_embeddings = lf_embeddings
 
             self.outputs = outputs
             self.samples = samples
@@ -759,7 +865,7 @@ def train(args):
                          bag=args.bag_env, functions=FUNCTIONS[args.fn_selection],
                          atom_attribute=args.atom_attribute)
     listener_model = WindowedSequenceListenerModel(env)
-    speaker_model = DiscreteGenerativeModel(env)
+    speaker_model = WindowedSequenceSpeakerModel(env)
 
     train_op, global_step = build_train_graph(listener_model, env, args)
     with tf.Session() as sess:
