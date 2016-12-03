@@ -904,7 +904,7 @@ def train(args):
                          bag=args.bag_env, functions=FUNCTIONS[args.fn_selection],
                          atom_attribute=args.atom_attribute)
     listener_model = WindowedSequenceListenerModel(env)
-    speaker_model = WindowedSequenceSpeakerModel(env)
+    speaker_model = DiscreteGenerativeModel(env)
 
     listener_train_op, listener_global_step = \
             build_train_graph(listener_model, env, args, scope="train/listener")
