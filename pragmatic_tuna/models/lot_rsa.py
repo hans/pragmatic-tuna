@@ -16,6 +16,8 @@ from pragmatic_tuna.reinforce import reinforce_episodic_gradients
 from pragmatic_tuna.util import colors
 
 
+
+
 class NaiveGenerativeModel(object):
 
     """
@@ -923,7 +925,7 @@ def train(args):
                          bag=args.bag_env, functions=FUNCTIONS[args.fn_selection],
                          atom_attribute=args.atom_attribute)
     listener_model = WindowedSequenceListenerModel(env)
-    speaker_model = DiscreteGenerativeModel(env)
+    speaker_model = SPEAKER_MODELS[args.speaker_model](env)
 
     listener_train_op, listener_global_step = \
             build_train_graph(listener_model, env, args, scope="train/listener")
@@ -933,7 +935,7 @@ def train(args):
     # check variables after build_train_graph
     listener_model.train_op = listener_train_op
     speaker_model.train_op = speaker_train_op
-
+    accuracies = []
     with tf.Session() as sess:
         with sess.as_default():
             for run_i in range(args.num_runs):
@@ -973,7 +975,20 @@ def train(args):
                         eval_results = eval_model(listener_model, listener_examples, env)
                         n_success = len([result for _, _, result in eval_results if result])
                         accuracy = n_success / len(eval_results)
+                        accuracies.append(accuracy)
                         print("%sAccuracy: %.3f%%%s" % (colors.BOLD, accuracy * 100, colors.ENDC))
+    if args.gold_path:
+        print("\n%s==========\nOVERALL EVALUATION\n==========%s"
+              % (colors.HEADER, colors.ENDC))
+        avg_accuracy = np.mean(accuracies)
+        print("%sAverage accuracy: %.3f%%%s" % (colors.BOLD, avg_accuracy * 100, colors.ENDC))
+
+
+SPEAKER_MODELS = {
+    "naive": lambda env: NaiveGenerativeModel(env),
+    "discrete": lambda env: DiscreteGenerativeModel(env),
+    "window":  lambda env: WindowedSequenceSpeakerModel(env)
+}
 
 
 if __name__ == "__main__":
@@ -1005,5 +1020,7 @@ if __name__ == "__main__":
     p.add_argument("--num_trials", default=100, type=int)
     p.add_argument("--learning_rate", default=0.1, type=float)
     p.add_argument("--momentum", default=0.9, type=float)
+    p.add_argument("--speaker_model", default="discrete", 
+                   choices=SPEAKER_MODELS.keys())
 
     train(p.parse_args())
