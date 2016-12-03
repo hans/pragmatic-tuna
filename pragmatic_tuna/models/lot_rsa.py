@@ -16,6 +16,7 @@ from pragmatic_tuna.reinforce import reinforce_episodic_gradients
 from pragmatic_tuna.util import colors
 
 
+EMBEDDING_INTITIALIZER = tf.truncated_normal_initializer()
 
 
 class NaiveGenerativeModel(object):
@@ -562,14 +563,16 @@ class WindowedSequenceListenerModel(ListenerModel):
                                         name="words")
 
             emb_shape = (self.env.vocab_size, self.embedding_dim)
-            word_embeddings = tf.get_variable("word_embeddings", shape=emb_shape)
+            word_embeddings = tf.get_variable(
+                    "word_embeddings", shape=emb_shape, initializer=EMBEDDING_INTITIALIZER)
 
             word_window = tf.nn.embedding_lookup(word_embeddings, self.words)
             word_window = tf.reshape(word_window, (-1,))
 
             # Create embeddings for LF tokens
             lf_emb_shape = (len(self.env.lf_vocab), self.embedding_dim)
-            lf_embeddings = tf.get_variable("lf_embeddings", shape=lf_emb_shape)
+            lf_embeddings = tf.get_variable(
+                    "lf_embeddings", shape=lf_emb_shape, initializer=EMBEDDING_INTITIALIZER)
             null_embedding = tf.gather(lf_embeddings, self.env.lf_unk_id)
 
             # Now run a teeny LF decoder.
