@@ -840,6 +840,9 @@ def run_dream_trial(listener_model, generative_model, env, sess, args):
                 [l_referent_i["attributes"][args.atom_attribute] for l_referent_i in l_referent]))
 
             i += 1
+            if i > 1000:
+                print("%sFailed to dream successfully after 1000 trials. Dying.%s"
+                      % (colors.FAIL, colors.ENDC))
 
         # Construct an "observation" for the generative model.
         obs = (items, g_ut, words)
