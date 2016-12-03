@@ -679,6 +679,26 @@ def run_dream_trial(listener_model, generative_model, env, sess, args):
         generative_model.observe(obs, g_lf)
 
 
+def eval_models(listener_model, speaker_model, env, args):
+    listener_samples = []
+    for num_trials in range(5):
+        env.configure(dreaming=False)
+        _, utterance_bag, words = env.reset()
+        lf = listener_model.sample(utterance_bag, words)
+        listener_samples.append((" ".join(words), env.describe_lf(lf)))
+
+    speaker_samples = []
+    for num_trials in range(5):
+        env.reset()
+        referent_idx = [i for i, referent in enumerate(env._domain)
+                        if referent["target"]][0]
+        lf = env.sample_lf(referent=referent_idx)
+        words = speaker_model.sample(lf)
+        speaker_samples.append((words, env.describe_lf(lf)))
+
+    return listener_samples, speaker_samples
+
+
 def build_train_graph(model, env, args):
     if args.learning_method == "rl":
         model.build_rl_gradients()
@@ -725,6 +745,18 @@ def train(args):
                                 % (colors.HEADER, colors.ENDC))
                         run_dream_trial(listener_model, speaker_model,
                                         env, sess, args)
+
+                # DEV: print samples from listener, speaker model
+                print("\n%s=======\nSAMPLES\n=======%s"
+                      % (colors.HEADER, colors.ENDC))
+                listener_samples, speaker_samples = \
+                        eval_models(listener_model, speaker_model, env, args)
+                print("%sListener model (u -> z)%s" % (colors.BOLD, colors.ENDC))
+                for words, lf in listener_samples:
+                    print("\t%30s => %30s" % (words, lf))
+                print("%sSpeaker model (z -> u)%s" % (colors.BOLD, colors.ENDC))
+                for words, lf in speaker_samples:
+                    print("\t%30s => %30s" % (lf, words))
 
 
 if __name__ == "__main__":
