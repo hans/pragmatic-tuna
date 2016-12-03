@@ -883,7 +883,11 @@ def build_train_graph(model, env, args, scope="train"):
         model.build_rl_gradients()
         gradients = model.rl_gradients
     elif args.learning_method == "xent":
-        model.build_xent_gradients()
+        try:
+            model.build_xent_gradients()
+        except AttributeError:
+            # Learning not defined.
+            return None, None
         gradients = model.xent_gradients
     else:
         raise NotImplementedError("undefined learning method " + args.learning_method)
