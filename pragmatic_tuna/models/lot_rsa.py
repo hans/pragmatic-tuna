@@ -755,7 +755,7 @@ def run_listener_trial(listener_model, speaker_model,
 
     rejs_per_sample = np.inf
     # TODO: magic number
-    while rejs_per_sample > 3:
+    while rejs_per_sample > args.max_rejections_after_trial:
         lfs, lf_weights, rejs_per_sample = \
                 infer_trial(env, obs, listener_model, speaker_model, args)
         lfs = sorted(zip(lfs, lf_weights), key=lambda el: el[1], reverse=True)
@@ -997,6 +997,7 @@ if __name__ == "__main__":
 
     p.add_argument("--dream", default=False, action="store_true")
     p.add_argument("--num_listener_samples", type=int, default=5)
+    p.add_argument("--max_rejections_after_trial", type=int, default=3)
 
     p.add_argument("--num_runs", default=1, type=int,
                    help="Number of times to repeat entire training process")
