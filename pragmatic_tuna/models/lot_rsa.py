@@ -571,7 +571,7 @@ class WindowedSequenceListenerModel(ListenerModel):
             # Create embeddings for LF tokens
             lf_emb_shape = (len(self.env.lf_vocab), self.embedding_dim)
             lf_embeddings = tf.get_variable("lf_embeddings", shape=lf_emb_shape)
-            null_embedding = tf.gather(lf_embeddings, 0)
+            null_embedding = tf.gather(lf_embeddings, self.env.lf_unk_id)
 
             # Now run a teeny LF decoder.
             outputs, samples = [], []
@@ -634,7 +634,7 @@ class WindowedSequenceListenerModel(ListenerModel):
         # Look up word indices. TODO: padding with something other than UNK..?
         word_idxs = [self.env.word2idx[word] for word in words]
         assert len(word_idxs) <= self.max_timesteps
-        word_idxs += [0] * (self.max_timesteps - len(word_idxs))
+        word_idxs += [self.env.word_unk_id] * (self.max_timesteps - len(word_idxs))
         return word_idxs
 
     def sample(self, utterance_bag, words, temperature=1.0, is_testing=False):
