@@ -265,6 +265,8 @@ class WindowedSequenceSpeakerModel(object):
         self.max_timesteps = max_timesteps
         self.embedding_dim = embedding_dim
 
+        self.train_op = None
+
         self._build_embeddings(word_embeddings, lf_embeddings)
         self._build_graph()
 
@@ -349,10 +351,14 @@ class WindowedSequenceSpeakerModel(object):
         feed = {self.lf_toks: self._pad_lf_idxs(z)}
 
         sample = sess.run(self.samples, feed)
-        stop_idx = sample.index(self.env.word_eos_id)
-        ret = sample[:stop_idx]
+        try:
+            stop_idx = sample.index(self.env.word_eos_id)
+            sample = sample[:stop_idx]
+        except ValueError:
+            # No stop token. No trimming necessary. Pass.
+            pass
 
-        return " ".join(self.env.vocab[idx] for idx in ret)
+        return " ".join(self.env.vocab[idx] for idx in sample)
 
     def score(self, z, u_bag, u):
         sess = tf.get_default_session()
@@ -367,6 +373,21 @@ class WindowedSequenceSpeakerModel(object):
         probs = [probs_t[word_t] for probs_t, word_t in zip(probs, words)]
         return np.prod(probs)
 
+    def observe(self, obs, gold_lf):
+        z = self._pad_lf_idxs(gold_lf)
+
+        words = [self.env.word2idx[word] for word in obs[2]]
+        real_length = min(len(words) + 1, self.max_timesteps) # train to output a single EOS token
+        # Add a EOS token to words
+        if len(words) < self.max_timesteps:
+            words.append(self.env.word_eos_id)
+
+        sess = tf.get_default_session()
+        feed = {self.lf_toks: z, self.xent_gold_length: real_length}
+        feed.update({self.xent_gold_words[t]: word_t
+                     for t, word_t in enumerate(words)})
+        sess.run(self.train_op, feed)
+
 
 class ListenerModel(object):
 
@@ -380,6 +401,7 @@ class ListenerModel(object):
         self.env = env
         self._scope = tf.variable_scope(scope)
         self.feeds = []
+        self.train_op = None
 
         self._build_graph()
 
@@ -395,7 +417,7 @@ class ListenerModel(object):
     def sample(self, utterance_bag, words):
         raise NotImplementedError
 
-    def observe(self, obs, lf_pred, reward, gold_lf, train_op):
+    def observe(self, obs, lf_pred, reward, gold_lf):
         raise NotImplementedError
 
 
@@ -492,7 +514,7 @@ class SimpleListenerModel(ListenerModel):
         # Jump through some hoops to make sure we sample a valid fn(atom) LF
         return self._id_to_list(lf)
 
-    def observe(self, obs, lf_pred, reward, gold_lf, train_op):
+    def observe(self, obs, lf_pred, reward, gold_lf):
         lf_pred = self._list_to_id(lf_pred)
         if gold_lf is not None:
             gold_lf = self._list_to_id(gold_lf)
@@ -511,7 +533,7 @@ class SimpleListenerModel(ListenerModel):
             raise RuntimeError("no gradients defined")
 
         sess = tf.get_default_session()
-        sess.run(train_op, train_feeds)
+        sess.run(self.train_op, train_feeds)
 
 
 class WindowedSequenceListenerModel(ListenerModel):
@@ -626,7 +648,7 @@ class WindowedSequenceListenerModel(ListenerModel):
             if valid:
                 return ret_sample
 
-    def observe(self, obs, lf_pred, reward, gold_lf, train_op):
+    def observe(self, obs, lf_pred, reward, gold_lf):
         if gold_lf is None:
             return
 
@@ -641,7 +663,7 @@ class WindowedSequenceListenerModel(ListenerModel):
                      for t in range(self.max_timesteps)})
 
         sess = tf.get_default_session()
-        sess.run(train_op, feed)
+        sess.run(self.train_op, feed)
 
 
 def infer_trial(env, obs, listener_model, speaker_model, args):
@@ -704,7 +726,7 @@ def infer_trial(env, obs, listener_model, speaker_model, args):
     return lfs, weights, rejs_per_sample
 
 
-def run_listener_trial(listener_model, speaker_model, listener_train_op,
+def run_listener_trial(listener_model, speaker_model,
                        env, sess, args):
     """
     Run single recognition trial.
@@ -744,7 +766,7 @@ def run_listener_trial(listener_model, speaker_model, listener_train_op,
             print("gold", env.describe_lf(gold_lf), gold_lf_pos)
 
         # Update listener parameters.
-        listener_model.observe(obs, lf_pred, reward, gold_lf, listener_train_op)
+        listener_model.observe(obs, lf_pred, reward, gold_lf)
 
         # Update speaker parameters.
         if gold_lf is not None:
@@ -777,7 +799,8 @@ def run_dream_trial(listener_model, generative_model, env, sess, args):
                                     for word in words])
 
             g_ut = np.zeros(env.vocab_size)
-            g_ut[word_ids] = 1
+            if len(word_ids):
+                g_ut[word_ids] = 1
 
             # Run listener model q(z|u).
             l_lf = listener_model.sample(g_ut, words)
@@ -855,7 +878,7 @@ def eval_model(listener_model, examples, env):
     return results
 
 
-def build_train_graph(model, env, args):
+def build_train_graph(model, env, args, scope="train"):
     if args.learning_method == "rl":
         model.build_rl_gradients()
         gradients = model.rl_gradients
@@ -883,7 +906,15 @@ def train(args):
     listener_model = WindowedSequenceListenerModel(env)
     speaker_model = WindowedSequenceSpeakerModel(env)
 
-    train_op, global_step = build_train_graph(listener_model, env, args)
+    listener_train_op, listener_global_step = \
+            build_train_graph(listener_model, env, args, scope="train/listener")
+    speaker_train_op, speaker_global_step = \
+            build_train_graph(speaker_model, env, args, scope="train/speaker")
+    # TODO does momentum / etc. of shared parameters get shared in this case?
+    # check variables after build_train_graph
+    listener_model.train_op = listener_train_op
+    speaker_model.train_op = speaker_train_op
+
     with tf.Session() as sess:
         with sess.as_default():
             for run_i in range(args.num_runs):
@@ -893,7 +924,7 @@ def train(args):
                 for i in trange(args.num_trials):
                     tqdm.write("\n%s==============\nLISTENER TRIAL\n==============%s"
                             % (colors.HEADER, colors.ENDC))
-                    run_listener_trial(listener_model, speaker_model, train_op,
+                    run_listener_trial(listener_model, speaker_model,
                                        env, sess, args)
 
                     if args.dream:
