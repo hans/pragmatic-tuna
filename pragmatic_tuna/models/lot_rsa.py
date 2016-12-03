@@ -987,7 +987,7 @@ def train(args):
 SPEAKER_MODELS = {
     "naive": lambda env, _: NaiveGenerativeModel(env),
     "discrete": lambda env, _: DiscreteGenerativeModel(env),
-    "window":  lambda env, emb_dim: WindowedSequenceSpeakerModel(env, embedding_dim=embedding_dim)
+    "window":  lambda env, emb_dim: WindowedSequenceSpeakerModel(env, embedding_dim=emb_dim)
 }
 
 
