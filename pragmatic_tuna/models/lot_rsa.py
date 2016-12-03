@@ -924,8 +924,8 @@ def train(args):
     env = TUNAWithLoTEnv(args.corpus_path, corpus_selection=args.corpus_selection,
                          bag=args.bag_env, functions=FUNCTIONS[args.fn_selection],
                          atom_attribute=args.atom_attribute)
-    listener_model = WindowedSequenceListenerModel(env)
-    speaker_model = SPEAKER_MODELS[args.speaker_model](env)
+    listener_model = WindowedSequenceListenerModel(env, embedding_dim=args.embedding_dim)
+    speaker_model = SPEAKER_MODELS[args.speaker_model](env, args.embedding_dim)
 
     listener_train_op, listener_global_step = \
             build_train_graph(listener_model, env, args, scope="train/listener")
@@ -985,9 +985,9 @@ def train(args):
 
 
 SPEAKER_MODELS = {
-    "naive": lambda env: NaiveGenerativeModel(env),
-    "discrete": lambda env: DiscreteGenerativeModel(env),
-    "window":  lambda env: WindowedSequenceSpeakerModel(env)
+    "naive": lambda env, _: NaiveGenerativeModel(env),
+    "discrete": lambda env, _: DiscreteGenerativeModel(env),
+    "window":  lambda env, emb_dim: WindowedSequenceSpeakerModel(env, embedding_dim=embedding_dim)
 }
 
 
@@ -1006,9 +1006,12 @@ if __name__ == "__main__":
                    help=("Path to JSON file containing gold listener "
                          "utterance -> LF interpretations"))
 
+    p.add_argument("--speaker_model", default="discrete",
+                   choices=SPEAKER_MODELS.keys())
     p.add_argument("--bag_env", default=False, action="store_true")
     p.add_argument("--item_repr_dim", type=int, default=64)
     p.add_argument("--utterance_repr_dim", type=int, default=64)
+    p.add_argument("--embedding_dim", type=int, default=10)
 
     p.add_argument("--dream", default=False, action="store_true")
     p.add_argument("--num_listener_samples", type=int, default=5)
@@ -1020,7 +1023,5 @@ if __name__ == "__main__":
     p.add_argument("--num_trials", default=100, type=int)
     p.add_argument("--learning_rate", default=0.1, type=float)
     p.add_argument("--momentum", default=0.9, type=float)
-    p.add_argument("--speaker_model", default="discrete", 
-                   choices=SPEAKER_MODELS.keys())
 
     train(p.parse_args())
