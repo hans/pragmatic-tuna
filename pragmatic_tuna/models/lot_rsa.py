@@ -16,6 +16,7 @@ from pragmatic_tuna.reinforce import reinforce_episodic_gradients
 from pragmatic_tuna.util import colors
 
 
+EMBEDDING_INTITIALIZER = tf.truncated_normal_initializer()
 
 
 class NaiveGenerativeModel(object):
@@ -545,21 +546,22 @@ class WindowedSequenceListenerModel(ListenerModel):
     def _build_graph(self):
         with self._scope:
             self.temperature = tf.constant(1.0, name="sampling_temperature")
-            self.is_testing = tf.constant(False, name="is_testing")
 
             # TODO: padding representation?
             self.words = tf.placeholder(tf.int32, shape=(self.max_timesteps,),
                                         name="words")
 
             emb_shape = (self.env.vocab_size, self.embedding_dim)
-            word_embeddings = tf.get_variable("word_embeddings", shape=emb_shape)
+            word_embeddings = tf.get_variable(
+                    "word_embeddings", shape=emb_shape, initializer=EMBEDDING_INTITIALIZER)
 
             word_window = tf.nn.embedding_lookup(word_embeddings, self.words)
             word_window = tf.reshape(word_window, (-1,))
 
             # Create embeddings for LF tokens
             lf_emb_shape = (len(self.env.lf_vocab), self.embedding_dim)
-            lf_embeddings = tf.get_variable("lf_embeddings", shape=lf_emb_shape)
+            lf_embeddings = tf.get_variable(
+                    "lf_embeddings", shape=lf_emb_shape, initializer=EMBEDDING_INTITIALIZER)
             null_embedding = tf.gather(lf_embeddings, self.env.lf_unk_id)
 
             # Now run a teeny LF decoder.
@@ -572,15 +574,9 @@ class WindowedSequenceListenerModel(ListenerModel):
                     output_t = layers.fully_connected(tf.expand_dims(input_t, 0),
                                                       output_dim, tf.identity)
 
-                    output_t = tf.div(output_t, self.temperature)
+                    output_t /= self.temperature
 
-                    # If testing: argmax-select decoded token.
-                    #
-                    # If training: sample an LF token and provide as feature to
-                    # next timestep.
-                    sample_t = tf.squeeze(tf.cond(self.is_testing,
-                            lambda: tf.argmax(output_t, 1),
-                            lambda: tf.multinomial(output_t, num_samples=1)))
+                    sample_t = tf.squeeze(tf.multinomial(output_t, num_samples=1))
                     # Hack shape.
                     sample_t.set_shape(())
                     prev_sample = tf.nn.embedding_lookup(lf_embeddings, sample_t)
@@ -626,11 +622,10 @@ class WindowedSequenceListenerModel(ListenerModel):
         word_idxs += [self.env.word_unk_id] * (self.max_timesteps - len(word_idxs))
         return word_idxs
 
-    def sample(self, utterance_bag, words, temperature=1.0, is_testing=False):
+    def sample(self, utterance_bag, words, temperature=1.0):
         sess = tf.get_default_session()
         feed = {self.words: self._get_word_idxs(words),
-                self.temperature: temperature,
-                self.is_testing: is_testing}
+                self.temperature: temperature}
         # Rejection-sample a valid LF (alternating fn-atom-fn-atom..)
         attempts = 0
         while True:
@@ -656,16 +651,12 @@ class WindowedSequenceListenerModel(ListenerModel):
             
             if valid and len(ret_sample) == len(words):
                 return ret_sample
-            elif is_testing:
-                sample_str = " ".join(self.env.lf_vocab[idx] for idx in sample)
-                print("%sArgmax decoder decoded invalid expression %r. Dying.%s"
-                      % (colors.WARNING, sample_str, colors.ENDC))
-                return []
 
             attempts += 1
             if attempts > 10000:
                 print("%sFailed to sample LF for %r after 10000 attempts. Dying.%s"
                       % (colors.FAIL, " ".join(words), colors.ENDC))
+                return []
 
     def observe(self, obs, lf_pred, reward, gold_lf):
         if gold_lf is None:
@@ -892,7 +883,7 @@ def eval_model(listener_model, examples, env):
             lf_candidate_tok_ids.append(tuple(ids))
 
         # DEV: assumes we're using a non-BOW listener model
-        sampled_lf = listener_model.sample(None, words, is_testing=True)
+        sampled_lf = listener_model.sample(None, words, temperature=0.001)
         success = tuple(sampled_lf) in lf_candidate_tok_ids
         results.append((words_string, env.describe_lf(sampled_lf), success))
 
