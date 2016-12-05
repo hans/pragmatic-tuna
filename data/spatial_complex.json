@@ -62,7 +62,8 @@
             "above",
             "below",
             "left",
-            "right"
+            "right",
+            "the"
         ],
         "trials": [
             {
@@ -78,7 +79,7 @@
                         "target": true
                     }
                 ],
-                "string_description": "dog"
+                "string_description": "the dog"
             },
             {
                 "id": "learn_sheep",
@@ -93,7 +94,7 @@
                         "target": true
                     }
                 ],
-                "string_description": "sheep"
+                "string_description": "the sheep"
             },
             {
                 "id": "learn_pig",
@@ -108,7 +109,7 @@
                         "target": true
                     }
                 ],
-                "string_description": "pig"
+                "string_description": "the pig"
             },
             {
                 "id": "learn_goat",
@@ -123,7 +124,7 @@
                         "target": true
                     }
                 ],
-                "string_description": "goat"
+                "string_description": "the goat"
             },
             {
                 "id": "learn_cow",
@@ -138,7 +139,7 @@
                         "target": true
                     }
                 ],
-                "string_description": "cow"
+                "string_description": "the cow"
             },
             {
                 "id": "learn_cat",
@@ -162,7 +163,7 @@
                         "target": false
                     }
                 ],
-                "string_description": "cat"
+                "string_description": "the cat"
             },
             {
                 "id": "learn_chicken",
@@ -186,7 +187,7 @@
                         "target": true
                     }
                 ],
-                "string_description": "chicken"
+                "string_description": "the chicken"
             },
             {
                 "id": "learn_donkey",
@@ -219,7 +220,7 @@
                         "target": false
                     }
                 ],
-                "string_description": "donkey"
+                "string_description": "the donkey"
             },
             {
                 "id": "learn_duck",
@@ -243,7 +244,7 @@
                         "target": false
                     }
                 ],
-                "string_description": "duck"
+                "string_description": "the duck"
             },
             {
                 "id": "learn_horse",
@@ -285,7 +286,7 @@
                         "target": true
                     }
                 ],
-                "string_description": "horse"
+                "string_description": "the horse"
             },
             {
                 "id": "learn_above_1",
@@ -309,7 +310,7 @@
                       "target": false
                   }
                 ],
-                "string_description": "chicken above donkey"
+                "string_description": "the chicken above donkey"
             },
             {
                 "id": "learn_above_2",
@@ -333,7 +334,7 @@
                       "target": true
                   }
                 ],
-                "string_description": "cow above dog"
+                "string_description": "the cow above dog"
             },
             {
                 "id": "learn_above_3",
@@ -357,7 +358,7 @@
                       "target": true
                   }
                 ],
-                "string_description": "dog above cow"
+                "string_description": "the dog above cow"
             },
             {
                 "id": "learn_below_1",
@@ -381,7 +382,7 @@
                       "target": false
                   }
                 ],
-                "string_description": "duck below cat"
+                "string_description": "the duck below cat"
             },
             {
                 "id": "learn_below_2",
@@ -405,7 +406,7 @@
                       "target": true
                   }
                 ],
-                "string_description": "donkey below goat"
+                "string_description": "the donkey below goat"
             },
             {
                 "id": "learn_below_3",
@@ -429,7 +430,7 @@
                       "target": false
                   }
                 ],
-                "string_description": "dog below cow"
+                "string_description": "the dog below cow"
             },
             {
                 "id": "learn_left_1",
@@ -453,7 +454,7 @@
                       "target": false
                   }
                 ],
-                "string_description": "sheep left pig"
+                "string_description": "the sheep left pig"
             },
             {
                 "id": "learn_left_2",
@@ -477,7 +478,7 @@
                       "target": true
                   }
                 ],
-                "string_description": "dog left cat"
+                "string_description": "the dog left cat"
             },
             {
                 "id": "learn_left_3",
@@ -501,7 +502,7 @@
                       "target": true
                   }
                 ],
-                "string_description": "dog left cat"
+                "string_description": "the dog left cat"
             },
             {
                 "id": "learn_right_1",
@@ -525,7 +526,7 @@
                       "target": false
                   }
                 ],
-                "string_description": "chicken right donkey"
+                "string_description": "the chicken right donkey"
             },
             {
                 "id": "learn_right_2",
@@ -549,7 +550,7 @@
                       "target": true
                   }
                 ],
-                "string_description": "donkey right cat"
+                "string_description": "the donkey right cat"
             },
             {
                 "id": "learn_right_3",
@@ -573,7 +574,7 @@
                       "target": true
                   }
                 ],
-                "string_description": "goat right sheep"
+                "string_description": "the goat right sheep"
             },
             {
                 "id": "test_1",
@@ -589,8 +590,8 @@
                   },
                   {
                       "attributes": {
-                          "y": 7,
-                          "x": 5,
+                          "y": 5,
+                          "x": 6,
                           "type": "goose"
                       },
                       "id": 1,
@@ -607,8 +608,8 @@
                   },
                   {
                       "attributes": {
-                          "y": 5,
-                          "x": 6,
+                          "y": 1,
+                          "x": 5,
                           "type": "mouse"
                       },
                       "id": 3,
@@ -624,7 +625,7 @@
                       "target": false
                   }
                 ],
-                "string_description": "goose above dog"
+                "string_description": "the goose right dog"
             },
             {
                 "id": "test_2",
@@ -675,7 +676,7 @@
                       "target": false
                   }
                 ],
-                "string_description": "goldfish left dog"
+                "string_description": "the goldfish left dog"
             },
             {
                 "id": "test_3",
@@ -700,8 +701,8 @@
                   },
                   {
                       "attributes": {
-                          "y": 5,
-                          "x": 2,
+                          "y": 1,
+                          "x": 5,
                           "type": "goldfish"
                       },
                       "id": 2,
@@ -718,15 +719,15 @@
                   },
                   {
                       "attributes": {
-                          "y": 1,
-                          "x": 5,
+                          "y": 5,
+                          "x": 2,
                           "type": "hedgehog"
                       },
                       "id": 4,
                       "target": true
                   }
                 ],
-                "string_description": "hedgehog below dog"
+                "string_description": "the hedgehog left dog"
             },
             {
                 "id": "test_4",
@@ -777,7 +778,7 @@
                       "target": false
                   }
                 ],
-                "string_description": "mouse right dog"
+                "string_description": "the mouse right dog"
             }
         ]
     }

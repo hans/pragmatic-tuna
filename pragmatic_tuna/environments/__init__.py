@@ -323,7 +323,7 @@ class TUNAWithLoTEnv(TUNAEnv):
         # Convert to LF token IDs.
         return [self.lf_token_to_id[fn_name], self.lf_token_to_id[atom]]
 
-    def sample_lf(self, referent=None):
+    def sample_lf(self, referent=None, n_parts=None):
         """
         Sample a logical form representation `z ~ p(z|r, w)` for the current
         world `w` with referent `r`.
@@ -341,17 +341,22 @@ class TUNAWithLoTEnv(TUNAEnv):
         available_atoms = list(set([item["attributes"][self.atom_attribute]
                                     for item in self._domain]))
 
-        # Rejection-sample an LF.
+        # Rejection-sample an LF...
         i = 0
         while True:
-            if i > 100:
-                raise RuntimeError("Failed to sample a valid LF after 100 "
+            if i > 1000:
+                raise RuntimeError("Failed to sample a valid LF after 1000 "
                                    "attempts")
 
             # TODO magic here: sampling # of parts
-            n_parts = min(np.random.geometric(0.5), self.max_conjuncts)
+            #n_parts = min(np.random.geometric(0.5), self.max_conjuncts)
+            if n_parts == None:
+                n_parts = self.max_conjuncts
             lf = list(itertools.chain.from_iterable(
                 self.sample_part(available_atoms) for _ in range(n_parts)))
+                
+            if len(lf) > 3 and lf[0:2] == lf[2:4]:
+                lf = lf[0:2]
 
             matches = self.resolve_lf(lf)
             if matches and matches[0] == referent:

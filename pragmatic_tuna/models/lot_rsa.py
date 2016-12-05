@@ -117,7 +117,7 @@ class DiscreteGenerativeModel(object):
 
         words = []
         words.extend(u)
-        words.append(self.END_TOKEN)
+        #words.append(self.END_TOKEN)
 
         prev_word = self.START_TOKEN
         for word in words:
@@ -159,7 +159,7 @@ class DiscreteGenerativeModel(object):
 
         words = []
         words.extend(u)
-        words.append(self.END_TOKEN)
+        #words.append(self.END_TOKEN)
         prob = 0
         for word in u:
             p_bigram = self._score_bigram(prev_word, word)
@@ -173,7 +173,7 @@ class DiscreteGenerativeModel(object):
 
     def score(self, z, u_bag, u):
         # Limit utterance lengths to LF length.
-        if len(u) > len(z):
+        if len(u) != len(z):
             return -np.Inf
         #compute translation probability p(u|z)
         words = u
@@ -203,15 +203,7 @@ class DiscreteGenerativeModel(object):
         u = []
         ps = []
         i = 0
-        while prev_word != self.END_TOKEN:
-            #limit utterance length to the length of the lf
-            if i == len(z):
-               word = self.END_TOKEN
-               u.append(word)
-               prev_word = word
-               #todo compute correct probability
-               ps.append(1.0)
-               break
+        for i in range(len(z)):
 
             bigram_counts = np.array([self.bigramcounter[prev_word][w]
                                         for w in keys])
@@ -227,15 +219,12 @@ class DiscreteGenerativeModel(object):
 
             idx = np.random.choice(len(keys), p=distr)
             word = keys[idx]
-            if len(u) < 1 and word == self.END_TOKEN:
-                continue
             u.append(word)
             prev_word = word
             ps.append(distr[idx])
-            i += 1
-
+            
         p = np.exp(np.sum(np.log(distr)))
-        return " ".join(u[0:-1]), p
+        return " ".join(u[0]), p
 
     def sample(self, z):
         alignments = permutations(range(len(z)))
@@ -661,8 +650,11 @@ class WindowedSequenceListenerModel(ListenerModel):
                     valid = False
                 elif i % 2 == 1 and sample_i_str not in self.env.lf_atoms:
                     valid = False
-
-            if valid:
+            
+            if len(ret_sample) > 3 and ret_sample[0:2] == ret_sample[2:4]:
+                ret_sample = ret_sample[:2]
+            
+            if valid and len(ret_sample) == len(words):
                 return ret_sample
             elif is_testing:
                 sample_str = " ".join(self.env.lf_vocab[idx] for idx in sample)
@@ -671,8 +663,8 @@ class WindowedSequenceListenerModel(ListenerModel):
                 return []
 
             attempts += 1
-            if attempts > 1000:
-                print("%sFailed to sample LF for %r after 1000 attempts. Dying.%s"
+            if attempts > 10000:
+                print("%sFailed to sample LF for %r after 10000 attempts. Dying.%s"
                       % (colors.FAIL, " ".join(words), colors.ENDC))
 
     def observe(self, obs, lf_pred, reward, gold_lf):
@@ -728,7 +720,7 @@ def infer_trial(env, obs, listener_model, speaker_model, args):
         referent = env._domain.index(referent[0])
 
         # Sample an LF z' ~ p(z|r).
-        g_lf = env.sample_lf(referent=referent)
+        g_lf = env.sample_lf(referent=referent, n_parts=len(words) // 2)
 
         # Record unnormalized score p(u, z)
         weight = speaker_model.score(g_lf, utterance_bag, words)
