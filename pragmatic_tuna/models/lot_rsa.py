@@ -412,6 +412,8 @@ class ListenerModel(object):
     def observe(self, obs, lf_pred, reward, gold_lf):
         raise NotImplementedError
 
+    def reset(self):
+        pass
 
 class SimpleListenerModel(ListenerModel):
 
@@ -675,6 +677,207 @@ class WindowedSequenceListenerModel(ListenerModel):
         sess = tf.get_default_session()
         sess.run(self.train_op, feed)
 
+class SkipGramListenerModel(ListenerModel):
+    """
+        MaxEnt model p(z|u) with skip-gram features of utterance
+        and logical form.
+    """
+
+
+    def __init__(self, env, scope="listener"):
+        super(WindowedSequenceListenerModel, self).__init__(env, scope=scope)
+        self.reset()
+        self.vocab_size = len(self.env.word2idx.keys())
+        self.lf_vocab_size = len(self.env.lf_vocab)
+        self.word_feat_count = self.vocab_size * (self.vocab_size + 1)**2
+        self.lf_feat_count = self.lf_vocab_size + (self.lf_vocab_size + 1)**2
+        
+        self.feat_count = self.word_feat_count * self.lf_feat_count
+        
+
+    def _build_graph(self):
+        with self._scope:
+            self.weights = tf.get_variable("weights", shape=(self.feat_count, 1), 
+                                             initializer=tf.constant_initializer(0))
+            self.feats = tf.placeholder(tf.float32, shape=(None, self.feat_count))
+                      
+                      
+            self.scores = tf.squeeze(tf.matmul(self.feats, self.weights))
+            self.probs = tf.nn.softmax(self.scores)
+
+
+
+    """
+        Convert internal LF of form left(dog,cat) to LoT expression
+        id(cat) AND left(dog)
+        
+        Assumes at most 2 conjuncts.
+    """
+    def to_lot_lf(self, lf):        
+        #case 1: id(x)
+        if len(lf) == 1:
+            return [env.lf_token_to_id["id"], lf[0]]
+        #case 2: fn(x)
+        elif len(lf) == 2:
+            return [lf[0], lf[1]]
+        #case 3: 
+        elif len(lf) == 3:
+            return [lf[0]], 
+                    lf[1]],
+                    env.lf_token_to_id["id"],
+                    lf[2]]
+
+    """
+        Convert LoT expression of the form id(cat) AND left(dog) to
+        internal LF of form left(dog,cat)
+                    
+        Assumes at most 2 conjuncts and that one of them has the form id(x).
+    """
+            
+    def from_lot_lf(self, lot):
+        
+        id_idx = self.env.lf_token_to_id["id"]
+        
+        if len(lot) == 2:
+            if lot[0] == id_idx:
+                return lot[1:]
+            else:
+                return lot
+        elif len(lot) == 4:
+            if id_idx not in lot:
+                print("%sfrom_lot_lf: Invalid LF.%s" % (colors.FAIL, colors.ENDC))
+                return []
+            else:
+                if lot[0] == id_idx:
+                    #id(x) and fn(y)
+                    return [lot[2], lot[3], lot[1]]
+                else:
+                    #fn(x) and id(y)
+                    return [lot[0], lot[1], lot[3]]
+                    
+        else:
+            print("%sfrom_lot_lf: Invalid LF.%s" % (colors.FAIL, colors.ENDC))
+            return []
+        
+    def build_xent_gradients(self):
+        """
+        Assuming the client can determine some gold-standard LF for a given
+        trial, we can simply train by cross-entropy (maximize log prob of the
+        gold output).
+        """
+        gold_lf = tf.placeholder(tf.int32, shape=(), name="gold_lf")
+        loss = tf.nn.sparse_softmax_cross_entropy_with_logits(
+                tf.squeeze(self.scores), gold_lf)
+
+        params = tf.trainable_variables()
+        gradients = tf.gradients(loss, params)
+
+        self.xent_gold_lf = gold_lf
+        self.xent_gradients = zip(gradients, params)
+
+        self.feeds.extend([self.xent_gold_lf])
+
+        return (gold_lf,), (gradients,)
+    
+    
+    def featurize_words(self, words):
+        
+        word_idxs = [self.env.word2idx[word] for word in words]
+        
+        
+        #unigrams
+        skip_gram_idxs = word_idxs
+        #bigrams and bi-skip-grams
+        for i in range(len(words)-1):
+            #bigram (add-1, 0=no word, i.e., unigram)
+            idx = word_idxs[i] + self.vocab_size * (word_idxs[i+1]+1)
+            skip_gram_idxs.append(idx)
+        
+        #trigrams and tri-skip-grams:
+        for i in range(len(words)-2):
+            #trigram (add-1, 0=no word
+            idx = word_idxs[i] + self.vocab_size * (word_idxs[i+1]+1) + self.vocab_size * (self.vocab_size + 1) * (word_idxs[i+2]+1)
+            skip_gram_idxs.append(idx)
+            #skip-gram (word * word)
+            idx = word_idxs[i] + self.vocab_size * (self.vocab_size + 1) * (word_idxs[i+2]+1)
+            skip_gram_idxs.append(idx)
+            
+
+
+      
+        #turn into one-hot vectors
+        word_feats = np.zeros((1, self.word_feat_count))
+        word_feats[skip_gram_idxs] = 1
+                    
+        return word_feats
+
+    def featurize_lf(self, lf):
+        lf_idxs = []
+        lf_idxs.extend(lf)
+
+        if len(lf) > 1:
+            idx = lf_idxs[0] + self.lf_vocab_size * (lf_idxs[1]+1)
+            lf_idxs.append(idx)
+        
+        if len(lf) > 2:
+            #trigram (add-1, 0=no token)
+            idx = lf_idxs[0] + self.lf_vocab_size * (lf_idxs[1]+1) + self.lf_vocab_size * (self.lf_vocab_size + 1) * (lf_idxs[2]+1)
+            lf_idxs.append(idx)
+        
+        #turn into one-hot vectors
+        lf_feats = np.zeros(self.lf_feat_count)
+        lf_feats[lf_idxs] = 1
+    return lf_feats
+
+    def sample(self, utterance_bag, words, temperature=None):
+        if len(self.lf_cache) < 1:
+            id_idx = self.env.lf_token_to_id["id"]
+            #TODO: tune this number?
+            for i in range(100):
+                valid = False
+                while not valid:
+                    lf = self.env.sample_lf(n_parts=len(words) // 2)
+                    valid = len(lf) < 3 or id_idx in lf
+            
+                lf =  self.from_lot_lf(lf)
+                self.lf_cache.append(lf)
+                lf_feats = self.featurize_lf(lf)
+                self.lf_feats[i] = lf_feats
+        
+        
+        
+        word_feats = self.featurize_words(words)
+        #take cross product
+        feats = np.zeros((100, self.feat_count))
+        for i in range(100):
+            feats[i] = np.dot(self.lf_feats[i], word_feats).reshape((self.feat_count,))
+        
+                    
+        
+        sess = tf.get_default_session()
+        feed = {self.feats: feats}        
+        
+        probs = sess.run(self.probs, feed)
+        
+        idx = np.sample(len(probs), p=probs)
+        
+        sampled_lf = self.to_lot_lf(self.lf_cache[idx])
+        return sampled_lf
+        
+    def reset(self):
+        self.lf_cache = []
+        lf_vocab_size = len(self.env.lf_vocab)
+        lf_feat_count = lf_vocab_size + (lf_vocab_size + 1)**2
+        self.lf_feats = np.zeros((100, lf_feat_count)) 
+        
+    
+    def observe(self, obs, lf_pred, reward, gold_lf):
+        if gold_lf is None:
+            return
+        #TODO: implement learning
+        return
+        
+        
 
 def infer_trial(env, obs, listener_model, speaker_model, args):
     """
@@ -777,11 +980,11 @@ def run_listener_trial(listener_model, speaker_model,
 
         # Update listener parameters.
         listener_model.observe(obs, lf_pred, reward, gold_lf)
-
+        
         # Update speaker parameters.
         if gold_lf is not None:
             speaker_model.observe(obs, gold_lf)
-
+    listener_model.reset()
 
 def run_dream_trial(listener_model, generative_model, env, sess, args):
     """
