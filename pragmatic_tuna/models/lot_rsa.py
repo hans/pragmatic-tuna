@@ -766,6 +766,8 @@ class SkipGramListenerModel(ListenerModel):
         gold output).
         """
         gold_lf = tf.placeholder(tf.int32, shape=(), name="gold_lf")
+        
+        #TODO: implement correct loss function
         loss = tf.nn.sparse_softmax_cross_entropy_with_logits(
                 tf.squeeze(self.scores), gold_lf)
 
