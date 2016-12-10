@@ -13,7 +13,8 @@
         "vocab": [
             "square",
             "circle",
-            "above"
+            "above",
+            "the"
         ],
         "trials": [
             {
@@ -28,7 +29,7 @@
                         "target": true
                     }
                 ],
-                "string_description": "square"
+                "string_description": "the square"
             },
             {
                 "id": "learn_circle",
@@ -42,7 +43,7 @@
                         "target": true
                     }
                 ],
-                "string_description": "circle"
+                "string_description": "the circle"
             },
             {
                 "id": "learn_above",
@@ -65,7 +66,7 @@
                     }
 
                 ],
-                "string_description": "above circle"
+                "string_description": "the square above circle"
             },
             {
                 "id": "test_above",
@@ -88,7 +89,7 @@
                     }
 
                 ],
-                "string_description": "above square"
+                "string_description": "the circle above square"
             }
 
         ]

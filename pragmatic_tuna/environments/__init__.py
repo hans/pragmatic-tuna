@@ -334,7 +334,7 @@ class TUNAWithLoTEnv(TUNAEnv):
         """
         if referent is None:
             referent = [item for item in self._domain if item["target"]][0]
-        else:
+        elif referent != "any":
             referent = self._domain[referent]
 
         # Find possible atoms to use.
@@ -357,7 +357,10 @@ class TUNAWithLoTEnv(TUNAEnv):
                 
             if len(lf) > 3 and lf[0:2] == lf[2:4]:
                 lf = lf[0:2]
-
+            
+            if referent == "any":
+                return lf
+            
             matches = self.resolve_lf(lf)
             if matches and matches[0] == referent:
                 return lf

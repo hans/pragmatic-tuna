@@ -225,7 +225,7 @@ class DiscreteGenerativeModel(object):
             ps.append(distr[idx])
             
         p = np.exp(np.sum(np.log(distr)))
-        return " ".join(u[0]), p
+        return " ".join(u), p
 
     def sample(self, z):
         alignments = permutations(range(len(z)))
@@ -685,14 +685,17 @@ class SkipGramListenerModel(ListenerModel):
 
 
     def __init__(self, env, scope="listener"):
-        super(WindowedSequenceListenerModel, self).__init__(env, scope=scope)
-        self.reset()
-        self.vocab_size = len(self.env.word2idx.keys())
-        self.lf_vocab_size = len(self.env.lf_vocab)
-        self.word_feat_count = self.vocab_size * (self.vocab_size + 1)**2
-        self.lf_feat_count = self.lf_vocab_size + (self.lf_vocab_size + 1)**2
+        self.vocab_size = len(env.word2idx.keys())
+        self.lf_vocab_size = len(env.lf_vocab)
+        self.word_feat_count = self.vocab_size * (self.vocab_size + 1)
+        self.lf_feat_count = self.lf_vocab_size * (self.lf_vocab_size + 1)
         
         self.feat_count = self.word_feat_count * self.lf_feat_count
+        
+        self.l1_reg = 0.1
+
+        super(SkipGramListenerModel, self).__init__(env, scope=scope)
+        self.reset()
         
 
     def _build_graph(self):
@@ -716,15 +719,15 @@ class SkipGramListenerModel(ListenerModel):
     def to_lot_lf(self, lf):        
         #case 1: id(x)
         if len(lf) == 1:
-            return [env.lf_token_to_id["id"], lf[0]]
+            return [self.env.lf_token_to_id["id"], lf[0]]
         #case 2: fn(x)
         elif len(lf) == 2:
             return [lf[0], lf[1]]
         #case 3: 
         elif len(lf) == 3:
-            return [lf[0]], 
-                    lf[1]],
-                    env.lf_token_to_id["id"],
+            return [lf[0], 
+                    lf[1],
+                    self.env.lf_token_to_id["id"],
                     lf[2]]
 
     """
@@ -765,21 +768,16 @@ class SkipGramListenerModel(ListenerModel):
         trial, we can simply train by cross-entropy (maximize log prob of the
         gold output).
         """
-        gold_lf = tf.placeholder(tf.int32, shape=(), name="gold_lf")
         
-        #TODO: implement correct loss function
-        loss = tf.nn.sparse_softmax_cross_entropy_with_logits(
-                tf.squeeze(self.scores), gold_lf)
+        loss = -tf.reduce_sum(self.scores) + self.l1_reg * tf.reduce_sum(tf.abs(self.weights))
 
         params = tf.trainable_variables()
         gradients = tf.gradients(loss, params)
 
-        self.xent_gold_lf = gold_lf
         self.xent_gradients = zip(gradients, params)
 
-        self.feeds.extend([self.xent_gold_lf])
 
-        return (gold_lf,), (gradients,)
+        return (None,None), (gradients,)
     
     
     def featurize_words(self, words):
@@ -796,20 +794,21 @@ class SkipGramListenerModel(ListenerModel):
             skip_gram_idxs.append(idx)
         
         #trigrams and tri-skip-grams:
-        for i in range(len(words)-2):
+        #for i in range(len(words)-2):
             #trigram (add-1, 0=no word
-            idx = word_idxs[i] + self.vocab_size * (word_idxs[i+1]+1) + self.vocab_size * (self.vocab_size + 1) * (word_idxs[i+2]+1)
-            skip_gram_idxs.append(idx)
+            #idx = word_idxs[i] + self.vocab_size * (word_idxs[i+1]+1) + self.vocab_size * (self.vocab_size + 1) * (word_idxs[i+2]+1)
+            #skip_gram_idxs.append(idx)
             #skip-gram (word * word)
-            idx = word_idxs[i] + self.vocab_size * (self.vocab_size + 1) * (word_idxs[i+2]+1)
-            skip_gram_idxs.append(idx)
+            #idx = word_idxs[i] + self.vocab_size * (self.vocab_size + 1) * (word_idxs[i+2]+1)
+            #skip_gram_idxs.append(idx)
             
 
 
       
         #turn into one-hot vectors
-        word_feats = np.zeros((1, self.word_feat_count))
+        word_feats = np.zeros((self.word_feat_count,))
         word_feats[skip_gram_idxs] = 1
+        word_feats = word_feats.reshape((1, self.word_feat_count))
                     
         return word_feats
 
@@ -821,16 +820,18 @@ class SkipGramListenerModel(ListenerModel):
             idx = lf_idxs[0] + self.lf_vocab_size * (lf_idxs[1]+1)
             lf_idxs.append(idx)
         
-        if len(lf) > 2:
+        #if len(lf) > 2:
             #trigram (add-1, 0=no token)
-            idx = lf_idxs[0] + self.lf_vocab_size * (lf_idxs[1]+1) + self.lf_vocab_size * (self.lf_vocab_size + 1) * (lf_idxs[2]+1)
-            lf_idxs.append(idx)
+            #idx = lf_idxs[0] + self.lf_vocab_size * (lf_idxs[1]+1) + self.lf_vocab_size * (self.lf_vocab_size + 1) * (lf_idxs[2]+1)
+            #lf_idxs.append(idx)
         
         #turn into one-hot vectors
         lf_feats = np.zeros(self.lf_feat_count)
         lf_feats[lf_idxs] = 1
-    return lf_feats
+        return lf_feats
 
+
+    #TODO: iteratively sample, i.e., start with single predicate and then only consider LFs with that predicate
     def sample(self, utterance_bag, words, temperature=None):
         if len(self.lf_cache) < 1:
             id_idx = self.env.lf_token_to_id["id"]
@@ -838,7 +839,7 @@ class SkipGramListenerModel(ListenerModel):
             for i in range(100):
                 valid = False
                 while not valid:
-                    lf = self.env.sample_lf(n_parts=len(words) // 2)
+                    lf = self.env.sample_lf(n_parts=len(words) // 2, referent="any")
                     valid = len(lf) < 3 or id_idx in lf
             
                 lf =  self.from_lot_lf(lf)
@@ -847,12 +848,13 @@ class SkipGramListenerModel(ListenerModel):
                 self.lf_feats[i] = lf_feats
         
         
-        
         word_feats = self.featurize_words(words)
         #take cross product
         feats = np.zeros((100, self.feat_count))
         for i in range(100):
-            feats[i] = np.dot(self.lf_feats[i], word_feats).reshape((self.feat_count,))
+            lf_feats = self.lf_feats[i].reshape(self.lf_feat_count, 1)
+            
+            feats[i] = np.dot(lf_feats, word_feats).reshape((self.feat_count,))
         
                     
         
@@ -861,23 +863,32 @@ class SkipGramListenerModel(ListenerModel):
         
         probs = sess.run(self.probs, feed)
         
-        idx = np.sample(len(probs), p=probs)
+        idx = np.random.choice(len(probs), p=probs)
         
         sampled_lf = self.to_lot_lf(self.lf_cache[idx])
         return sampled_lf
         
     def reset(self):
         self.lf_cache = []
-        lf_vocab_size = len(self.env.lf_vocab)
-        lf_feat_count = lf_vocab_size + (lf_vocab_size + 1)**2
-        self.lf_feats = np.zeros((100, lf_feat_count)) 
+        self.lf_feats = np.zeros((100, self.lf_feat_count)) 
         
     
     def observe(self, obs, lf_pred, reward, gold_lf):
         if gold_lf is None:
             return
-        #TODO: implement learning
-        return
+        
+        word_feats = self.featurize_words(obs[2])
+        #take cross product
+        
+        lf =  self.from_lot_lf(gold_lf)
+        lf_feats = self.featurize_lf(lf).reshape((self.lf_feat_count, 1))
+        feats = np.dot(lf_feats, word_feats).reshape((1,self.feat_count))
+        
+        train_feeds = {self.feats: feats}
+        
+        sess = tf.get_default_session()
+        sess.run(self.train_op, train_feeds)
+
         
         
 
@@ -1089,6 +1100,7 @@ def eval_model(listener_model, examples, env):
 
         # DEV: assumes we're using a non-BOW listener model
         sampled_lf = listener_model.sample(None, words, temperature=0.001)
+        listener_model.reset()
         success = tuple(sampled_lf) in lf_candidate_tok_ids
         results.append((words_string, env.describe_lf(sampled_lf), success))
 
@@ -1127,7 +1139,7 @@ def train(args):
     env = TUNAWithLoTEnv(args.corpus_path, corpus_selection=args.corpus_selection,
                          bag=args.bag_env, functions=FUNCTIONS[args.fn_selection],
                          atom_attribute=args.atom_attribute)
-    listener_model = WindowedSequenceListenerModel(env, embedding_dim=args.embedding_dim)
+    listener_model = SkipGramListenerModel(env)
     speaker_model = SPEAKER_MODELS[args.speaker_model](env, args.embedding_dim)
 
     listener_train_op, listener_global_step = \
