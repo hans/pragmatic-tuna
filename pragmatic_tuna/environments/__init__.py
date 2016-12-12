@@ -338,8 +338,11 @@ class TUNAWithLoTEnv(TUNAEnv):
             referent = self._domain[referent]
 
         # Find possible atoms to use.
-        available_atoms = list(set([item["attributes"][self.atom_attribute]
+        if referent != "any":
+            available_atoms = list(set([item["attributes"][self.atom_attribute]
                                     for item in self._domain]))
+        else:
+            available_atoms = None
 
         # Rejection-sample an LF...
         i = 0
@@ -366,6 +369,38 @@ class TUNAWithLoTEnv(TUNAEnv):
                 return lf
 
             i += 1
+
+    def enumerate_lfs(self, lf_prefix=[], includeOnlyPossibleReferents=True):
+        """
+            Enumerate all possible LF function-atom combinations.
+            If lf_prefix contains part of an LF, the function returns
+            the conjunction of lf_prefix and every possible combination
+            of fn(atom).
+        """
+        lfs = []
+        
+        if includeOnlyPossibleReferents:
+            referents = self._domain
+        
+        
+        for fn_name in self.lf_functions:
+            for atom in self.lf_atoms:
+                lf = []
+                lf.extend(lf_prefix)
+                lf.append(self.lf_token_to_id[fn_name])
+                lf.append(self.lf_token_to_id[atom])
+                if len(lf) > 3 and lf[1] == lf[3]:
+                    lf = lf[0:2]
+                if includeOnlyPossibleReferents:
+                    matches = self.resolve_lf(lf)
+                    if matches and matches[0] in referents:
+                        lfs.append(lf)
+                else:
+                    lfs.append(lf)
+        return lfs    
+            
+        
+        
 
     def _intersect_lists(self, list1, list2):
         result = []

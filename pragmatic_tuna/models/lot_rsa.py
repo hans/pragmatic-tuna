@@ -694,8 +694,8 @@ class SkipGramListenerModel(ListenerModel):
         
         self.l1_reg = 0.1
 
-        super(SkipGramListenerModel, self).__init__(env, scope=scope)
         self.reset()
+        super(SkipGramListenerModel, self).__init__(env, scope=scope)
         
 
     def _build_graph(self):
@@ -769,7 +769,10 @@ class SkipGramListenerModel(ListenerModel):
         gold output).
         """
         
-        loss = -tf.reduce_sum(self.scores) + self.l1_reg * tf.reduce_sum(tf.abs(self.weights))
+        self.gold_lfs = tf.placeholder(tf.float32, shape=(None))
+        
+        loss = tf.nn.softmax_cross_entropy_with_logits(tf.squeeze(self.scores), tf.squeeze(self.gold_lfs))
+        loss += self.l1_reg * tf.reduce_sum(tf.abs(self.weights))
 
         params = tf.trainable_variables()
         gradients = tf.gradients(loss, params)
@@ -777,7 +780,7 @@ class SkipGramListenerModel(ListenerModel):
         self.xent_gradients = zip(gradients, params)
 
 
-        return (None,None), (gradients,)
+        return (self.gold_lfs, None), (gradients,)
     
     
     def featurize_words(self, words):
@@ -831,60 +834,98 @@ class SkipGramListenerModel(ListenerModel):
         return lf_feats
 
 
-    #TODO: iteratively sample, i.e., start with single predicate and then only consider LFs with that predicate
-    def sample(self, utterance_bag, words, temperature=None):
-        if len(self.lf_cache) < 1:
-            id_idx = self.env.lf_token_to_id["id"]
-            #TODO: tune this number?
-            for i in range(100):
-                valid = False
-                while not valid:
-                    lf = self.env.sample_lf(n_parts=len(words) // 2, referent="any")
-                    valid = len(lf) < 3 or id_idx in lf
+    def _populate_cache(self, words, test=False):
+        id_idx = self.env.lf_token_to_id["id"]
+        #TODO: tune this number?
+        for lf_pref in self.env.enumerate_lfs(includeOnlyPossibleReferents=not test):
+            for lf in self.env.enumerate_lfs(includeOnlyPossibleReferents=not test, lf_prefix=lf_pref):
+                valid = len(lf) < 3 or id_idx in lf
+                if not valid:
+                    continue
             
                 lf =  self.from_lot_lf(lf)
                 self.lf_cache.append(lf)
                 lf_feats = self.featurize_lf(lf)
-                self.lf_feats[i] = lf_feats
-        
-        
+                if self.lf_feats != None:   
+                    self.lf_feats = np.vstack((self.lf_feats, lf_feats))
+                else:
+                    #ugly hack to keep TF from complaining when there is only one row in the matrix
+                    self.lf_cache.append(lf)
+                    self.lf_feats = lf_feats.reshape((1, self.lf_feat_count))  
+                    self.lf_feats = np.vstack((self.lf_feats, lf_feats))                  
+    
+            
         word_feats = self.featurize_words(words)
         #take cross product
-        feats = np.zeros((100, self.feat_count))
-        for i in range(100):
+        self.feat_matrix = np.zeros((len(self.lf_cache), self.feat_count))
+        for i in range(len(self.lf_cache)):
             lf_feats = self.lf_feats[i].reshape(self.lf_feat_count, 1)
-            
-            feats[i] = np.dot(lf_feats, word_feats).reshape((self.feat_count,))
         
-                    
-        
+            self.feat_matrix[i] = np.dot(lf_feats, word_feats).reshape((self.feat_count,))
+    
+            #print(feats)           
+    
         sess = tf.get_default_session()
-        feed = {self.feats: feats}        
+        feed = {self.feats: self.feat_matrix}        
+    
+        self.probs_cache = sess.run(self.probs, feed)
+
+    #TODO: iteratively sample, i.e., start with single predicate and then only consider LFs with that predicate
+    def sample(self, utterance_bag, words, temperature=None, test=False):
+        if len(self.lf_cache) < 1:
+            self._populate_cache(words, test)
         
-        probs = sess.run(self.probs, feed)
-        
-        idx = np.random.choice(len(probs), p=probs)
+        idx = np.random.choice(len(self.probs_cache), p=self.probs_cache)
         
         sampled_lf = self.to_lot_lf(self.lf_cache[idx])
+        #print("####")
+        #print(self.lf_cache[idx])
+        #print(sampled_lf)
+        #self.reset()
         return sampled_lf
         
     def reset(self):
         self.lf_cache = []
-        self.lf_feats = np.zeros((100, self.lf_feat_count)) 
+        self.lf_feats = None
+        self.probs_cache = None
         
     
     def observe(self, obs, lf_pred, reward, gold_lf):
         if gold_lf is None:
             return
+            
+        #print(gold_lf)
         
-        word_feats = self.featurize_words(obs[2])
+        referent = self.env.resolve_lf(gold_lf)[0]
+        
+        #word_feats = self.featurize_words(obs[2])
         #take cross product
         
-        lf =  self.from_lot_lf(gold_lf)
-        lf_feats = self.featurize_lf(lf).reshape((self.lf_feat_count, 1))
-        feats = np.dot(lf_feats, word_feats).reshape((1,self.feat_count))
         
-        train_feeds = {self.feats: feats}
+        self._populate_cache(obs[2], test=True)
+        
+        
+        #lf =  self.from_lot_lf(gold_lf)
+        #lf_feats = self.featurize_lf(lf).reshape((self.lf_feat_count, 1))
+        #feats = np.dot(lf_feats, word_feats).reshape((1,self.feat_count))
+        
+        #go through all LFs, check if they
+        
+        
+        
+        gold_lfs = np.zeros((len(self.lf_cache),1))
+        for i, lf in enumerate(self.lf_cache):
+            lf = self.to_lot_lf(lf)
+            matches = self.env.resolve_lf(lf)
+            if matches and len(matches) == 1 and matches[0] == referent:
+                gold_lfs[i] = 1.0
+                print("matches")
+        
+        gold_lfs /= np.sum(gold_lfs)
+               
+                        
+        train_feeds = {self.feats: self.feat_matrix,
+                       self.gold_lfs: gold_lfs}
         
         sess = tf.get_default_session()
         sess.run(self.train_op, train_feeds)
@@ -925,12 +966,13 @@ def infer_trial(env, obs, listener_model, speaker_model, args):
             num_rejections += 1
             continue
         referent = env._domain.index(referent[0])
-
+        
         # Sample an LF z' ~ p(z|r).
         g_lf = env.sample_lf(referent=referent, n_parts=len(words) // 2)
+        #why are we doing this?
 
         # Record unnormalized score p(u, z)
-        weight = speaker_model.score(g_lf, utterance_bag, words)
+        weight = speaker_model.score(lf, utterance_bag, words)
 
         lfs.append(lf)
         g_lfs.append(g_lf)
@@ -949,6 +991,7 @@ def infer_trial(env, obs, listener_model, speaker_model, args):
     print("%sRejections per sample: %.2f%s" % (colors.BOLD + colors.WARNING,
                                              rejs_per_sample, colors.ENDC))
 
+    listener_model.reset()
     return lfs, weights, rejs_per_sample
 
 
@@ -997,7 +1040,7 @@ def run_listener_trial(listener_model, speaker_model,
         # Update speaker parameters.
         if gold_lf is not None:
             speaker_model.observe(obs, gold_lf)
-    listener_model.reset()
+        listener_model.reset()
 
 def run_dream_trial(listener_model, generative_model, env, sess, args):
     """
@@ -1099,7 +1142,7 @@ def eval_model(listener_model, examples, env):
             lf_candidate_tok_ids.append(tuple(ids))
 
         # DEV: assumes we're using a non-BOW listener model
-        sampled_lf = listener_model.sample(None, words, temperature=0.001)
+        sampled_lf = listener_model.sample(None, words, temperature=0.001, test=True)
         listener_model.reset()
         success = tuple(sampled_lf) in lf_candidate_tok_ids
         results.append((words_string, env.describe_lf(sampled_lf), success))
