@@ -191,7 +191,7 @@ class DiscreteGenerativeModel(object):
         #compute fluency probability, i.e., lm probability
         p_seq  = self._score_sequence(u)
 
-        return p_seq + p_trans
+        return 0.1 * p_seq + 0.9 * p_trans
 
 
     def sample_with_alignment(self, z, alignment):
@@ -875,14 +875,19 @@ class SkipGramListenerModel(ListenerModel):
         if len(self.lf_cache) < 1:
             self._populate_cache(words, test)
         
-        idx = np.random.choice(len(self.probs_cache), p=self.probs_cache)
+        if not test:
+            idx = np.random.choice(len(self.probs_cache), p=self.probs_cache)
+        
+        else:
+            idx = np.argmax(self.probs_cache)
         
         sampled_lf = self.to_lot_lf(self.lf_cache[idx])
+        
         #print("####")
         #print(self.lf_cache[idx])
         #print(sampled_lf)
         #self.reset()
-        return sampled_lf
+        return sampled_lf, self.probs_cache[idx]
         
     def reset(self):
         self.lf_cache = []
@@ -956,7 +961,7 @@ def infer_trial(env, obs, listener_model, speaker_model, args):
     lfs, g_lfs, weights = [], [], []
     num_rejections = 0
     while len(weights) < args.num_listener_samples:
-        lf = listener_model.sample(utterance_bag, words)
+        lf, p = listener_model.sample(utterance_bag, words)
 
         # Resolve referent.
         referent = env.resolve_lf(lf)
@@ -975,12 +980,12 @@ def infer_trial(env, obs, listener_model, speaker_model, args):
 
         lfs.append(lf)
         g_lfs.append(g_lf)
-        weights.append(weight)
+        weights.append((weight, p))
 
     # Debug logging.
     data = sorted(zip(lfs, g_lfs, weights), key=lambda xs: xs[2], reverse=True)
     for lf, g_lf, weight in data:
-        print("LF %30s  =>  Referent %10s  =>  Gen LF %30s  =>  %f" %
+        print("LF %30s  =>  Referent %10s  =>  Gen LF %30s  =>  %s" %
               (env.describe_lf(lf),
                env.resolve_lf(lf)[0]["attributes"][args.atom_attribute],
                env.describe_lf(g_lf),
@@ -1071,7 +1076,7 @@ def run_dream_trial(listener_model, generative_model, env, sess, args):
                 g_ut[word_ids] = 1
 
             # Run listener model q(z|u).
-            l_lf = listener_model.sample(g_ut, words, temperature=0.5)
+            l_lf, p = listener_model.sample(g_ut, words, temperature=0.5)
             # Literally dereference and see if we get the expected referent.
             # TODO: run multiple particles through this whole process!
             l_referent = env.resolve_lf(l_lf)
@@ -1107,7 +1112,7 @@ def sample_models(listener_model, speaker_model, env, args):
     for num_trials in range(5):
         env.configure(dreaming=False)
         _, utterance_bag, words = env.reset()
-        lf = listener_model.sample(utterance_bag, words)
+        lf, p = listener_model.sample(utterance_bag, words)
         listener_samples.append((" ".join(words), env.describe_lf(lf)))
 
     speaker_samples = []
@@ -1141,7 +1146,7 @@ def eval_model(listener_model, examples, env):
             lf_candidate_tok_ids.append(tuple(ids))
 
         # DEV: assumes we're using a non-BOW listener model
-        sampled_lf = listener_model.sample(None, words, temperature=0.001, test=True)
+        sampled_lf, p = listener_model.sample(None, words, temperature=0.001, test=True)
         listener_model.reset()
         success = tuple(sampled_lf) in lf_candidate_tok_ids
         results.append((words_string, env.describe_lf(sampled_lf), success))
