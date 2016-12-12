@@ -919,7 +919,6 @@ class SkipGramListenerModel(ListenerModel):
             matches = self.env.resolve_lf(lf)
             if matches and len(matches) == 1 and matches[0] == referent:
                 gold_lfs[i] = 1.0
-                print("matches")
         
         gold_lfs /= np.sum(gold_lfs)
                
