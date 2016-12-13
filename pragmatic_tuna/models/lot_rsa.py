@@ -692,7 +692,7 @@ class SkipGramListenerModel(ListenerModel):
         
         self.feat_count = self.word_feat_count * self.lf_feat_count
         
-        self.l1_reg = 0.1
+        self.l1_reg = 0.5
 
         self.reset()
         super(SkipGramListenerModel, self).__init__(env, scope=scope)
@@ -921,9 +921,12 @@ class SkipGramListenerModel(ListenerModel):
         gold_lfs = np.zeros((len(self.lf_cache),1))
         for i, lf in enumerate(self.lf_cache):
             lf = self.to_lot_lf(lf)
-            matches = self.env.resolve_lf(lf)
-            if matches and len(matches) == 1 and matches[0] == referent:
+            if lf == gold_lf:
                 gold_lfs[i] = 1.0
+            
+            #matches = self.env.resolve_lf(lf)
+            #if matches and len(matches) == 1 and matches[0] == referent:
+            #    gold_lfs[i] = 1.0
         
         gold_lfs /= np.sum(gold_lfs)
                
