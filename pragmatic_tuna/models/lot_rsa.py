@@ -976,7 +976,7 @@ def infer_trial(env, obs, listener_model, speaker_model, args):
     lfs, g_lfs, weights = [], [], []
     num_rejections = 0
     while len(weights) < args.num_listener_samples:
-        lf, p = listener_model.sample(utterance_bag, words)
+        lf, p_lf = listener_model.sample(utterance_bag, words)
 
         # Resolve referent.
         referent = env.resolve_lf(lf)
@@ -991,20 +991,20 @@ def infer_trial(env, obs, listener_model, speaker_model, args):
         #why are we doing this?
 
         # Record unnormalized score p(u, z)
-        weight = speaker_model.score(lf, utterance_bag, words)
+        p_utterance = speaker_model.score(lf, utterance_bag, words)
 
         lfs.append(lf)
         g_lfs.append(g_lf)
-        weights.append((weight, p))
+        weights.append((np.exp(p_utterance), p_lf))
 
     # Debug logging.
     data = sorted(zip(lfs, g_lfs, weights), key=lambda xs: xs[2], reverse=True)
     for lf, g_lf, weight in data:
-        print("LF %30s  =>  Referent %10s  =>  Gen LF %30s  =>  %s" %
+        print("LF %30s  =>  Referent %10s  =>  Gen LF %30s  =>  (%.3g, %.3g)" %
               (env.describe_lf(lf),
                env.resolve_lf(lf)[0]["attributes"][args.atom_attribute],
                env.describe_lf(g_lf),
-               weight))
+               weight[0], weight[1]))
 
     rejs_per_sample = num_rejections / args.num_listener_samples
     print("%sRejections per sample: %.2f%s" % (colors.BOLD + colors.WARNING,
