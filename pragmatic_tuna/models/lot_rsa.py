@@ -1104,6 +1104,8 @@ def run_dream_trial(listener_model, generative_model, env, sess, args):
                       % (colors.FAIL, colors.ENDC))
                 break
 
+            listener_model.reset()
+
         if success:
             # Construct an "observation" for the generative model.
             obs = (items, g_ut, words)
