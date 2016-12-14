@@ -357,20 +357,20 @@ class TUNAWithLoTEnv(TUNAEnv):
                 n_parts = self.max_conjuncts
             lf = list(itertools.chain.from_iterable(
                 self.sample_part(available_atoms) for _ in range(n_parts)))
-                
+
             if len(lf) > 3 and lf[0:2] == lf[2:4]:
                 lf = lf[0:2]
-            
+
             if referent == "any":
                 return lf
-            
+
             matches = self.resolve_lf(lf)
             if matches and matches[0] == referent:
                 return lf
 
             i += 1
 
-    def enumerate_lfs(self, lf_prefix=[], includeOnlyPossibleReferents=True):
+    def enumerate_lfs(self, lf_prefix=(), includeOnlyPossibleReferents=True):
         """
             Enumerate all possible LF function-atom combinations.
             If lf_prefix contains part of an LF, the function returns
@@ -378,17 +378,16 @@ class TUNAWithLoTEnv(TUNAEnv):
             of fn(atom).
         """
         lfs = []
-        
+
         if includeOnlyPossibleReferents:
             referents = self._domain
-        
-        
+
+
         for fn_name in self.lf_functions:
             for atom in self.lf_atoms:
-                lf = []
-                lf.extend(lf_prefix)
-                lf.append(self.lf_token_to_id[fn_name])
-                lf.append(self.lf_token_to_id[atom])
+                lf = lf_prefix
+                lf += (self.lf_token_to_id[fn_name],
+                       self.lf_token_to_id[atom])
                 if len(lf) > 3 and lf[1] == lf[3]:
                     lf = lf[0:2]
                 if includeOnlyPossibleReferents:
@@ -397,10 +396,7 @@ class TUNAWithLoTEnv(TUNAEnv):
                         lfs.append(lf)
                 else:
                     lfs.append(lf)
-        return lfs    
-            
-        
-        
+        return lfs
 
     def _intersect_lists(self, list1, list2):
         result = []

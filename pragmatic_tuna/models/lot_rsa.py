@@ -730,16 +730,16 @@ class SkipGramListenerModel(ListenerModel):
     def to_lot_lf(self, lf):
         #case 1: id(x)
         if len(lf) == 1:
-            return [self.env.lf_token_to_id["id"], lf[0]]
+            return (self.env.lf_token_to_id["id"], lf[0])
         #case 2: fn(x)
         elif len(lf) == 2:
-            return [lf[0], lf[1]]
+            return lf
         #case 3:
         elif len(lf) == 3:
-            return [lf[0],
+            return (lf[0],
                     lf[1],
                     self.env.lf_token_to_id["id"],
-                    lf[2]]
+                    lf[2])
 
     """
         Convert LoT expression of the form id(cat) AND left(dog) to
@@ -760,18 +760,18 @@ class SkipGramListenerModel(ListenerModel):
         elif len(lot) == 4:
             if id_idx not in lot:
                 print("%sfrom_lot_lf: Invalid LF.%s" % (colors.FAIL, colors.ENDC))
-                return []
+                return ()
             else:
                 if lot[0] == id_idx:
                     #id(x) and fn(y)
-                    return [lot[2], lot[3], lot[1]]
+                    return (lot[2], lot[3], lot[1])
                 else:
                     #fn(x) and id(y)
-                    return [lot[0], lot[1], lot[3]]
+                    return (lot[0], lot[1], lot[3])
 
         else:
             print("%sfrom_lot_lf: Invalid LF.%s" % (colors.FAIL, colors.ENDC))
-            return []
+            return ()
 
     def build_xent_gradients(self):
         """
@@ -854,13 +854,15 @@ class SkipGramListenerModel(ListenerModel):
 
         #TODO: tune this number?
         i = 0
+        seen = set()
         for lf_pref in self.env.enumerate_lfs(includeOnlyPossibleReferents=not test):
             for lf in self.env.enumerate_lfs(includeOnlyPossibleReferents=not test, lf_prefix=lf_pref):
                 valid = len(lf) < 3 or id_idx in lf
-                if not valid:
+                if not valid or lf in seen:
                     continue
+                seen.add(lf)
 
-                lf =  self.from_lot_lf(lf)
+                lf = self.from_lot_lf(lf)
                 self.lf_cache.append(lf)
                 all_lf_feats[i] = self.featurize_lf(lf)
                 i += 1
@@ -939,6 +941,10 @@ class SkipGramListenerModel(ListenerModel):
             #matches = self.env.resolve_lf(lf)
             #if matches and len(matches) == 1 and matches[0] == referent:
             #    gold_lfs[i] = 1.0
+
+        # DEV: Make sure there are no dupes in the LF list.
+        # Otherwise TF cross-entropy will bork.
+        assert np.sum(gold_lfs) == 1
 
         gold_lfs /= np.sum(gold_lfs)
 
