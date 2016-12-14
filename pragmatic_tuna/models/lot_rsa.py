@@ -1105,10 +1105,10 @@ def run_dream_trial(listener_model, generative_model, env, sess, args):
     z' ~ q(z|u):\t%s
     Deref:\t\t%s""" %
                 (referent["attributes"][args.atom_attribute],
-                env.describe_lf(g_lf),
-                " ".join([env.vocab[idx] for idx, count in enumerate(g_ut) if count]),
-                env.describe_lf(l_lf),
-                [l_referent_i["attributes"][args.atom_attribute] for l_referent_i in l_referent]))
+                 env.describe_lf(g_lf),
+                 " ".join(words),
+                 env.describe_lf(l_lf),
+                 [l_referent_i["attributes"][args.atom_attribute] for l_referent_i in l_referent]))
 
             i += 1
             if i > 1000:
