@@ -858,11 +858,14 @@ class SkipGramListenerModel(ListenerModel):
         for lf_pref in self.env.enumerate_lfs(includeOnlyPossibleReferents=not test):
             for lf in self.env.enumerate_lfs(includeOnlyPossibleReferents=not test, lf_prefix=lf_pref):
                 valid = len(lf) < 3 or id_idx in lf
-                if not valid or lf in seen:
+                if not valid:
+                    continue
+
+                lf = self.from_lot_lf(lf)
+                if lf in seen:
                     continue
                 seen.add(lf)
 
-                lf = self.from_lot_lf(lf)
                 self.lf_cache.append(lf)
                 all_lf_feats[i] = self.featurize_lf(lf)
                 i += 1
@@ -944,7 +947,9 @@ class SkipGramListenerModel(ListenerModel):
 
         # DEV: Make sure there are no dupes in the LF list.
         # Otherwise TF cross-entropy will bork.
-        assert np.sum(gold_lfs) == 1
+        assert np.sum(gold_lfs) == 1, \
+                "%s %i" % (" ".join(self.env.lf_vocab[idx] for idx in gold_lf),
+                           np.sum(gold_lfs))
 
         gold_lfs /= np.sum(gold_lfs)
 
