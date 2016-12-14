@@ -196,7 +196,7 @@ class DiscreteGenerativeModel(object):
 
     def sample_with_alignment(self, z, alignment):
         unigram_denom = max(sum(self.unigramcounter.values()), 1.0)
-        unigram_probs = np.array(list(self.unigramcounter.values())) * self.backoff_factor / unigram_denom
+        unigram_probs = np.array(list(self.unigramcounter.values())) / unigram_denom
         keys = list(self.unigramcounter.keys())
 
         prev_word = self.START_TOKEN
@@ -208,14 +208,13 @@ class DiscreteGenerativeModel(object):
 
             bigram_counts = np.array([self.bigramcounter[prev_word][w]
                                         for w in keys])
-            bigram_denom = sum(bigram_counts) if len(bigram_counts) > 0 else 1.0
-            bigram_probs = bigram_counts * (1 - self.backoff_factor) / bigram_denom
-
+            bigram_denom = max(sum(bigram_counts), 1.0)
+            bigram_probs = bigram_counts / bigram_denom
 
             cond_probs = np.array([self._score_word_atom(w, z[alignment[i]]) for w in keys])
 
-            distr = (bigram_probs + unigram_probs) * cond_probs
-
+            interpolated = bigram_probs * (1 - self.backoff_factor) + unigram_probs * self.backoff_factor
+            distr = interpolated * cond_probs
             distr = distr / np.sum(distr)
 
             idx = np.random.choice(len(keys), p=distr)
