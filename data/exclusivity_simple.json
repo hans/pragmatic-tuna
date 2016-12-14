@@ -1,0 +1,50 @@
+{
+    "exclusivity_simple": {
+        "attributes": {
+            "shape": [
+                "square",
+                "circle"
+            ]
+        },
+        "vocab": [
+            "square",
+            "circle",
+            "the"
+        ],
+        "trials": [
+            {
+                "id": "learn_square",
+                "domain": [
+                    {
+                        "attributes": {
+                            "shape": "square"
+                        },
+                        "id": 0,
+                        "target": true
+                    }
+                ],
+                "string_description": "the square"
+            },
+            {
+                "id": "test_circle",
+                "domain": [
+                    {
+                        "attributes": {
+                            "shape": "circle"
+                        },
+                        "id": 0,
+                        "target": true
+                    },
+                    {
+                        "attributes": {
+                            "shape": "square"
+                        },
+                        "id": 1,
+                        "target": false
+                    }
+                ],
+                "string_description": "the circle"
+            }
+        ]
+    }
+}

@@ -20,6 +20,7 @@ def below_fn(sources, candidate):
     return sources[0]["attributes"]["y"] > candidate["attributes"]["y"]
 
 FUNCTIONS = {
+    "simple": [],
     "spatial_simple": [
         ("above", above_fn)
     ],
