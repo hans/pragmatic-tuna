@@ -223,7 +223,7 @@ class DiscreteGenerativeModel(object):
             prev_word = word
             ps.append(distr[idx])
 
-        p = np.exp(np.sum(np.log(distr)))
+        p = np.exp(np.sum(np.log(ps)))
         return " ".join(u), p
 
     def sample(self, z):
