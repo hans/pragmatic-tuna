@@ -1002,7 +1002,7 @@ def infer_trial(env, obs, listener_model, speaker_model, args):
         #why are we doing this?
 
         # Record unnormalized score p(u, z)
-        p_utterance = speaker_model.score(lf, utterance_bag, words)
+        p_utterance = speaker_model.score(g_lf, utterance_bag, words)
 
         lfs.append(lf)
         g_lfs.append(g_lf)
