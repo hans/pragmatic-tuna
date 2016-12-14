@@ -130,9 +130,22 @@ class DiscreteGenerativeModel(object):
         score = self.counter[atom][word]
         denom = sum(self.counter[atom].values())
         if self.smooth:
-          score += 1
-          denom += len(self.env.vocab)
+            score += 1
+            denom += len(self.env.vocab)
         return float(score) / denom
+
+    def _score_words_atom(self, words, atom):
+        """Return p(word | atom) for a collection `words`"""
+        counter = self.counter[atom]
+
+        score_delta = 1 if self.smooth else 0
+        scores = [counter[word] + score_delta for word in words]
+
+        denom = sum(counter.values())
+        if self.smooth:
+            denom += len(self.env.vocab)
+
+        return np.array(scores, dtype=np.float32) / denom
 
     def _score_bigram(self, w1, w2):
         score = self.bigramcounter[w1][w2]
@@ -193,7 +206,6 @@ class DiscreteGenerativeModel(object):
 
         return 0.1 * p_seq + 0.9 * p_trans
 
-
     def sample_with_alignment(self, z, alignment):
         unigram_denom = max(sum(self.unigramcounter.values()), 1.0)
         unigram_probs = np.array(list(self.unigramcounter.values())) / unigram_denom
@@ -211,7 +223,7 @@ class DiscreteGenerativeModel(object):
             bigram_denom = max(sum(bigram_counts), 1.0)
             bigram_probs = bigram_counts / bigram_denom
 
-            cond_probs = np.array([self._score_word_atom(w, z[alignment[i]]) for w in keys])
+            cond_probs = self._score_words_atom(keys, z[alignment[i]])
 
             interpolated = bigram_probs * (1 - self.backoff_factor) + unigram_probs * self.backoff_factor
             distr = interpolated * cond_probs
