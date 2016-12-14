@@ -705,7 +705,7 @@ class SkipGramListenerModel(ListenerModel):
             self.feats = tf.placeholder(tf.float32, shape=(None, self.feat_count))
 
 
-            self.scores = tf.squeeze(tf.matmul(self.feats, self.weights))
+            self.scores = tf.squeeze(tf.matmul(self.feats, self.weights), [1])
             self.probs = tf.nn.softmax(self.scores)
 
 
