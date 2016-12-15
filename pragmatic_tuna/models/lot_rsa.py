@@ -1341,9 +1341,13 @@ def train(args):
 
     print("\n%s==========\nOVERALL EVALUATION\n==========%s"
           % (colors.HEADER, colors.ENDC))
-    avg_online_accuracy = np.array(all_online_results).mean(axis=1).mean()
+    avg_online_accuracy = np.array(all_online_results).mean(axis=0)
     print("%sAverage online accuracy: %.3f%%%s"
-          % (colors.BOLD, avg_online_accuracy * 100, colors.ENDC))
+          % (colors.BOLD, avg_online_accuracy.mean() * 100, colors.ENDC))
+    print("%sOnline accuracy per trial:%s\n\t%s"
+          % (colors.BOLD, colors.ENDC,
+             "\n\t".join("%i\t%.3f" % (i, acc_i * 100)
+                         for i, acc_i in enumerate(avg_online_accuracy))))
 
     if args.gold_path:
         avg_accuracy = np.mean(accuracies)
