@@ -998,8 +998,7 @@ def infer_trial(env, obs, listener_model, speaker_model, args):
         referent = env._domain.index(referent[0])
 
         # Sample an LF z' ~ p(z|r).
-        g_lf = env.sample_lf(referent=referent, n_parts=len(words) // 2)
-        #why are we doing this?
+        g_lf = lf #env.sample_lf(referent=referent, n_parts=len(words) // 2)
 
         # Record unnormalized score p(u, z)
         p_utterance = speaker_model.score(g_lf, utterance_bag, words)
@@ -1011,10 +1010,10 @@ def infer_trial(env, obs, listener_model, speaker_model, args):
     # Debug logging.
     data = sorted(zip(lfs, g_lfs, weights), key=lambda xs: xs[2], reverse=True)
     for lf, g_lf, weight in data:
-        print("LF %30s  =>  Referent %10s  =>  Gen LF %30s  =>  (%.3g, %.3g)" %
+        print("LF %30s  =>  Referent %10s  =>  (%.3g, %.3g)" %
               (env.describe_lf(lf),
                env.resolve_lf(lf)[0]["attributes"][args.atom_attribute],
-               env.describe_lf(g_lf),
+               #env.describe_lf(g_lf),
                weight[0], weight[1]))
 
     rejs_per_sample = num_rejections / args.num_listener_samples
