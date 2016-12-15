@@ -805,7 +805,7 @@ class SkipGramListenerModel(ListenerModel):
     def featurize_words(self, words):
 
         word_idxs = [self.env.word2idx[word] for word in words]
-        
+
         word_idxs.append(self.env.word2idx[self.env.EOS])
 
         #unigrams
@@ -978,34 +978,34 @@ class SkipGramListenerModel(ListenerModel):
         batch_size = len(self.feed_cache)
         lf_size = len(self.feed_cache[0][self.gold_lfs])
         print(lf_size)
-        
-        
+
+
         feats = np.zeros((batch_size*lf_size, self.feat_count))
-        
+
         gold_lfs = np.zeros((batch_size*lf_size,1))
-        
-        
+
+
         for i in range(batch_size):
             j = lf_size * i
             feats[j:j+lf_size] = self.feed_cache[i][self.feats]
             gold_lfs[j:j+lf_size] = self.feed_cache[i][self.gold_lfs]
-        
+
         gold_lfs /= np.sum(gold_lfs)
-        
+
         train_feeds = {self.feats: feats,
                        self.gold_lfs: gold_lfs}
-        
+
         print(train_feeds)
-        
+
         sess = tf.get_default_session()
         for i in range(100):
             sess.run(self.train_op, train_feeds)
-        
-        
+
+
         self.feed_cache = []
-        
-        
-        
+
+
+
 
 def infer_trial(env, obs, listener_model, speaker_model, args):
     """
@@ -1288,7 +1288,7 @@ def train(args):
                     first_success = run_listener_trial(listener_model, speaker_model,
                                                        env, sess, args)
                     online_results.append(first_success != -1)
-                    
+
                     #if args.gold_path:
                     #    with open(args.gold_path, "r") as gold_f:
                     #        listener_examples = json.load(gold_f)
@@ -1300,16 +1300,17 @@ def train(args):
                     #        accuracy = n_success / len(eval_results)
                     #        accuracies.append(accuracy)
                     #        print("%sAccuracy: %.3f%%%s" % (colors.BOLD, accuracy * 100, colors.ENDC))
-                    
+
 
                     if args.dream:
                         tqdm.write("\n%s===========\nDREAM TRIAL\n===========%s"
                                 % (colors.HEADER, colors.ENDC))
                         run_dream_trial(listener_model, speaker_model,
                                         env, sess, args)
-                
-                listener_model.batch_observe()
-                
+
+                if args.batch:
+                    listener_model.batch_observe()
+
                 all_online_results.append(online_results)
 
                 # Print samples from listener, speaker model
@@ -1379,6 +1380,7 @@ if __name__ == "__main__":
     p.add_argument("--dream", default=False, action="store_true")
     p.add_argument("--num_listener_samples", type=int, default=5)
     p.add_argument("--max_rejections_after_trial", type=int, default=3)
+    p.add_argument("--batch", action="store_true", default=False)
 
     p.add_argument("--num_runs", default=1, type=int,
                    help="Number of times to repeat entire training process")
