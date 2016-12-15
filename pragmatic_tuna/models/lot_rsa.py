@@ -1030,20 +1030,12 @@ def infer_trial(env, obs, listener_model, speaker_model, args):
     return lfs, weights, rejs_per_sample
 
 
-def run_listener_trial(listener_model, speaker_model,
-                       env, sess, args):
-    """
-    Run single recognition trial.
-
-    1. Predict a referent give an utterance.
-    2. Update listener model weights.
-    3. Update speaker model weights.
-    """
+def run_listener_trial(listener_model, speaker_model, env, sess, args):
     env.configure(dreaming=False)
     obs = env.reset()
 
+    n_iterations, first_success = 0, -1
     rejs_per_sample = np.inf
-    # TODO: magic number
     while rejs_per_sample > args.max_rejections_after_trial:
         lfs, lf_weights, rejs_per_sample = \
                 infer_trial(env, obs, listener_model, speaker_model, args)
@@ -1057,6 +1049,10 @@ def run_listener_trial(listener_model, speaker_model,
         color = colors.OKGREEN if success else colors.FAIL
         print("%s%s => %s%s" % (colors.BOLD + color, env._trial["string_description"],
                                 env.describe_lf(lf_pred), colors.ENDC))
+
+        if success and first_success == -1:
+            first_success = n_iterations
+        n_iterations += 1
 
         # Find the highest-scoring LF that dereferences to the correct referent.
         gold_lf, gold_lf_pos = None, -1
@@ -1076,6 +1072,8 @@ def run_listener_trial(listener_model, speaker_model,
         if gold_lf is not None:
             speaker_model.observe(obs, gold_lf)
         listener_model.reset()
+
+    return first_success
 
 def run_dream_trial(listener_model, generative_model, env, sess, args):
     """
@@ -1230,7 +1228,8 @@ def train(args):
     # check variables after build_train_graph
     listener_model.train_op = listener_train_op
     speaker_model.train_op = speaker_train_op
-    accuracies = []
+
+    accuracies, all_online_results = [], []
     with tf.Session() as sess:
         with sess.as_default():
             for run_i in range(args.num_runs):
@@ -1239,17 +1238,24 @@ def train(args):
                 tqdm.write("%sBeginning training run %i.%s\n\n" % (colors.BOLD, run_i, colors.ENDC))
                 sess.run(tf.initialize_all_variables())
 
+                # Track online-learning performance: accuracy as new examples
+                # are presented online
+                online_results = []
+
                 for i in trange(args.num_trials):
                     tqdm.write("\n%s==============\nLISTENER TRIAL\n==============%s"
                             % (colors.HEADER, colors.ENDC))
-                    run_listener_trial(listener_model, speaker_model,
-                                       env, sess, args)
+                    first_success = run_listener_trial(listener_model, speaker_model,
+                                                       env, sess, args)
+                    online_results.append(first_success != -1)
 
                     if args.dream:
                         tqdm.write("\n%s===========\nDREAM TRIAL\n===========%s"
                                 % (colors.HEADER, colors.ENDC))
                         run_dream_trial(listener_model, speaker_model,
                                         env, sess, args)
+
+                all_online_results.append(online_results)
 
                 # Print samples from listener, speaker model
                 print("\n%s=======\nSAMPLES\n=======%s"
@@ -1274,9 +1280,14 @@ def train(args):
                         accuracy = n_success / len(eval_results)
                         accuracies.append(accuracy)
                         print("%sAccuracy: %.3f%%%s" % (colors.BOLD, accuracy * 100, colors.ENDC))
+
+    print("\n%s==========\nOVERALL EVALUATION\n==========%s"
+          % (colors.HEADER, colors.ENDC))
+    avg_online_accuracy = np.array(all_online_results).mean(axis=1).mean()
+    print("%sAverage online accuracy: %.3f%%%s"
+          % (colors.BOLD, avg_online_accuracy * 100, colors.ENDC))
+
     if args.gold_path:
-        print("\n%s==========\nOVERALL EVALUATION\n==========%s"
-              % (colors.HEADER, colors.ENDC))
         avg_accuracy = np.mean(accuracies)
         print("%sAverage accuracy: %.3f%%%s" % (colors.BOLD, avg_accuracy * 100, colors.ENDC))
 
