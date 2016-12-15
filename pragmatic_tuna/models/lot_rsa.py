@@ -897,18 +897,20 @@ class SkipGramListenerModel(ListenerModel):
         self.probs_cache = sess.run(self.probs, feed)
 
     #TODO: iteratively sample, i.e., start with single predicate and then only consider LFs with that predicate
-    def sample(self, utterance_bag, words, temperature=None, test=False):
+    def sample(self, utterance_bag, words, temperature=None, test=False, argmax=False):
         if len(self.lf_cache) < 1:
             self._populate_cache(words, test)
 
-        if not test:
+        if test or argmax:
+            idx = np.argmax(self.probs_cache)
+        else:
             idx = np.random.choice(len(self.probs_cache), p=self.probs_cache)
 
-        else:
-            for i, lf in enumerate(self.lf_cache):
-                lf = self.to_lot_lf(lf)
-                print("LF %30s  =>  (%.3g)" % (self.env.describe_lf(lf), self.probs_cache[i]))
-            idx = np.argmax(self.probs_cache)
+        if test:
+            scores = [(self.probs_cache[i], self.env.describe_lf(self.to_lot_lf(lf)))
+                      for i, lf in enumerate(self.lf_cache)]
+            scores = sorted(scores, key=lambda pair: pair[0], reverse=True)
+            print("\n".join("LF %30s  =>  (%.3g)" % pair for pair in scores))
 
         sampled_lf = self.to_lot_lf(self.lf_cache[idx])
 
@@ -1340,9 +1342,13 @@ def train(args):
 
     print("\n%s==========\nOVERALL EVALUATION\n==========%s"
           % (colors.HEADER, colors.ENDC))
-    avg_online_accuracy = np.array(all_online_results).mean(axis=1).mean()
+    avg_online_accuracy = np.array(all_online_results).mean(axis=0)
     print("%sAverage online accuracy: %.3f%%%s"
-          % (colors.BOLD, avg_online_accuracy * 100, colors.ENDC))
+          % (colors.BOLD, avg_online_accuracy.mean() * 100, colors.ENDC))
+    print("%sOnline accuracy per trial:%s\n\t%s"
+          % (colors.BOLD, colors.ENDC,
+             "\n\t".join("%i\t%.3f" % (i, acc_i * 100)
+                         for i, acc_i in enumerate(avg_online_accuracy))))
 
     if args.gold_path:
         avg_accuracy = np.mean(accuracies)
@@ -1382,6 +1388,7 @@ if __name__ == "__main__":
     p.add_argument("--num_listener_samples", type=int, default=5)
     p.add_argument("--max_rejections_after_trial", type=int, default=3)
     p.add_argument("--batch", action="store_true", default=False)
+    p.add_argument("--argmax_listener", action="store_true", default=False)
 
     p.add_argument("--num_runs", default=1, type=int,
                    help="Number of times to repeat entire training process")
