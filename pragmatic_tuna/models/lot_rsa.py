@@ -709,11 +709,13 @@ class SkipGramListenerModel(ListenerModel):
 
         self.feat_count = self.word_feat_count * self.lf_feat_count
 
-        self.l1_reg = 0.5
+        self.l1_reg = 0.0
 
         self.reset()
         super(SkipGramListenerModel, self).__init__(env, scope=scope)
 
+
+        self.feed_cache = []
 
     def _build_graph(self):
         with self._scope:
@@ -803,7 +805,8 @@ class SkipGramListenerModel(ListenerModel):
     def featurize_words(self, words):
 
         word_idxs = [self.env.word2idx[word] for word in words]
-
+        
+        word_idxs.append(self.env.word2idx[self.env.EOS])
 
         #unigrams
         skip_gram_idxs = word_idxs
@@ -902,6 +905,9 @@ class SkipGramListenerModel(ListenerModel):
             idx = np.random.choice(len(self.probs_cache), p=self.probs_cache)
 
         else:
+            for i, lf in enumerate(self.lf_cache):
+                lf = self.to_lot_lf(lf)
+                print("LF %30s  =>  (%.3g)" % (self.env.describe_lf(lf), self.probs_cache[i]))
             idx = np.argmax(self.probs_cache)
 
         sampled_lf = self.to_lot_lf(self.lf_cache[idx])
@@ -963,11 +969,43 @@ class SkipGramListenerModel(ListenerModel):
         train_feeds = {self.feats: self.feat_matrix,
                        self.gold_lfs: gold_lfs}
 
+        self.feed_cache.append(train_feeds)
+
         sess = tf.get_default_session()
         sess.run(self.train_op, train_feeds)
 
-
-
+    def batch_observe(self):
+        batch_size = len(self.feed_cache)
+        lf_size = len(self.feed_cache[0][self.gold_lfs])
+        print(lf_size)
+        
+        
+        feats = np.zeros((batch_size*lf_size, self.feat_count))
+        
+        gold_lfs = np.zeros((batch_size*lf_size,1))
+        
+        
+        for i in range(batch_size):
+            j = lf_size * i
+            feats[j:j+lf_size] = self.feed_cache[i][self.feats]
+            gold_lfs[j:j+lf_size] = self.feed_cache[i][self.gold_lfs]
+        
+        gold_lfs /= np.sum(gold_lfs)
+        
+        train_feeds = {self.feats: feats,
+                       self.gold_lfs: gold_lfs}
+        
+        print(train_feeds)
+        
+        sess = tf.get_default_session()
+        for i in range(100):
+            sess.run(self.train_op, train_feeds)
+        
+        
+        self.feed_cache = []
+        
+        
+        
 
 def infer_trial(env, obs, listener_model, speaker_model, args):
     """
@@ -1167,6 +1205,7 @@ def eval_model(listener_model, examples, env):
         examples: Pairs of `(words_string, lf_candidates)`
     """
     results = []
+    listener_model.reset()
     for words_string, lf_candidates in examples:
         words = words_string.strip().split()
 
@@ -1202,8 +1241,9 @@ def build_train_graph(model, env, args, scope="train"):
     else:
         raise NotImplementedError("undefined learning method " + args.learning_method)
 
-    global_step = tf.Variable(0, name="global_step", trainable=False)
-    opt = tf.train.MomentumOptimizer(args.learning_rate, args.momentum)
+    global_step = tf.Variable(0, name="global_step", dtype=tf.int64, trainable=False)
+    #opt = tf.train.MomentumOptimizer(args.learning_rate, args.momentum)
+    opt = tf.train.AdagradDAOptimizer(args.learning_rate, global_step, l1_regularization_strength=0.1)
     train_op = opt.apply_gradients(gradients, global_step=global_step)
 
     # Make a dummy train_op that works with TF partial_run.
@@ -1248,13 +1288,28 @@ def train(args):
                     first_success = run_listener_trial(listener_model, speaker_model,
                                                        env, sess, args)
                     online_results.append(first_success != -1)
+                    
+                    #if args.gold_path:
+                    #    with open(args.gold_path, "r") as gold_f:
+                    #        listener_examples = json.load(gold_f)
+                    #
+                    #        print("\n%s==========\nEVALUATION\n==========%s"
+                    #              % (colors.HEADER, colors.ENDC))
+                    #        eval_results = eval_model(listener_model, listener_examples, env)
+                    #        n_success = len([result for _, _, result in eval_results if result])
+                    #        accuracy = n_success / len(eval_results)
+                    #        accuracies.append(accuracy)
+                    #        print("%sAccuracy: %.3f%%%s" % (colors.BOLD, accuracy * 100, colors.ENDC))
+                    
 
                     if args.dream:
                         tqdm.write("\n%s===========\nDREAM TRIAL\n===========%s"
                                 % (colors.HEADER, colors.ENDC))
                         run_dream_trial(listener_model, speaker_model,
                                         env, sess, args)
-
+                
+                listener_model.batch_observe()
+                
                 all_online_results.append(online_results)
 
                 # Print samples from listener, speaker model
