@@ -924,7 +924,7 @@ class SkipGramListenerModel(ListenerModel):
         self.probs_cache = None
 
 
-    def observe(self, obs, lf_pred, reward, gold_lf):
+    def observe(self, obs, lf_pred, reward, gold_lf, batch=False):
         if gold_lf is None:
             return
 
@@ -969,7 +969,8 @@ class SkipGramListenerModel(ListenerModel):
         train_feeds = {self.feats: self.feat_matrix,
                        self.gold_lfs: gold_lfs}
 
-        self.feed_cache.append(train_feeds)
+        if batch:
+            self.feed_cache.append(train_feeds)
 
         sess = tf.get_default_session()
         sess.run(self.train_op, train_feeds)
@@ -1104,7 +1105,7 @@ def run_listener_trial(listener_model, speaker_model, env, sess, args):
             print("gold", env.describe_lf(gold_lf), gold_lf_pos)
 
         # Update listener parameters.
-        listener_model.observe(obs, lf_pred, reward, gold_lf)
+        listener_model.observe(obs, lf_pred, reward, gold_lf, batch=args.batch)
 
         # Update speaker parameters.
         if gold_lf is not None:
