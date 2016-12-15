@@ -805,7 +805,7 @@ class SkipGramListenerModel(ListenerModel):
     def featurize_words(self, words):
 
         word_idxs = [self.env.word2idx[word] for word in words]
-        
+
         word_idxs.append(self.env.word2idx[self.env.EOS])
 
         #unigrams
@@ -897,18 +897,20 @@ class SkipGramListenerModel(ListenerModel):
         self.probs_cache = sess.run(self.probs, feed)
 
     #TODO: iteratively sample, i.e., start with single predicate and then only consider LFs with that predicate
-    def sample(self, utterance_bag, words, temperature=None, test=False):
+    def sample(self, utterance_bag, words, temperature=None, test=False, argmax=False):
         if len(self.lf_cache) < 1:
             self._populate_cache(words, test)
 
-        if not test:
+        if test or argmax:
+            idx = np.argmax(self.probs_cache)
+        else:
             idx = np.random.choice(len(self.probs_cache), p=self.probs_cache)
 
-        else:
-            for i, lf in enumerate(self.lf_cache):
-                lf = self.to_lot_lf(lf)
-                print("LF %30s  =>  (%.3g)" % (self.env.describe_lf(lf), self.probs_cache[i]))
-            idx = np.argmax(self.probs_cache)
+        if test:
+            scores = [(self.probs_cache[i], self.env.describe_lf(self.to_lot_lf(lf)))
+                      for i, lf in enumerate(self.lf_cache)]
+            scores = sorted(scores, key=lambda pair: pair[0], reverse=True)
+            print("\n".join("LF %30s  =>  (%.3g)" % pair for pair in scores))
 
         sampled_lf = self.to_lot_lf(self.lf_cache[idx])
 
@@ -924,7 +926,7 @@ class SkipGramListenerModel(ListenerModel):
         self.probs_cache = None
 
 
-    def observe(self, obs, lf_pred, reward, gold_lf):
+    def observe(self, obs, lf_pred, reward, gold_lf, batch=False):
         if gold_lf is None:
             return
 
@@ -969,7 +971,8 @@ class SkipGramListenerModel(ListenerModel):
         train_feeds = {self.feats: self.feat_matrix,
                        self.gold_lfs: gold_lfs}
 
-        self.feed_cache.append(train_feeds)
+        if batch:
+            self.feed_cache.append(train_feeds)
 
         sess = tf.get_default_session()
         sess.run(self.train_op, train_feeds)
@@ -977,18 +980,16 @@ class SkipGramListenerModel(ListenerModel):
     def batch_observe(self):
         batch_size = len(self.feed_cache)
         lf_size = len(self.feed_cache[0][self.gold_lfs])
-        
-        
         feats = np.zeros((batch_size*lf_size, self.feat_count))
-        
+
         gold_lfs = np.zeros((batch_size*lf_size,1))
-        
-        
+
+
         for i in range(batch_size):
             j = lf_size * i
             feats[j:j+lf_size] = self.feed_cache[i][self.feats]
             gold_lfs[j:j+lf_size] = self.feed_cache[i][self.gold_lfs]
-        
+
         gold_lfs /= np.sum(gold_lfs)
 
         self.feed_cache = []       
@@ -1000,11 +1001,8 @@ class SkipGramListenerModel(ListenerModel):
         sess = tf.get_default_session()
         for i in range(100):
             sess.run(self.train_op, train_feeds)
-        
-        
-        
-        
-        
+            print("Batch update: %d" % (i))
+
 
 def infer_trial(env, obs, listener_model, speaker_model, args):
     """
@@ -1103,7 +1101,7 @@ def run_listener_trial(listener_model, speaker_model, env, sess, args):
             print("gold", env.describe_lf(gold_lf), gold_lf_pos)
 
         # Update listener parameters.
-        listener_model.observe(obs, lf_pred, reward, gold_lf)
+        listener_model.observe(obs, lf_pred, reward, gold_lf, batch=args.batch)
 
         # Update speaker parameters.
         if gold_lf is not None:
@@ -1287,7 +1285,7 @@ def train(args):
                     first_success = run_listener_trial(listener_model, speaker_model,
                                                        env, sess, args)
                     online_results.append(first_success != -1)
-                    
+
                     #if args.gold_path:
                     #    with open(args.gold_path, "r") as gold_f:
                     #        listener_examples = json.load(gold_f)
@@ -1299,16 +1297,17 @@ def train(args):
                     #        accuracy = n_success / len(eval_results)
                     #        accuracies.append(accuracy)
                     #        print("%sAccuracy: %.3f%%%s" % (colors.BOLD, accuracy * 100, colors.ENDC))
-                    
+
 
                     if args.dream:
                         tqdm.write("\n%s===========\nDREAM TRIAL\n===========%s"
                                 % (colors.HEADER, colors.ENDC))
                         run_dream_trial(listener_model, speaker_model,
                                         env, sess, args)
-                
-                listener_model.batch_observe()
-                
+
+                if args.batch:
+                    listener_model.batch_observe()
+
                 all_online_results.append(online_results)
 
                 # Print samples from listener, speaker model
@@ -1337,9 +1336,13 @@ def train(args):
 
     print("\n%s==========\nOVERALL EVALUATION\n==========%s"
           % (colors.HEADER, colors.ENDC))
-    avg_online_accuracy = np.array(all_online_results).mean(axis=1).mean()
+    avg_online_accuracy = np.array(all_online_results).mean(axis=0)
     print("%sAverage online accuracy: %.3f%%%s"
-          % (colors.BOLD, avg_online_accuracy * 100, colors.ENDC))
+          % (colors.BOLD, avg_online_accuracy.mean() * 100, colors.ENDC))
+    print("%sOnline accuracy per trial:%s\n\t%s"
+          % (colors.BOLD, colors.ENDC,
+             "\n\t".join("%i\t%.3f" % (i, acc_i * 100)
+                         for i, acc_i in enumerate(avg_online_accuracy))))
 
     if args.gold_path:
         avg_accuracy = np.mean(accuracies)
@@ -1378,6 +1381,8 @@ if __name__ == "__main__":
     p.add_argument("--dream", default=False, action="store_true")
     p.add_argument("--num_listener_samples", type=int, default=5)
     p.add_argument("--max_rejections_after_trial", type=int, default=3)
+    p.add_argument("--batch", action="store_true", default=False)
+    p.add_argument("--argmax_listener", action="store_true", default=False)
 
     p.add_argument("--num_runs", default=1, type=int,
                    help="Number of times to repeat entire training process")
