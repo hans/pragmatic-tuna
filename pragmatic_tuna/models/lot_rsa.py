@@ -95,6 +95,7 @@ class DiscreteGenerativeModel(object):
     unk_prob = 0.01
     #if set to 0, use +1 smoothing of bigrams instead of backoff LM
     backoff_factor = 0
+    distortion_prob = 0.5
 
     START_TOKEN = "<s>"
     END_TOKEN = "</s>"
@@ -192,11 +193,16 @@ class DiscreteGenerativeModel(object):
         #compute translation probability p(u|z)
         words = u
         alignments = permutations(range(len(z)))
+
         p_trans = 0
         for a in alignments:
-            p = 1
+            n_distortions = sum(abs(a[i] - i) for i in range(len(a)))
+            p = self.distortion_prob ** n_distortions
+
+            pairs = []
             for i, w in enumerate(words):
                 p *= self._score_word_atom(w, z[a[i]])
+                pairs.append((w, self.env.lf_vocab[z[a[i]]]))
             p_trans += p
 
         p_trans = np.log(p_trans)
