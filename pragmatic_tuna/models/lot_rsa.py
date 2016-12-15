@@ -977,7 +977,6 @@ class SkipGramListenerModel(ListenerModel):
     def batch_observe(self):
         batch_size = len(self.feed_cache)
         lf_size = len(self.feed_cache[0][self.gold_lfs])
-        print(lf_size)
         
         
         feats = np.zeros((batch_size*lf_size, self.feat_count))
@@ -991,18 +990,18 @@ class SkipGramListenerModel(ListenerModel):
             gold_lfs[j:j+lf_size] = self.feed_cache[i][self.gold_lfs]
         
         gold_lfs /= np.sum(gold_lfs)
-        
+
+        self.feed_cache = []       
+ 
         train_feeds = {self.feats: feats,
                        self.gold_lfs: gold_lfs}
         
-        print(train_feeds)
         
         sess = tf.get_default_session()
         for i in range(100):
             sess.run(self.train_op, train_feeds)
         
         
-        self.feed_cache = []
         
         
         
