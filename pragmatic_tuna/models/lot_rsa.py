@@ -742,10 +742,10 @@ class SkipGramListenerModel(ListenerModel):
             return lf
         #case 3:
         elif len(lf) == 3:
-            return (lf[0],
-                    lf[1],
-                    self.env.lf_token_to_id["id"],
-                    lf[2])
+            return (self.env.lf_token_to_id["id"],
+                    lf[2],
+                    lf[0],
+                    lf[1])
 
     """
         Convert LoT expression of the form id(cat) AND left(dog) to
