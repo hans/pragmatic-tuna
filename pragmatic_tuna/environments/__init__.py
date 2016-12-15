@@ -124,9 +124,12 @@ class TUNAEnv(gym.Env):
 
         return vec
 
-    def _configure(self, dreaming=False):
+    def _configure(self, dreaming=False, reset_cursor=False):
         """Runtime configuration."""
         self.dreaming = dreaming
+
+        if reset_cursor:
+            self._cursor = 0
 
     @property
     def _essential_attributes(self):

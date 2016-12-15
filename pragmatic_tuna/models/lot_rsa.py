@@ -1234,6 +1234,8 @@ def train(args):
     with tf.Session() as sess:
         with sess.as_default():
             for run_i in range(args.num_runs):
+                env.configure(reset_cursor=True)
+
                 tqdm.write("%sBeginning training run %i.%s\n\n" % (colors.BOLD, run_i, colors.ENDC))
                 sess.run(tf.initialize_all_variables())
 
