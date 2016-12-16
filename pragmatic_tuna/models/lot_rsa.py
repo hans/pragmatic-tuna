@@ -1185,34 +1185,6 @@ def run_dream_trial(listener_model, generative_model, env, sess, args):
             generative_model.observe(obs, g_lf)
 
 
-def print_model_samples(listener_model, speaker_model, env, args):
-    listener_samples = []
-    for num_trials in range(5):
-        env.configure(dreaming=False)
-        _, utterance_bag, words = env.reset()
-        lf, p = listener_model.sample(utterance_bag, words)
-        listener_samples.append((" ".join(words), env.describe_lf(lf)))
-
-    speaker_samples = []
-    for num_trials in range(5):
-        env.reset()
-        referent_idx = [i for i, referent in enumerate(env._domain)
-                        if referent["target"]][0]
-        lf = env.sample_lf(referent=referent_idx)
-        words = speaker_model.sample(lf)
-        speaker_samples.append((words, env.describe_lf(lf)))
-
-    print("\n%s=======\nSAMPLES\n=======%s" % (colors.HEADER, colors.ENDC))
-    print("%sListener model (u -> z)%s" % (colors.BOLD, colors.ENDC))
-    for words, lf in listener_samples:
-        print("\t%30s => %30s" % (words, lf))
-    print("%sSpeaker model (z -> u)%s" % (colors.BOLD, colors.ENDC))
-    for words, lf in speaker_samples:
-        print("\t%30s => %30s" % (lf, words))
-
-    return listener_samples, speaker_samples
-
-
 def eval_offline_ctx(listener_model, speaker_model, examples, env, sess, args):
     """
     Evaluate the listener model relative to ground-truth utterance-LF pairs.
@@ -1227,6 +1199,9 @@ def eval_offline_ctx(listener_model, speaker_model, examples, env, sess, args):
         first_success, best_lf = run_listener_trial(
                 listener_model, speaker_model, env, sess, args,
                 evaluating=True)
+        if best_lf is None:
+            continue
+
         # TODO: Assumes each string description maps to a unique trial
         string_desc = env._trial["string_description"]
         learned_mapping[string_desc] = env.describe_lf(best_lf)
@@ -1387,8 +1362,6 @@ def train(args):
 
                 if args.batch:
                     listener_model.batch_observe()
-
-                print_model_samples(listener_model, speaker_model, env, args)
 
                 ctx_accuracy, cf_accuracy = eval_offline(
                         listener_model, speaker_model, env, sess, args)
