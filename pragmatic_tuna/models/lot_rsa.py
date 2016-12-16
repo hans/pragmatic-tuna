@@ -854,7 +854,7 @@ class SkipGramListenerModel(ListenerModel):
         return lf_feats
 
 
-    def _populate_cache(self, words, test=False):
+    def _populate_cache(self, words, context_free=False):
         id_idx = self.env.lf_token_to_id["id"]
 
         # HACK: pre-allocate lf_feats cache using known size
@@ -864,8 +864,8 @@ class SkipGramListenerModel(ListenerModel):
         #TODO: tune this number?
         i = 0
         seen = set()
-        for lf_pref in self.env.enumerate_lfs(includeOnlyPossibleReferents=not test):
-            for lf in self.env.enumerate_lfs(includeOnlyPossibleReferents=not test, lf_prefix=lf_pref):
+        for lf_pref in self.env.enumerate_lfs(includeOnlyPossibleReferents=not context_free):
+            for lf in self.env.enumerate_lfs(includeOnlyPossibleReferents=not context_free, lf_prefix=lf_pref):
                 valid = len(lf) < 3 or id_idx in lf
                 if not valid:
                     continue
@@ -897,20 +897,22 @@ class SkipGramListenerModel(ListenerModel):
         self.probs_cache = sess.run(self.probs, feed)
 
     #TODO: iteratively sample, i.e., start with single predicate and then only consider LFs with that predicate
-    def sample(self, utterance_bag, words, temperature=None, test=False, argmax=False):
+    def sample(self, utterance_bag, words, temperature=None,
+               context_free=False, argmax=False, evaluating=False):
         if len(self.lf_cache) < 1:
-            self._populate_cache(words, test)
+            self._populate_cache(words, context_free=context_free)
 
-        if test or argmax:
+        if argmax:
             idx = np.argmax(self.probs_cache)
         else:
             idx = np.random.choice(len(self.probs_cache), p=self.probs_cache)
 
-        if test:
+        if evaluating:
             scores = [(self.probs_cache[i], self.env.describe_lf(self.to_lot_lf(lf)))
                       for i, lf in enumerate(self.lf_cache)]
             scores = sorted(scores, key=lambda pair: pair[0], reverse=True)
-            print("\n".join("LF %30s  =>  (%.3g)" % pair for pair in scores))
+            print("\n".join("LF %30s  =>  (%.3g)" % (pair[1], pair[0])
+                            for pair in scores))
 
         sampled_lf = self.to_lot_lf(self.lf_cache[idx])
 
@@ -938,7 +940,7 @@ class SkipGramListenerModel(ListenerModel):
         #take cross product
 
 
-        self._populate_cache(obs[2], test=True)
+        self._populate_cache(obs[2], context_free=True)
 
 
         #lf =  self.from_lot_lf(gold_lf)
@@ -992,19 +994,20 @@ class SkipGramListenerModel(ListenerModel):
 
         gold_lfs /= np.sum(gold_lfs)
 
-        self.feed_cache = []       
- 
+        self.feed_cache = []
+
         train_feeds = {self.feats: feats,
                        self.gold_lfs: gold_lfs}
-        
-        
+
+
         sess = tf.get_default_session()
         for i in range(100):
             sess.run(self.train_op, train_feeds)
             print("Batch update: %d" % (i))
 
 
-def infer_trial(env, obs, listener_model, speaker_model, args):
+def infer_trial(env, obs, listener_model, speaker_model, args,
+                evaluating=False):
     """
     Run RSA inference for a given trial.
 
@@ -1014,6 +1017,7 @@ def infer_trial(env, obs, listener_model, speaker_model, args):
         listener_model:
         speaker_model:
         args:
+        evaluating: If `True`, will run argmax-inference rather than sampling
 
     Returns:
         lfs: LF IDs sampled from `listener_model`
@@ -1028,7 +1032,9 @@ def infer_trial(env, obs, listener_model, speaker_model, args):
     lfs, g_lfs, weights = [], [], []
     num_rejections = 0
     while len(weights) < args.num_listener_samples:
-        lf, p_lf = listener_model.sample(utterance_bag, words)
+        lf, p_lf = listener_model.sample(utterance_bag, words,
+                                         argmax=evaluating,
+                                         evaluating=evaluating)
 
         # Resolve referent.
         referent = env.resolve_lf(lf)
@@ -1065,15 +1071,18 @@ def infer_trial(env, obs, listener_model, speaker_model, args):
     return lfs, weights, rejs_per_sample
 
 
-def run_listener_trial(listener_model, speaker_model, env, sess, args):
+def run_listener_trial(listener_model, speaker_model, env, sess, args,
+                       evaluating=False):
     env.configure(dreaming=False)
     obs = env.reset()
 
     n_iterations, first_success = 0, -1
+    first_successful_lf_pred = None
     rejs_per_sample = np.inf
     while rejs_per_sample > args.max_rejections_after_trial:
         lfs, lf_weights, rejs_per_sample = \
-                infer_trial(env, obs, listener_model, speaker_model, args)
+                infer_trial(env, obs, listener_model, speaker_model, args,
+                            evaluating=evaluating)
         lfs = sorted(zip(lfs, lf_weights), key=lambda el: el[1], reverse=True)
 
         # Now select action based on maximum generative score.
@@ -1087,6 +1096,7 @@ def run_listener_trial(listener_model, speaker_model, env, sess, args):
 
         if success and first_success == -1:
             first_success = n_iterations
+            first_successful_lf_pred = lf_pred
         n_iterations += 1
 
         # Find the highest-scoring LF that dereferences to the correct referent.
@@ -1100,15 +1110,17 @@ def run_listener_trial(listener_model, speaker_model, env, sess, args):
         if gold_lf is not None:
             print("gold", env.describe_lf(gold_lf), gold_lf_pos)
 
-        # Update listener parameters.
-        listener_model.observe(obs, lf_pred, reward, gold_lf, batch=args.batch)
+        if not evaluating:
+            # Update listener parameters.
+            listener_model.observe(obs, lf_pred, reward, gold_lf, batch=args.batch)
 
-        # Update speaker parameters.
-        if gold_lf is not None:
-            speaker_model.observe(obs, gold_lf)
+            # Update speaker parameters.
+            if gold_lf is not None:
+                speaker_model.observe(obs, gold_lf)
+
         listener_model.reset()
 
-    return first_success
+    return first_success, first_successful_lf_pred
 
 def run_dream_trial(listener_model, generative_model, env, sess, args):
     """
@@ -1173,7 +1185,7 @@ def run_dream_trial(listener_model, generative_model, env, sess, args):
             generative_model.observe(obs, g_lf)
 
 
-def sample_models(listener_model, speaker_model, env, args):
+def print_model_samples(listener_model, speaker_model, env, args):
     listener_samples = []
     for num_trials in range(5):
         env.configure(dreaming=False)
@@ -1190,16 +1202,63 @@ def sample_models(listener_model, speaker_model, env, args):
         words = speaker_model.sample(lf)
         speaker_samples.append((words, env.describe_lf(lf)))
 
+    print("\n%s=======\nSAMPLES\n=======%s" % (colors.HEADER, colors.ENDC))
+    print("%sListener model (u -> z)%s" % (colors.BOLD, colors.ENDC))
+    for words, lf in listener_samples:
+        print("\t%30s => %30s" % (words, lf))
+    print("%sSpeaker model (z -> u)%s" % (colors.BOLD, colors.ENDC))
+    for words, lf in speaker_samples:
+        print("\t%30s => %30s" % (lf, words))
+
     return listener_samples, speaker_samples
 
 
-def eval_model(listener_model, examples, env):
+def eval_offline_ctx(listener_model, speaker_model, examples, env, sess, args):
     """
     Evaluate the listener model relative to ground-truth utterance-LF pairs.
+    This tests listener model predictions within the same environment contexts
+    in which it was learning.
+    """
+    listener_model.reset()
+    env.configure(reset_cursor=True)
+
+    learned_mapping = {}
+    for i in trange(args.num_trials):
+        first_success, best_lf = run_listener_trial(
+                listener_model, speaker_model, env, sess, args,
+                evaluating=True)
+        # TODO: Assumes each string description maps to a unique trial
+        string_desc = env._trial["string_description"]
+        learned_mapping[string_desc] = env.describe_lf(best_lf)
+
+    check_results = []
+    for words_string, lf_candidates in examples:
+        try:
+            learned_mapping_i = learned_mapping[words_string]
+        except KeyError:
+            check_i = False
+            learned_mapping_i = "???"
+        else:
+            check_i = learned_mapping_i in lf_candidates
+        check_results.append((words_string, check_i))
+
+        color = colors.OKGREEN if check_i else colors.FAIL
+        print("\t%s%30s => %30s%s"
+              % (color, words_string, learned_mapping_i, colors.ENDC))
+
+    return check_results
+
+
+def eval_offline_cf(listener_model, examples, env):
+    """
+    Evaluate the listener model relative to ground-truth utterance-LF pairs.
+    This tests listener model predictions outside of any particular environment
+    context.
 
     Args:
         listener_model:
         examples: Pairs of `(words_string, lf_candidates)`
+        env:
     """
     results = []
     listener_model.reset()
@@ -1213,7 +1272,8 @@ def eval_model(listener_model, examples, env):
             lf_candidate_tok_ids.append(tuple(ids))
 
         # DEV: assumes we're using a non-BOW listener model
-        sampled_lf, p = listener_model.sample(None, words, temperature=0.001, test=True)
+        sampled_lf, p = listener_model.sample(None, words, argmax=True,
+                                              context_free=True, evaluating=True)
         listener_model.reset()
         success = tuple(sampled_lf) in lf_candidate_tok_ids
         results.append((words_string, env.describe_lf(sampled_lf), success))
@@ -1222,6 +1282,34 @@ def eval_model(listener_model, examples, env):
         print("\t%s%30s => %30s%s" % (color, words_string, env.describe_lf(sampled_lf), colors.ENDC))
 
     return results
+
+
+def eval_offline(listener_model, speaker_model, env, sess, args):
+    if not args.gold_path:
+        return None, None
+
+    with open(args.gold_path, "r") as gold_f:
+        listener_examples = json.load(gold_f)
+
+        print("\n%s==========\nOFFLINE EVALUATION\n==========%s"
+            % (colors.HEADER, colors.ENDC))
+
+        # Context-grounded offline evaluation.
+        print("%sWith context:%s" % (colors.HEADER, colors.ENDC))
+        ctx_results = eval_offline_ctx(
+                listener_model, speaker_model, listener_examples,
+                env, sess, args)
+        ctx_n_success = len([s for _, s in ctx_results if s])
+        ctx_accuracy = ctx_n_success / len(ctx_results)
+
+        # Context-free offline evaluation.
+        print("\n%sWithout context:%s" % (colors.HEADER, colors.ENDC))
+        cf_results = eval_offline_cf(
+                listener_model, listener_examples, env)
+        cf_n_success = len([s for _, _, s in cf_results if s])
+        cf_accuracy = cf_n_success / len(cf_results)
+
+    return ctx_accuracy, cf_accuracy
 
 
 def build_train_graph(model, env, args, scope="train"):
@@ -1266,7 +1354,10 @@ def train(args):
     listener_model.train_op = listener_train_op
     speaker_model.train_op = speaker_train_op
 
-    accuracies, all_online_results = [], []
+    # Offline metrics
+    ctx_accuracies, cf_accuracies = [], []
+    # Online metrics
+    online_results = []
     with tf.Session() as sess:
         with sess.as_default():
             for run_i in range(args.num_runs):
@@ -1277,27 +1368,14 @@ def train(args):
 
                 # Track online-learning performance: accuracy as new examples
                 # are presented online
-                online_results = []
+                run_online_results = []
 
                 for i in trange(args.num_trials):
                     tqdm.write("\n%s==============\nLISTENER TRIAL\n==============%s"
                             % (colors.HEADER, colors.ENDC))
                     first_success = run_listener_trial(listener_model, speaker_model,
                                                        env, sess, args)
-                    online_results.append(first_success != -1)
-
-                    #if args.gold_path:
-                    #    with open(args.gold_path, "r") as gold_f:
-                    #        listener_examples = json.load(gold_f)
-                    #
-                    #        print("\n%s==========\nEVALUATION\n==========%s"
-                    #              % (colors.HEADER, colors.ENDC))
-                    #        eval_results = eval_model(listener_model, listener_examples, env)
-                    #        n_success = len([result for _, _, result in eval_results if result])
-                    #        accuracy = n_success / len(eval_results)
-                    #        accuracies.append(accuracy)
-                    #        print("%sAccuracy: %.3f%%%s" % (colors.BOLD, accuracy * 100, colors.ENDC))
-
+                    run_online_results.append(first_success != -1)
 
                     if args.dream:
                         tqdm.write("\n%s===========\nDREAM TRIAL\n===========%s"
@@ -1305,38 +1383,21 @@ def train(args):
                         run_dream_trial(listener_model, speaker_model,
                                         env, sess, args)
 
+                online_results.append(run_online_results)
+
                 if args.batch:
                     listener_model.batch_observe()
 
-                all_online_results.append(online_results)
+                print_model_samples(listener_model, speaker_model, env, args)
 
-                # Print samples from listener, speaker model
-                print("\n%s=======\nSAMPLES\n=======%s"
-                      % (colors.HEADER, colors.ENDC))
-                listener_samples, speaker_samples = \
-                        sample_models(listener_model, speaker_model, env, args)
-                print("%sListener model (u -> z)%s" % (colors.BOLD, colors.ENDC))
-                for words, lf in listener_samples:
-                    print("\t%30s => %30s" % (words, lf))
-                print("%sSpeaker model (z -> u)%s" % (colors.BOLD, colors.ENDC))
-                for words, lf in speaker_samples:
-                    print("\t%30s => %30s" % (lf, words))
-
-                if args.gold_path:
-                    with open(args.gold_path, "r") as gold_f:
-                        listener_examples = json.load(gold_f)
-
-                        print("\n%s==========\nEVALUATION\n==========%s"
-                              % (colors.HEADER, colors.ENDC))
-                        eval_results = eval_model(listener_model, listener_examples, env)
-                        n_success = len([result for _, _, result in eval_results if result])
-                        accuracy = n_success / len(eval_results)
-                        accuracies.append(accuracy)
-                        print("%sAccuracy: %.3f%%%s" % (colors.BOLD, accuracy * 100, colors.ENDC))
+                ctx_accuracy, cf_accuracy = eval_offline(
+                        listener_model, speaker_model, env, sess, args)
+                ctx_accuracies.append(ctx_accuracy)
+                cf_accuracies.append(cf_accuracy)
 
     print("\n%s==========\nOVERALL EVALUATION\n==========%s"
           % (colors.HEADER, colors.ENDC))
-    avg_online_accuracy = np.array(all_online_results).mean(axis=0)
+    avg_online_accuracy = np.array(online_results).mean(axis=0)
     print("%sAverage online accuracy: %.3f%%%s"
           % (colors.BOLD, avg_online_accuracy.mean() * 100, colors.ENDC))
     print("%sOnline accuracy per trial:%s\n\t%s"
