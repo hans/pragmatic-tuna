@@ -1274,17 +1274,15 @@ def eval_offline(listener_model, speaker_model, env, sess, args):
         ctx_results = eval_offline_ctx(
                 listener_model, speaker_model, listener_examples,
                 env, sess, args)
-        ctx_n_success = len([s for _, s in ctx_results if s])
-        ctx_accuracy = ctx_n_success / len(ctx_results)
+        ctx_successes = [s for _, s in ctx_results if s]
 
         # Context-free offline evaluation.
         print("\n%sWithout context:%s" % (colors.HEADER, colors.ENDC))
         cf_results = eval_offline_cf(
                 listener_model, listener_examples, env)
-        cf_n_success = len([s for _, _, s in cf_results if s])
-        cf_accuracy = cf_n_success / len(cf_results)
+        cf_successes = [s for _, _, s in cf_results]
 
-    return ctx_accuracy, cf_accuracy
+    return ctx_successes, cf_successes
 
 
 def build_train_graph(model, env, args, scope="train"):
@@ -1330,7 +1328,7 @@ def train(args):
     speaker_model.train_op = speaker_train_op
 
     # Offline metrics
-    ctx_accuracies, cf_accuracies = [], []
+    ctx_results, cf_results = [], []
     # Online metrics
     online_results = []
     with tf.Session() as sess:
@@ -1341,8 +1339,6 @@ def train(args):
                 tqdm.write("%sBeginning training run %i.%s\n\n" % (colors.BOLD, run_i, colors.ENDC))
                 sess.run(tf.initialize_all_variables())
 
-                # Track online-learning performance: accuracy as new examples
-                # are presented online
                 run_online_results = []
 
                 for i in trange(args.num_trials):
@@ -1363,10 +1359,10 @@ def train(args):
                 if args.batch:
                     listener_model.batch_observe()
 
-                ctx_accuracy, cf_accuracy = eval_offline(
+                ctx_successes, cf_successes = eval_offline(
                         listener_model, speaker_model, env, sess, args)
-                ctx_accuracies.append(ctx_accuracy)
-                cf_accuracies.append(cf_accuracy)
+                ctx_results.append(ctx_successes)
+                cf_results.append(cf_successes)
 
     print("\n%s==========\nOVERALL EVALUATION\n==========%s"
           % (colors.HEADER, colors.ENDC))
@@ -1379,8 +1375,21 @@ def train(args):
                          for i, acc_i in enumerate(avg_online_accuracy))))
 
     if args.gold_path:
-        avg_accuracy = np.mean(accuracies)
-        print("%sAverage accuracy: %.3f%%%s" % (colors.BOLD, avg_accuracy * 100, colors.ENDC))
+        avg_ctx_accuracy = np.mean(ctx_results, axis=0)
+        print("%sAverage offline accuracy with context: %.3f%%%s"
+              % (colors.BOLD, avg_ctx_accuracy.mean() * 100, colors.ENDC))
+        print("%sAverage offline accuracy with context per trial:%s\n\t%s"
+              % (colors.BOLD, colors.ENDC,
+                 "\n\t".join("%i\t%.3f" % (i, acc_i * 100)
+                             for i, acc_i in enumerate(avg_ctx_accuracy))))
+
+        avg_cf_accuracy = np.mean(cf_results, axis=0)
+        print("%sAverage offline accuracy without context: %.3f%%%s"
+              % (colors.BOLD, avg_ctx_accuracy.mean() * 100, colors.ENDC))
+        print("%sAverage offline accuracy without context per trial:%s\n\t%s"
+              % (colors.BOLD, colors.ENDC,
+                 "\n\t".join("%i\t%.3f" % (i, acc_i * 100)
+                             for i, acc_i in enumerate(avg_cf_accuracy))))
 
 
 SPEAKER_MODELS = {
