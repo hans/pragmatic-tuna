@@ -1385,7 +1385,7 @@ def train(args):
 
         avg_cf_accuracy = np.mean(cf_results, axis=0)
         print("%sAverage offline accuracy without context: %.3f%%%s"
-              % (colors.BOLD, avg_ctx_accuracy.mean() * 100, colors.ENDC))
+              % (colors.BOLD, avg_cf_accuracy.mean() * 100, colors.ENDC))
         print("%sAverage offline accuracy without context per trial:%s\n\t%s"
               % (colors.BOLD, colors.ENDC,
                  "\n\t".join("%i\t%.3f" % (i, acc_i * 100)
