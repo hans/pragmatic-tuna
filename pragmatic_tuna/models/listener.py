@@ -39,6 +39,11 @@ class ListenerModel(object):
 
     def sample(self, utterance_bag, words, temperature=None,
                context_free=False, argmax=False, evaluating=False):
+        """
+        Returns:
+            lf: LF token ID sequence
+            p_lf: float scalar p(lf)
+        """
         raise NotImplementedError
 
     def observe(self, obs, lf_pred, reward, gold_lf):
@@ -259,32 +264,57 @@ class WindowedSequenceListenerModel(ListenerModel):
                     "lf_embeddings", shape=lf_emb_shape, initializer=EMBEDDING_INITIALIZER)
             null_embedding = tf.gather(lf_embeddings, self.env.lf_unk_id)
 
+            # Weight matrices mapping input -> ~p(fn), input -> ~p(atom)
+            input_dim = self.embedding_dim + self.embedding_dim * self.max_timesteps
+            W_fn = tf.get_variable("W_fn", shape=(input_dim, len(self.env.lf_functions)))
+            W_atom = tf.get_variable("W_atom", shape=(input_dim, len(self.env.lf_atoms)))
+
             # Now run a teeny LF decoder.
-            outputs, samples = [], []
-            output_dim = lf_emb_shape[0]
+            outputs, probs, samples = [], [], []
             prev_sample = null_embedding
             for t in range(self.max_timesteps):
                 with tf.variable_scope("recurrence", reuse=t > 0):
-                    input_t = tf.concat(0, [prev_sample, word_window])
-                    output_t = layers.fully_connected(tf.expand_dims(input_t, 0),
-                                                      output_dim, tf.identity)
+                    input_t = tf.expand_dims(tf.concat(0, [prev_sample, word_window]), 0)
 
-                    output_t /= self.temperature
+                    # Force-sample a syntactically valid LF.
+                    # i.e. alternating fn,atom,fn,atom,...
+                    #
+                    # TODO: This is coupled with the ordering of the LF tokens
+                    # in the env definition. That could be bad.
+                    if t % 2 == 0:
+                        fn_logits = tf.matmul(input_t, W_fn) / self.temperature
+                        atom_logits = tf.zeros((1, len(self.env.lf_atoms)))
+                        sample_t = tf.multinomial(fn_logits, num_samples=1)
+                        fn_probs = tf.nn.softmax(fn_logits)
+                        atom_probs = atom_logits
+                    else:
+                        fn_logits = tf.zeros((1, len(self.env.lf_functions)))
+                        atom_logits = tf.matmul(input_t, W_atom) / self.temperature
+                        sample_t = tf.multinomial(atom_logits, num_samples=1)
+                        fn_probs = fn_logits
+                        atom_probs = tf.nn.softmax(atom_logits)
 
-                    sample_t = tf.squeeze(tf.multinomial(output_t, num_samples=1))
+                    output_t = tf.squeeze(tf.concat(1, (fn_logits, atom_logits)))
+                    probs_t = tf.squeeze(tf.concat(1, (fn_probs, atom_probs)))
+
+                    sample_t = tf.squeeze(sample_t)
+                    if t % 2 == 1:
+                        # Shift index to match standard vocabulary.
+                        sample_t += len(self.env.lf_functions)
+
                     # Hack shape.
                     sample_t.set_shape(())
                     prev_sample = tf.nn.embedding_lookup(lf_embeddings, sample_t)
 
-                    # TODO support stop token here?
-
                     outputs.append(output_t)
+                    probs.append(probs_t)
                     samples.append(sample_t)
 
             self.word_embeddings = word_embeddings
             self.lf_embeddings = lf_embeddings
 
             self.outputs = outputs
+            self.probs = probs
             self.samples = samples
 
     def build_xent_gradients(self):
@@ -317,41 +347,29 @@ class WindowedSequenceListenerModel(ListenerModel):
         word_idxs += [self.env.word_unk_id] * (self.max_timesteps - len(word_idxs))
         return word_idxs
 
-    def sample(self, utterance_bag, words, temperature=1.0):
+    def sample(self, utterance_bag, words, temperature=1.0, argmax=False,
+               evaluating=False):
+        # TODO handle argmax, evaluating
+
         sess = tf.get_default_session()
         feed = {self.words: self._get_word_idxs(words),
                 self.temperature: temperature}
-        # Rejection-sample a valid LF (alternating fn-atom-fn-atom..)
-        attempts = 0
-        while True:
-            sample = sess.run(self.samples, feed)
-            ret_sample = []
-            valid = True
-            for i, sample_i in enumerate(sample):
-                stop = sample_i == self.env.lf_eos_id
-                if stop and i > 0 and i % 2 == 0:
-                    # Valid stopping point. Truncate and end.
-                    ret_sample = ret_sample[:i]
-                    break
 
-                ret_sample.append(sample_i)
-                sample_i_str = self.env.lf_vocab[sample_i]
-                if i % 2 == 0 and sample_i_str not in self.env.lf_function_map:
-                    valid = False
-                elif i % 2 == 1 and sample_i_str not in self.env.lf_atoms:
-                    valid = False
+        rets = sess.run(self.samples + self.probs, feed)
+        sample_toks = rets[:len(self.samples)]
+        probs = rets[len(self.samples):]
 
-            if len(ret_sample) > 3 and ret_sample[0:2] == ret_sample[2:4]:
-                ret_sample = ret_sample[:2]
+        # Trim at EOS.
+        try:
+            eos_pos = sample_toks.index(self.env.lf_eos_id)
+        except ValueError:
+            pass
+        else:
+            sample_toks = sample_toks[:eos_pos + 1]
 
-            if valid and len(ret_sample) == len(words):
-                return ret_sample
-
-            attempts += 1
-            if attempts > 10000:
-                print("%sFailed to sample LF for %r after 10000 attempts. Dying.%s"
-                      % (colors.FAIL, " ".join(words), colors.ENDC))
-                return []
+        total_prob = np.prod([probs_t[sample_t]
+                              for probs_t, sample_t in zip(probs, sample_toks)])
+        return sample_toks, total_prob
 
     def observe(self, obs, lf_pred, reward, gold_lf):
         if gold_lf is None:
