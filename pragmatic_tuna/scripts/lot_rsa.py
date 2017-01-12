@@ -1,3 +1,9 @@
+"""
+Combine a listener and speaker model to perform RSA inference in reference games.
+
+The inference is mediated by a logical form language / language of thought (LoT).
+"""
+
 from argparse import ArgumentParser
 import json
 import re
