@@ -440,7 +440,7 @@ if __name__ == "__main__":
 
     p.add_argument("--num_runs", default=1, type=int,
                    help="Number of times to repeat entire training process")
-    p.add_argument("--learning_method", default="rl", choices=["rl", "xent"])
+    p.add_argument("--learning_method", default="xent", choices=["rl", "xent"])
     p.add_argument("--num_trials", default=100, type=int)
     p.add_argument("--learning_rate", default=0.1, type=float)
     p.add_argument("--momentum", default=0.9, type=float)
