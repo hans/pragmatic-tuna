@@ -314,8 +314,7 @@ def build_train_graph(model, env, args, scope="train"):
         raise NotImplementedError("undefined learning method " + args.learning_method)
 
     global_step = tf.Variable(0, name="global_step", dtype=tf.int64, trainable=False)
-    #opt = tf.train.MomentumOptimizer(args.learning_rate, args.momentum)
-    opt = tf.train.AdagradDAOptimizer(args.learning_rate, global_step, l1_regularization_strength=0.1)
+    opt = tf.train.GradientDescentOptimizer(args.learning_rate)
     train_op = opt.apply_gradients(gradients, global_step=global_step)
 
     # Make a dummy train_op that works with TF partial_run.
