@@ -329,7 +329,7 @@ def train(args):
     env = TUNAWithLoTEnv(args.corpus_path, corpus_selection=args.corpus_selection,
                          bag=args.bag_env, functions=FUNCTIONS[args.fn_selection],
                          atom_attribute=args.atom_attribute)
-    listener_model = SkipGramListenerModel(env)
+    listener_model = EnsembledSkipGramListenerModel(env, 4)
     speaker_model = SPEAKER_MODELS[args.speaker_model](env, args.embedding_dim)
 
     listener_train_op, listener_global_step = \
