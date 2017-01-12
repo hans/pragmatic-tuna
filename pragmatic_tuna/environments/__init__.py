@@ -257,14 +257,15 @@ class TUNAWithLoTEnv(TUNAEnv):
 
         function_map = dict(functions or [])
         function_map["id"] = id_fn
+        function_map[EOS] = EOS
 
         self.lf_functions = sorted(function_map.keys())
         self.lf_function_map = function_map
 
-        self.lf_atoms = sorted(self.attributes_to_idx[atom_attribute])
+        self.lf_atoms = sorted(self.attributes_to_idx[atom_attribute]) + [UNK]
 
         # Also prepare a unified LF-language vocabulary
-        self.lf_vocab = [UNK, EOS] + self.lf_functions + self.lf_atoms
+        self.lf_vocab = self.lf_functions + self.lf_atoms
         # No overlap between function and atom names
         assert len(self.lf_vocab) == len(set(self.lf_vocab))
         self.lf_token_to_id = {token: idx for idx, token in enumerate(self.lf_vocab)}
@@ -288,11 +289,14 @@ class TUNAWithLoTEnv(TUNAEnv):
         return []
 
     def resolve_lf(self, id_list):
-        if len(id_list) == 0:
+        if len(id_list) == 0 or id_list[0] == self.lf_eos_id:
             return []
 
         matches = self._domain
         for fn_id, atom_id in zip(id_list[::2], id_list[1::2]):
+            if fn_id == self.lf_eos_id:
+                break
+
             fn = self.lf_function_map[self.lf_vocab[fn_id]]
             atom = self.lf_vocab[atom_id]
             assert atom in self.lf_atoms
