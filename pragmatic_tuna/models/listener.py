@@ -575,12 +575,6 @@ class SkipGramListenerModel(ListenerModel):
             #if matches and len(matches) == 1 and matches[0] == referent:
             #    gold_lfs[i] = 1.0
 
-        # DEV: Make sure there are no dupes in the LF list.
-        # Otherwise TF cross-entropy will bork.
-        assert np.sum(gold_lfs) == 1, \
-                "%s %i" % (" ".join(self.env.lf_vocab[idx] for idx in gold_lf),
-                           np.sum(gold_lfs))
-
         gold_lfs /= np.sum(gold_lfs)
 
 

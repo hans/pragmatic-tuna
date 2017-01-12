@@ -370,9 +370,6 @@ def train(args):
 
                 online_results.append(run_online_results)
 
-                if args.batch:
-                    listener_model.batch_observe()
-
                 ctx_successes, cf_successes = eval_offline(
                         listener_model, speaker_model, env, sess, args)
                 ctx_results.append(ctx_successes)
