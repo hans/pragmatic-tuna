@@ -68,21 +68,26 @@ def infer_trial(env, obs, listener_model, speaker_model, args,
         g_lfs.append(g_lf)
         weights.append((np.exp(p_utterance), p_lf))
 
-    # Debug logging.
-    data = sorted(zip(lfs, g_lfs, weights), key=lambda xs: xs[2], reverse=True)
-    for lf, g_lf, weight in data:
-        print("LF %30s  =>  Referent %10s  =>  (%.3g, %.3g)" %
+    # Compute scores, trading off between speaker and listener model.
+    # TODO: customizable
+    alpha = 0.5
+    mixed_weights = [(speaker_weight ** alpha) * (listener_weight ** (1 - alpha))
+                     for speaker_weight, listener_weight in weights]
+    data = sorted(zip(lfs, g_lfs, weights, mixed_weights),
+                  key=lambda xs: xs[3], reverse=True)
+    for lf, g_lf, weight, mixed_weight in data:
+        print("LF %30s  =>  Referent %10s  =>  (%.4g, %.4g, %.4g)" %
               (env.describe_lf(lf),
                env.resolve_lf(lf)[0]["attributes"][args.atom_attribute],
                #env.describe_lf(g_lf),
-               weight[0], weight[1]))
+               weight[0], weight[1], mixed_weight))
 
     rejs_per_sample = num_rejections / args.num_listener_samples
     print("%sRejections per sample: %.2f%s" % (colors.BOLD + colors.WARNING,
                                              rejs_per_sample, colors.ENDC))
 
     listener_model.reset()
-    return lfs, weights, rejs_per_sample
+    return lfs, weights, mixed_weights, rejs_per_sample
 
 
 def run_listener_trial(listener_model, speaker_model, env, sess, args,
@@ -94,10 +99,10 @@ def run_listener_trial(listener_model, speaker_model, env, sess, args,
     first_successful_lf_pred = None
     rejs_per_sample = np.inf
     while rejs_per_sample > args.max_rejections_after_trial:
-        lfs, lf_weights, rejs_per_sample = \
+        lfs, lf_weights, lf_mixed_weights, rejs_per_sample = \
                 infer_trial(env, obs, listener_model, speaker_model, args,
                             evaluating=evaluating)
-        lfs = sorted(zip(lfs, lf_weights), key=lambda el: el[1], reverse=True)
+        lfs = sorted(zip(lfs, lf_mixed_weights), key=lambda el: el[1], reverse=True)
 
         # Now select action based on maximum generative score.
         lf_pred = lfs[0][0]
@@ -115,7 +120,7 @@ def run_listener_trial(listener_model, speaker_model, env, sess, args,
 
         # Find the highest-scoring LF that dereferences to the correct referent.
         gold_lf, gold_lf_pos = None, -1
-        for i, (lf_i, weight_i) in enumerate(lfs):
+        for i, (lf_i, _) in enumerate(lfs):
             resolved = env.resolve_lf(lf_i)
             if resolved and resolved[0]["target"]:
                 gold_lf = lf_i
