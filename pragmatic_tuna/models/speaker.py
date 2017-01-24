@@ -371,7 +371,7 @@ class WindowedSequenceSpeakerModel(object):
 
         probs = sess.run(self.probs[:len(words)], feed)
         probs = [probs_t[word_t] for probs_t, word_t in zip(probs, words)]
-        return np.prod(probs)
+        return np.log(np.prod(probs))
 
     def observe(self, obs, gold_lf):
         z = self._pad_lf_idxs(gold_lf)
