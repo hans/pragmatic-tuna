@@ -27,6 +27,9 @@ class NaiveGenerativeModel(object):
         self.max_length = max_length
 
     def observe(self, obs, gold_lf):
+        if gold_lf is None:
+            return
+
         u = obs[1]
         z = gold_lf
 
@@ -102,6 +105,9 @@ class DiscreteGenerativeModel(object):
         self.unigramcounter = Counter()
 
     def observe(self, obs, gold_lf):
+        if gold_lf is None:
+            return
+
         u = obs[2]
         z = gold_lf
 
@@ -374,6 +380,9 @@ class WindowedSequenceSpeakerModel(object):
         return np.log(np.prod(probs))
 
     def observe(self, obs, gold_lf):
+        if gold_lf is None:
+            return
+
         z = self._pad_lf_idxs(gold_lf)
 
         words = [self.env.word2idx[word] for word in obs[2]]
