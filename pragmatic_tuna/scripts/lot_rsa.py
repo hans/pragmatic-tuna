@@ -79,10 +79,10 @@ def run_listener_trial(listener_model, speaker_model, env, sess, args,
     env.configure(dreaming=False)
     obs = env.reset()
 
-    n_iterations, first_success = 0, -1
+    n_iterations, success, first_success = 0, False, -1
     first_successful_lf_pred = None
     rejs_per_sample = np.inf
-    while rejs_per_sample > args.max_rejections_after_trial:
+    while rejs_per_sample > args.max_rejections_after_trial or not success:
         lfs, lf_weights, rejs_per_sample = \
                 infer_trial(env, obs, listener_model, speaker_model, args,
                             evaluating=evaluating)
