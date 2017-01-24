@@ -348,7 +348,7 @@ class WindowedSequenceListenerModel(ListenerModel):
         return word_idxs
 
     def sample(self, utterance_bag, words, temperature=1.0, argmax=False,
-               evaluating=False):
+               context_free=False, evaluating=False):
         # TODO handle argmax, evaluating
 
         sess = tf.get_default_session()
