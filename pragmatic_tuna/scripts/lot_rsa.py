@@ -68,10 +68,28 @@ def infer_trial(env, obs, listener_model, speaker_model, args,
         g_lfs.append(g_lf)
         weights.append((np.exp(p_utterance), p_lf))
 
+    # Mix listener+speaker scores.
+    # TODO: customizable
+    alpha = 0.02
+    mixed_weights = [(speaker_weight ** alpha) * (listener_weight ** (1 - alpha))
+                        for speaker_weight, listener_weight in weights]
+    data = sorted(zip(lfs, mixed_weights, weights), key=lambda el: el[1],
+                  reverse=True)
+
     rejs_per_sample = num_rejections / args.num_listener_samples
 
+    # Debug printing.
+    for lf, mixed_weight, weight in data:
+        print("LF %30s  =>  Referent %10s  =>  (%.4g, %.4g, %.4g)" %
+            (env.describe_lf(lf),
+            env.resolve_lf(lf)[0]["attributes"][args.atom_attribute],
+            #env.describe_lf(g_lf),
+            weight[0], weight[1], mixed_weight))
+    print("%sRejections per sample: %.2f%s" % (colors.BOLD + colors.WARNING,
+                                               rejs_per_sample, colors.ENDC))
+
     listener_model.reset()
-    return lfs, weights, rejs_per_sample
+    return data, rejs_per_sample
 
 
 def run_listener_trial(listener_model, speaker_model, env, sess, args,
@@ -83,27 +101,9 @@ def run_listener_trial(listener_model, speaker_model, env, sess, args,
     first_successful_lf_pred = None
     rejs_per_sample = np.inf
     while rejs_per_sample > args.max_rejections_after_trial or not success:
-        lfs, lf_weights, rejs_per_sample = \
+        lfs, rejs_per_sample = \
                 infer_trial(env, obs, listener_model, speaker_model, args,
                             evaluating=evaluating)
-
-        # Mix listener+speaker scores.
-        # TODO: customizable
-        alpha = 0.5
-        mixed_weights = [(speaker_weight ** alpha) * (listener_weight ** (1 - alpha))
-                         for speaker_weight, listener_weight in lf_weights]
-        lfs = sorted(zip(lfs, mixed_weights, lf_weights),
-                     key=lambda el: el[1], reverse=True)
-
-        # Debug printing.
-        for lf, mixed_weight, weight in lfs:
-            print("LF %30s  =>  Referent %10s  =>  (%.4g, %.4g, %.4g)" %
-                (env.describe_lf(lf),
-                env.resolve_lf(lf)[0]["attributes"][args.atom_attribute],
-                #env.describe_lf(g_lf),
-                weight[0], weight[1], mixed_weight))
-        print("%sRejections per sample: %.2f%s" % (colors.BOLD + colors.WARNING,
-                                                   rejs_per_sample, colors.ENDC))
 
         # Now select action based on maximum score.
         lf_pred = lfs[0][0]
@@ -152,56 +152,59 @@ def run_dream_trial(listener_model, generative_model, env, sess, args):
                     if referent["target"]][0]
     referent = env._domain[referent_idx]
 
-    for run_i in range(2):
-        success = False
-        i = 0
-        while not success:
-            print("Dream trial %i" % i)
+    success = False
+    i = 0
+    while not success:
+        print("Dream trial %i" % i)
 
-            # Sample an LF from p(z|r).
-            g_lf = env.sample_lf(referent=referent_idx)
+        # Sample an LF from p(z|r).
+        g_lf = env.sample_lf(referent=referent_idx)
 
-            # Sample utterances from p(u|z).
-            words = generative_model.sample(g_lf).split()
-            word_ids = np.array([env.word2idx[word]
-                                    for word in words])
+        # Sample utterances from p(u|z).
+        words = generative_model.sample(g_lf).split()
+        word_ids = np.array([env.word2idx[word]
+                                for word in words])
 
-            g_ut = np.zeros(env.vocab_size)
-            if len(word_ids):
-                g_ut[word_ids] = 1
+        g_ut = np.zeros(env.vocab_size)
+        if len(word_ids):
+            g_ut[word_ids] = 1
 
-            # Run listener model q(z|u).
-            l_lf, p = listener_model.sample(g_ut, words, temperature=0.5)
-            # Literally dereference and see if we get the expected referent.
-            # TODO: run multiple particles through this whole process!
-            l_referent = env.resolve_lf(l_lf)
-            if l_referent:
-                success = l_referent[0] == referent
+        # Build a fake observation object for inference.
+        obs = (items, g_ut, words)
 
-            print(
-    """    Referent:\t\t%s
-    z ~ p(z|r):\t\t%s
-    u ~ p(u|z):\t\t%s
-    z' ~ q(z|u):\t%s
-    Deref:\t\t%s""" %
-                (referent["attributes"][args.atom_attribute],
-                 env.describe_lf(g_lf),
-                 " ".join(words),
-                 env.describe_lf(l_lf),
-                 [l_referent_i["attributes"][args.atom_attribute] for l_referent_i in l_referent]))
+        # Run listener model q(z|u).
+        l_lfs, _ = infer_trial(env, obs, listener_model, generative_model, args)
+        # Literally dereference and see if we get the expected referent.
+        # TODO: run multiple particles through this whole process!
+        l_referent = env.resolve_lf(l_lfs[0][0])
+        if l_referent:
+            success = l_referent[0] == referent
 
-            i += 1
-            if i > 1000:
-                print("%sFailed to dream successfully after 1000 trials. Dying.%s"
-                      % (colors.FAIL, colors.ENDC))
-                break
+        color = colors.OKGREEN if success else colors.FAIL
+        print("%s%s => %s%s" % (colors.BOLD + color, " ".join(words),
+                                env.describe_lf(l_lfs[0][0]), colors.ENDC))
+        # print(
+# """    Referent:\t\t%s
+# z ~ p(z|r):\t\t%s
+# u ~ p(u|z):\t\t%s
+# z' ~ q(z|u):\t%s
+# Deref:\t\t%s""" %
+        #     (referent["attributes"][args.atom_attribute],
+        #         env.describe_lf(g_lf),
+        #         " ".join(words),
+        #         env.describe_lf(l_lf),
+        #         [l_referent_i["attributes"][args.atom_attribute] for l_referent_i in l_referent]))
 
-            listener_model.reset()
+        i += 1
+        if i > 1000:
+            print("%sFailed to dream successfully after 1000 trials. Dying.%s"
+                    % (colors.FAIL, colors.ENDC))
+            break
 
-        if success:
-            # Construct an "observation" for the generative model.
-            obs = (items, g_ut, words)
-            generative_model.observe(obs, g_lf)
+        listener_model.reset()
+
+    if success:
+        generative_model.observe(obs, g_lf)
 
 
 def eval_offline_ctx(listener_model, speaker_model, examples, env, sess, args):
