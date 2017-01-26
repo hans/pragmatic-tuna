@@ -146,15 +146,17 @@ def run_dream_trial(listener_model, generative_model, env, sess, args):
     Run a single dream trial.
     """
     env.configure(dreaming=True)
-    items, _, _ = env.reset()
+    items, _, gold_words = env.reset()
+    print(gold_words)
 
     referent_idx = [i for i, referent in enumerate(env._domain)
                     if referent["target"]][0]
     referent = env._domain[referent_idx]
 
     success = False
+    string_matches = False
     i = 0
-    while not success:
+    while not success or not string_matches:
         print("Dream trial %i" % i)
 
         # Sample an LF from p(z|r).
@@ -175,7 +177,6 @@ def run_dream_trial(listener_model, generative_model, env, sess, args):
         # Run listener model q(z|u).
         l_lfs, _ = infer_trial(env, obs, listener_model, generative_model, args)
         # Literally dereference and see if we get the expected referent.
-        # TODO: run multiple particles through this whole process!
         l_referent = env.resolve_lf(l_lfs[0][0])
         if l_referent:
             success = l_referent[0] == referent
@@ -183,17 +184,10 @@ def run_dream_trial(listener_model, generative_model, env, sess, args):
         color = colors.OKGREEN if success else colors.FAIL
         print("%s%s => %s%s" % (colors.BOLD + color, " ".join(words),
                                 env.describe_lf(l_lfs[0][0]), colors.ENDC))
-        # print(
-# """    Referent:\t\t%s
-# z ~ p(z|r):\t\t%s
-# u ~ p(u|z):\t\t%s
-# z' ~ q(z|u):\t%s
-# Deref:\t\t%s""" %
-        #     (referent["attributes"][args.atom_attribute],
-        #         env.describe_lf(g_lf),
-        #         " ".join(words),
-        #         env.describe_lf(l_lf),
-        #         [l_referent_i["attributes"][args.atom_attribute] for l_referent_i in l_referent]))
+
+        # TODO: This is only a good stopping criterion when we force the LF to
+        # be the same as the gold LF. Otherwise it's too strict!
+        string_matches = gold_words == words
 
         i += 1
         if i > 1000:
@@ -203,8 +197,12 @@ def run_dream_trial(listener_model, generative_model, env, sess, args):
 
         listener_model.reset()
 
-    if success:
-        generative_model.observe(obs, g_lf)
+        input_obs = (items, None, gold_words) # obs if success else (items, None, gold_words)
+        generative_model.observe(input_obs, l_lfs[0][0]) # g_lf)
+
+        # TODO: do this in a batch..
+        if success:
+            generative_model.observe(obs, g_lf)
 
 
 def eval_offline_ctx(listener_model, speaker_model, examples, env, sess, args):
