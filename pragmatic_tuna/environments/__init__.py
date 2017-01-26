@@ -324,7 +324,9 @@ class TUNAWithLoTEnv(TUNAEnv):
         """
         if available_atoms is None:
             available_atoms = self.lf_atoms
-        fn_name = random.choice(self.lf_functions)
+        fn_name = EOS
+        while fn_name != EOS:
+            fn_name = random.choice(self.lf_functions)
         atom = random.choice(available_atoms)
 
         # Convert to LF token IDs.
@@ -391,6 +393,8 @@ class TUNAWithLoTEnv(TUNAEnv):
 
 
         for fn_name in self.lf_functions:
+            if fn_name == EOS:
+                continue
             for atom in self.lf_atoms:
                 lf = lf_prefix
                 lf += (self.lf_token_to_id[fn_name],
