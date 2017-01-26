@@ -333,7 +333,7 @@ def train(args):
     env = TUNAWithLoTEnv(args.corpus_path, corpus_selection=args.corpus_selection,
                          bag=args.bag_env, functions=FUNCTIONS[args.fn_selection],
                          atom_attribute=args.atom_attribute)
-    listener_model = WindowedSequenceListenerModel(env, embedding_dim=args.embedding_dim)
+    listener_model = LISTENER_MODELS[args.listener_model](env, args.embedding_dim)
     speaker_model = SPEAKER_MODELS[args.speaker_model](env, args.embedding_dim)
 
     listener_train_op, listener_global_step = \
@@ -413,6 +413,11 @@ SPEAKER_MODELS = {
     "window":  lambda env, emb_dim: WindowedSequenceSpeakerModel(env, embedding_dim=emb_dim)
 }
 
+LISTENER_MODELS = {
+    "skipgram": lambda env, _: SkipGramListenerModel(env),
+    "window": lambda env, emb_dim: WindowedSequenceListenerModel(env, embedding_dim=emb_dim)
+}
+
 
 if __name__ == "__main__":
     p = ArgumentParser()
@@ -431,6 +436,8 @@ if __name__ == "__main__":
 
     p.add_argument("--speaker_model", default="discrete",
                    choices=SPEAKER_MODELS.keys())
+    p.add_argument("--listener_model", default="skipgram",
+                   choices=LISTENER_MODELS.keys())
     p.add_argument("--bag_env", default=False, action="store_true")
     p.add_argument("--item_repr_dim", type=int, default=64)
     p.add_argument("--utterance_repr_dim", type=int, default=64)
