@@ -367,6 +367,7 @@ class ShallowSequenceSpeakerModel(SequenceSpeakerModel):
 
             lf_window = tf.nn.embedding_lookup(self.lf_embeddings, self.lf_toks)
             lf_window = tf.reshape(lf_window, (-1,))
+            lf_window = tf.stop_gradient(lf_window)
 
             # CLM à la Andreas.
             prev_words = tf.zeros((len(self.env.vocab),))
