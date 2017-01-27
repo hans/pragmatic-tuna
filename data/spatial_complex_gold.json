@@ -21,8 +21,8 @@
     ["the chicken right donkey", ["id(chicken) AND right(donkey)", "right(donkey) AND id(chicken)"]],
     ["the donkey right cat", ["id(donkey) AND right(cat)", "right(cat) AND id(donkey)"]],
     ["the goat right sheep", ["id(goat) AND right(sheep)", "right(sheep) AND id(goat)"]],
-    ["the goose above dog", ["id(goose) AND above(dog)", "above(dog) AND id(goose)"]],
+    ["the goose right dog", ["id(goose) AND right(dog)", "right(dog) AND id(goose)"]],
     ["the goldfish left dog", ["id(goldfish) AND left(dog)", "left(dog) AND id(goldfish)"]],
-    ["the hedgehog below dog", ["id(hedgehog) AND below(dog)", "below(dog) AND id(hedgehog)"]],
+    ["the hedgehog left dog", ["id(hedgehog) AND left(dog)", "left(dog) AND id(hedgehog)"]],
     ["the mouse right dog", ["id(mouse) AND right(dog)", "right(dog) AND id(mouse)"]]
 ]
