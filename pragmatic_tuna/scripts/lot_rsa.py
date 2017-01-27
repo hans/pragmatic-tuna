@@ -195,8 +195,8 @@ def run_dream_trial(listener_model, generative_model, env, sess, args):
         generative_model.observe(input_obs, l_lfs[0][0]) # g_lf)
 
         # TODO: do this in a batch..
-        if success:
-            generative_model.observe(obs, g_lf)
+        # if success:
+        #     generative_model.observe(obs, g_lf)
 
 
 def eval_offline_ctx(listener_model, speaker_model, examples, env, sess, args):
