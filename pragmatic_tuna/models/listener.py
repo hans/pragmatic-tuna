@@ -605,8 +605,8 @@ class SkipGramListenerModel(ListenerModel):
             scores = [(self.probs_cache[i], self.env.describe_lf(self.to_lot_lf(lf)))
                       for i, lf in enumerate(self.lf_cache)]
             scores = sorted(scores, key=lambda pair: pair[0], reverse=True)
-            print("\n".join("LF %30s  =>  (%.3g)" % (pair[1], pair[0])
-                            for pair in scores))
+            #print("\n".join("LF %30s  =>  (%.3g)" % (pair[1], pair[0])
+            #                for pair in scores))
 
         sampled_lf = self.to_lot_lf(self.lf_cache[idx])
 
@@ -663,11 +663,16 @@ class SkipGramListenerModel(ListenerModel):
 
         if batch:
             self.feed_cache.append(train_feeds)
+            print("Appending to feed cache!")
+            
 
         sess = tf.get_default_session()
         sess.run(self.train_op, train_feeds)
 
     def batch_observe(self):
+        
+        print("Start batch observe!")
+        
         batch_size = len(self.feed_cache)
         lf_size = len(self.feed_cache[0][self.gold_lfs])
         feats = np.zeros((batch_size*lf_size, self.feat_count))
@@ -675,21 +680,26 @@ class SkipGramListenerModel(ListenerModel):
         gold_lfs = np.zeros((batch_size*lf_size,1))
 
 
-        for i in range(batch_size):
+        i = 0
+        while len(self.feed_cache) > 0:
             j = lf_size * i
-            feats[j:j+lf_size] = self.feed_cache[i][self.feats]
-            gold_lfs[j:j+lf_size] = self.feed_cache[i][self.gold_lfs]
+            c = self.feed_cache.pop()
+            feats[j:j+lf_size] = c[self.feats]
+            gold_lfs[j:j+lf_size] = c[self.gold_lfs]
+            i += 1
 
         gold_lfs /= np.sum(gold_lfs)
 
+        print("Done preparing features")
+        
         self.feed_cache = []
 
         train_feeds = {self.feats: feats,
                        self.gold_lfs: gold_lfs}
 
-
+        print("Done preparing train_feeds")
         sess = tf.get_default_session()
-        for i in range(100):
+        for i in range(1000):
             sess.run(self.train_op, train_feeds)
             print("Batch update: %d" % (i))
 

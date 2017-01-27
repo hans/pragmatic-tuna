@@ -132,7 +132,7 @@ def run_listener_trial(listener_model, speaker_model, env, sess, args,
 
         if not evaluating:
             # Update listener parameters.
-            listener_model.observe(obs, lf_pred, reward, gold_lf)
+            listener_model.observe(obs, lf_pred, reward, gold_lf, batch=args.batch)
 
             # Update speaker parameters.
             speaker_model.observe(obs, gold_lf)
@@ -374,6 +374,9 @@ def train(args):
 
                 online_results.append(run_online_results)
 
+                if args.batch:
+                    listener_model.batch_observe()
+
                 ctx_successes, cf_successes = eval_offline(
                         listener_model, speaker_model, env, sess, args)
                 ctx_results.append(ctx_successes)
@@ -446,7 +449,7 @@ if __name__ == "__main__":
     p.add_argument("--dream", default=False, action="store_true")
     p.add_argument("--num_listener_samples", type=int, default=5)
     p.add_argument("--max_rejections_after_trial", type=int, default=3)
-    #p.add_argument("--batch", action="store_true", default=False)
+    p.add_argument("--batch", action="store_true", default=False)
     p.add_argument("--argmax_listener", action="store_true", default=False)
 
     p.add_argument("--num_runs", default=1, type=int,
