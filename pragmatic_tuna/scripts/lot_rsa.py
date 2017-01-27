@@ -39,15 +39,14 @@ def infer_trial(env, obs, listener_model, speaker_model, args,
         rejs_per_sample:
     """
 
-    items, utterance_bag, words = obs
+    items, words = obs
 
     # Sample N LFs from the predicted distribution, accepting only when they
     # resolve to a referent in the scene.
     lfs, g_lfs, weights = [], [], []
     num_rejections = 0
     while len(weights) < args.num_listener_samples:
-        lf, p_lf = listener_model.sample(utterance_bag, words,
-                                         argmax=evaluating,
+        lf, p_lf = listener_model.sample(words, argmax=evaluating,
                                          evaluating=evaluating)
 
         # Resolve referent.
@@ -62,7 +61,7 @@ def infer_trial(env, obs, listener_model, speaker_model, args,
         g_lf = lf #env.sample_lf(referent=referent, n_parts=len(words) // 2)
 
         # Record unnormalized score p(u, z)
-        p_utterance = speaker_model.score(g_lf, utterance_bag, words)
+        p_utterance = speaker_model.score(g_lf, words)
 
         lfs.append(lf)
         g_lfs.append(g_lf)
@@ -146,8 +145,7 @@ def run_dream_trial(listener_model, generative_model, env, sess, args):
     Run a single dream trial.
     """
     env.configure(dreaming=True)
-    items, _, gold_words = env.reset()
-    print(gold_words)
+    items, gold_words = env.reset()
 
     referent_idx = [i for i, referent in enumerate(env._domain)
                     if referent["target"]][0]
@@ -167,12 +165,8 @@ def run_dream_trial(listener_model, generative_model, env, sess, args):
         word_ids = np.array([env.word2idx[word]
                                 for word in words])
 
-        g_ut = np.zeros(env.vocab_size)
-        if len(word_ids):
-            g_ut[word_ids] = 1
-
         # Build a fake observation object for inference.
-        obs = (items, g_ut, words)
+        obs = (items, words)
 
         # Run listener model q(z|u).
         l_lfs, _ = infer_trial(env, obs, listener_model, generative_model, args)
@@ -197,7 +191,7 @@ def run_dream_trial(listener_model, generative_model, env, sess, args):
 
         listener_model.reset()
 
-        input_obs = (items, None, gold_words) # obs if success else (items, None, gold_words)
+        input_obs = (items, gold_words) # obs if success else (items, None, gold_words)
         generative_model.observe(input_obs, l_lfs[0][0]) # g_lf)
 
         # TODO: do this in a batch..

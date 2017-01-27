@@ -27,6 +27,7 @@ class NaiveGenerativeModel(object):
         self.max_length = max_length
 
     def observe(self, obs, gold_lf):
+        raise NotImplementedError("not updated to process new observation format. Manually produce bag-of-words.")
         if gold_lf is None:
             return
 
@@ -36,8 +37,9 @@ class NaiveGenerativeModel(object):
         z, u = tuple(z), tuple(u)
         self.counter[z][u] += 1
 
-    def score(self, z, u, u_seq):
+    def score(self, z, u_seq):
         """Retrieve unnormalized p(u|z)"""
+        raise NotImplementedError("not updated to process new observation format. Manually produce bag-of-words.")
         # TODO: weight on Z?
         z, u = tuple(z), tuple(u)
         score = self.counter[z][u]
@@ -108,7 +110,7 @@ class DiscreteGenerativeModel(object):
         if gold_lf is None:
             return
 
-        u = obs[2]
+        u = obs[1]
         z = gold_lf
 
         for lf_token in z:
@@ -183,7 +185,7 @@ class DiscreteGenerativeModel(object):
 
         return prob
 
-    def score(self, z, u_bag, u):
+    def score(self, z, u):
         # Limit utterance lengths to LF length.
         if len(u) != len(z):
             return -np.Inf
@@ -366,7 +368,7 @@ class WindowedSequenceSpeakerModel(object):
 
         return " ".join(self.env.vocab[idx] for idx in sample)
 
-    def score(self, z, u_bag, u):
+    def score(self, z, u):
         sess = tf.get_default_session()
 
         z = self._pad_lf_idxs(z)
@@ -385,7 +387,7 @@ class WindowedSequenceSpeakerModel(object):
 
         z = self._pad_lf_idxs(gold_lf)
 
-        words = [self.env.word2idx[word] for word in obs[2]]
+        words = [self.env.word2idx[word] for word in obs[1]]
         real_length = min(len(words) + 1, self.max_timesteps) # train to output a single EOS token
         # Add a EOS token to words
         if len(words) < self.max_timesteps:

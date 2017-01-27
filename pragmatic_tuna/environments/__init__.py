@@ -109,7 +109,7 @@ class TUNAEnv(gym.Env):
 
             return ret
         else:
-            return np.array(items), bag_of_words, desc_words
+            return np.array(items), desc_words
 
     def _item_to_vector(self, item):
         vec = np.zeros(self.attr_dim)

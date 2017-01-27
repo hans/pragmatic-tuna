@@ -37,7 +37,7 @@ class ListenerModel(object):
     def build_xent_gradients(self):
         raise NotImplementedError
 
-    def sample(self, utterance_bag, words, temperature=None,
+    def sample(self, words, temperature=None,
                context_free=False, argmax=False, evaluating=False):
         """
         Returns:
@@ -66,10 +66,10 @@ class EnsembledListenerModel(ListenerModel):
 
         self.xent_gradients = gradients
 
-    def sample(self, utterance_bag, words, **kwargs):
+    def sample(self, words, **kwargs):
         # TODO if argmax, should sample from all models
         model = self.models[np.random.choice(len(self.models))]
-        return model.sample(utterance_bag, words, **kwargs)
+        return model.sample(words, **kwargs)
 
     def observe(self, obs, lf_pred, reward, gold_lf):
         raise NotImplementedError
@@ -93,7 +93,7 @@ class EnsembledSkipGramListenerModel(EnsembledListenerModel):
 
         referent = self.env.resolve_lf(gold_lf)[0]
         for model in self.models:
-            model._populate_cache(obs[2], context_free=True)
+            model._populate_cache(obs[1], context_free=True)
 
         # Build gold vector
         model = self.models[0]
@@ -199,6 +199,7 @@ class SimpleListenerModel(ListenerModel):
         return token_ids
 
     def sample(self, utterance_bag, words):
+        raise NotImplementedError("does not implement new observation formatting. Manually convert to bag-of-words.")
         sess = tf.get_default_session()
         probs = sess.run(self.probs, {self.utterance: utterance_bag})
         lf = np.random.choice(len(probs), p=probs)
@@ -207,6 +208,7 @@ class SimpleListenerModel(ListenerModel):
         return self._id_to_list(lf)
 
     def observe(self, obs, lf_pred, reward, gold_lf):
+        raise NotImplementedError("does not implement new observation formatting. Manually convert to bag-of-words.")
         lf_pred = self._list_to_id(lf_pred)
         if gold_lf is not None:
             gold_lf = self._list_to_id(gold_lf)
@@ -347,7 +349,7 @@ class WindowedSequenceListenerModel(ListenerModel):
         word_idxs += [self.env.word_unk_id] * (self.max_timesteps - len(word_idxs))
         return word_idxs
 
-    def sample(self, utterance_bag, words, temperature=1.0, argmax=False,
+    def sample(self, words, temperature=1.0, argmax=False,
                context_free=False, evaluating=False):
         # TODO handle argmax, evaluating
 
@@ -380,7 +382,7 @@ class WindowedSequenceListenerModel(ListenerModel):
         if len(gold_lf) < self.max_timesteps:
             gold_lf.extend([self.env.lf_eos_id] * (self.max_timesteps - len(gold_lf)))
 
-        feed = {self.words: self._get_word_idxs(obs[2]),
+        feed = {self.words: self._get_word_idxs(obs[1]),
                 self.xent_gold_lf_length: real_length}
         feed.update({self.xent_gold_lf_tokens[t]: gold_lf[t]
                      for t in range(self.max_timesteps)})
@@ -591,7 +593,7 @@ class SkipGramListenerModel(ListenerModel):
         self.probs_cache = sess.run(self.probs, feed)
 
     #TODO: iteratively sample, i.e., start with single predicate and then only consider LFs with that predicate
-    def sample(self, utterance_bag, words, temperature=None,
+    def sample(self, words, temperature=None,
                context_free=False, argmax=False, evaluating=False):
         if len(self.lf_cache) < 1:
             self._populate_cache(words, context_free=context_free)
@@ -634,7 +636,7 @@ class SkipGramListenerModel(ListenerModel):
         #take cross product
 
 
-        self._populate_cache(obs[2], context_free=True)
+        self._populate_cache(obs[1], context_free=True)
 
 
         #lf =  self.from_lot_lf(gold_lf)
