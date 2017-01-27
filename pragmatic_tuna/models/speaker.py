@@ -9,6 +9,8 @@ import numpy as np
 import tensorflow as tf
 from tensorflow.contrib.layers import layers
 
+from pragmatic_tuna.util import orthogonal_initializer
+
 
 class NaiveGenerativeModel(object):
 
@@ -355,7 +357,8 @@ class ShallowSequenceSpeakerModel(SequenceSpeakerModel):
         with tf.variable_scope(self._scope_name):
             lf_emb_shape = (len(self.env.lf_vocab), self.embedding_dim)
             if lf_embeddings is None:
-                lf_embeddings = tf.get_variable("lf_embeddings", shape=lf_emb_shape)
+                lf_embeddings = tf.get_variable("lf_embeddings", shape=lf_emb_shape,
+                                                initializer=orthogonal_initializer())
             assert tuple(lf_embeddings.get_shape().as_list()) == lf_emb_shape
 
             self.lf_embeddings = lf_embeddings
