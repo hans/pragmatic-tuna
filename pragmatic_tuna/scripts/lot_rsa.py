@@ -139,7 +139,7 @@ def run_listener_trial(listener_model, speaker_model, env, sess, args,
 
         listener_model.reset()
 
-    return first_success, first_successful_lf_pred
+    return first_success, first_successful_lf_pred, gold_lf_pos
 
 def run_dream_trial(listener_model, generative_model, env, sess, args):
     """
@@ -215,7 +215,7 @@ def eval_offline_ctx(listener_model, speaker_model, examples, env, sess, args):
 
     learned_mapping = {}
     for i in trange(args.num_trials):
-        first_success, best_lf = run_listener_trial(
+        first_success, best_lf, gold_lf_pos = run_listener_trial(
                 listener_model, speaker_model, env, sess, args,
                 evaluating=True)
         if best_lf is None:
@@ -293,7 +293,7 @@ def eval_offline(listener_model, speaker_model, env, sess, args):
         ctx_results = eval_offline_ctx(
                 listener_model, speaker_model, listener_examples,
                 env, sess, args)
-        ctx_successes = [s for _, s in ctx_results if s]
+        ctx_successes = [s for _, s in ctx_results]
 
         # Context-free offline evaluation.
         print("\n%sWithout context:%s" % (colors.HEADER, colors.ENDC))
@@ -362,9 +362,9 @@ def train(args):
                 for i in trange(args.num_trials):
                     tqdm.write("\n%s==============\nLISTENER TRIAL\n==============%s"
                             % (colors.HEADER, colors.ENDC))
-                    first_success = run_listener_trial(listener_model, speaker_model,
+                    first_success, best_lf, gold_lf_pos = run_listener_trial(listener_model, speaker_model,
                                                        env, sess, args)
-                    run_online_results.append(first_success != -1)
+                    run_online_results.append(gold_lf_pos == 0)
 
                     if args.dream:
                         tqdm.write("\n%s===========\nDREAM TRIAL\n===========%s"
