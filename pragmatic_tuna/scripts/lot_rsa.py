@@ -329,8 +329,8 @@ def train(args):
                          bag=args.bag_env, functions=FUNCTIONS[args.fn_selection],
                          atom_attribute=args.atom_attribute)
     listener_model = WindowedSequenceListenerModel(env, embedding_dim=args.embedding_dim)
-    speaker_model = WindowedSequenceSpeakerModel(env,
-                                                 word_embeddings=listener_model.word_embeddings,
+    speaker_model = ShallowSequenceSpeakerModel(env,
+                                               #  word_embeddings=listener_model.word_embeddings,
                                                  lf_embeddings=listener_model.lf_embeddings,
                                                  embedding_dim=args.embedding_dim)
 
