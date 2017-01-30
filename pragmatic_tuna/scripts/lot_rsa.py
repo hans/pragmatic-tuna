@@ -314,13 +314,15 @@ def build_train_graph(model, env, args, scope="train"):
     else:
         raise NotImplementedError("undefined learning method " + args.learning_method)
 
-    global_step = tf.Variable(0, name="global_step", dtype=tf.int64, trainable=False)
-    opt = tf.train.AdagradOptimizer(args.learning_rate)
-    train_op = opt.apply_gradients(gradients, global_step=global_step)
+    with tf.variable_scope(scope):
+        global_step = tf.Variable(0, name="global_step", dtype=tf.int64,
+                                  trainable=False)
+        opt = tf.train.AdagradOptimizer(args.learning_rate)
+        train_op = opt.apply_gradients(gradients, global_step=global_step)
 
-    # Make a dummy train_op that works with TF partial_run.
-    with tf.control_dependencies([train_op]):
-        train_op = tf.constant(0.0, name="dummy_train_op")
+        # Make a dummy train_op that works with TF partial_run.
+        with tf.control_dependencies([train_op]):
+            train_op = tf.constant(0.0, name="dummy_train_op")
 
     return train_op, global_step
 
