@@ -261,7 +261,7 @@ def eval_offline_cf(listener_model, examples, env):
             lf_candidate_tok_ids.append(tuple(ids))
 
         # DEV: assumes we're using a non-BOW listener model
-        sampled_lf, p = listener_model.sample(None, words, argmax=True,
+        sampled_lf, p = listener_model.sample(words, argmax=True,
                                               context_free=True, evaluating=True)
         listener_model.reset()
         success = tuple(sampled_lf) in lf_candidate_tok_ids
@@ -360,9 +360,9 @@ def train(args):
                 for i in trange(args.num_trials):
                     tqdm.write("\n%s==============\nLISTENER TRIAL\n==============%s"
                             % (colors.HEADER, colors.ENDC))
-                    first_success = run_listener_trial(listener_model, speaker_model,
-                                                       env, sess, args)
-                    run_online_results.append(first_success != -1)
+                    first_success, _ = run_listener_trial(listener_model, speaker_model,
+                                                          env, sess, args)
+                    run_online_results.append(first_success == 0)
 
                     if args.dream:
                         tqdm.write("\n%s===========\nDREAM TRIAL\n===========%s"
