@@ -8,8 +8,7 @@
         },
         "vocab": [
             "square",
-            "circle",
-            "the"
+            "circle"
         ],
         "trials": [
             {
@@ -23,7 +22,7 @@
                         "target": true
                     }
                 ],
-                "string_description": "the square"
+                "string_description": "square"
             },
             {
                 "id": "test_circle",
@@ -43,7 +42,7 @@
                         "target": false
                     }
                 ],
-                "string_description": "the circle"
+                "string_description": "circle"
             }
         ]
     }
