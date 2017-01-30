@@ -6,6 +6,7 @@ The inference is mediated by a logical form language / language of thought (LoT)
 
 from argparse import ArgumentParser
 import json
+from pprint import pprint
 import re
 
 import numpy as np
@@ -447,4 +448,7 @@ if __name__ == "__main__":
     p.add_argument("--learning_rate", default=0.1, type=float)
     p.add_argument("--momentum", default=0.9, type=float)
 
-    train(p.parse_args())
+    args = p.parse_args()
+    pprint(vars(args))
+
+    train(args)
