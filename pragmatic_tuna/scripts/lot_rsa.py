@@ -69,7 +69,7 @@ def infer_trial(env, obs, listener_model, speaker_model, args,
 
     # Mix listener+speaker scores.
     # TODO: customizable
-    alpha = 0.5
+    alpha = 1
     mixed_weights = [(speaker_weight ** alpha) * (listener_weight ** (1 - alpha))
                         for speaker_weight, listener_weight in weights]
     data = sorted(zip(lfs, mixed_weights, weights), key=lambda el: el[1],
