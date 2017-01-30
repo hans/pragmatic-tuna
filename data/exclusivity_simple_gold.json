@@ -1,4 +1,4 @@
 [
-    ["the square", ["id(square)", "id(square) AND id(square)"]],
-    ["the circle", ["id(circle)", "id(circle) AND id(circle)"]]
+    ["square", ["id(square)", "id(square) AND id(square)"]],
+    ["circle", ["id(circle)", "id(circle) AND id(circle)"]]
 ]
