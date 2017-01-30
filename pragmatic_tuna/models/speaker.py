@@ -341,7 +341,7 @@ class ShallowSequenceSpeakerModel(SequenceSpeakerModel):
     conditioned on some LF embeddings.
     """
 
-    def __init__(self, env, scope="speaker", max_timesteps=4,
+    def __init__(self, env, scope="speaker", max_timesteps=2,
                  lf_embeddings=None, embedding_dim=10):
         self.env = env
         self._scope_name = scope

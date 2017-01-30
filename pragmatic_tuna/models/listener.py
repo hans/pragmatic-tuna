@@ -240,7 +240,7 @@ class WindowedSequenceListenerModel(ListenerModel):
     tokens.
     """
 
-    def __init__(self, env, scope="listener", max_timesteps=4, embedding_dim=10):
+    def __init__(self, env, scope="listener", max_timesteps=2, embedding_dim=10):
         self.max_timesteps = max_timesteps
         self.embedding_dim = embedding_dim
         super(WindowedSequenceListenerModel, self).__init__(env, scope=scope)
