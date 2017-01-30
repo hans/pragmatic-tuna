@@ -7,9 +7,11 @@ import tensorflow as tf
 from tensorflow.contrib.layers import layers
 
 from pragmatic_tuna.reinforce import reinforce_episodic_gradients
+from pragmatic_tuna.util import orthogonal_initializer
 
 
 EMBEDDING_INITIALIZER = tf.truncated_normal_initializer()
+LF_EMBEDDING_INITIALIZER = orthogonal_initializer()
 
 
 class ListenerModel(object):
@@ -263,7 +265,8 @@ class WindowedSequenceListenerModel(ListenerModel):
             # Create embeddings for LF tokens
             lf_emb_shape = (len(self.env.lf_vocab), self.embedding_dim)
             lf_embeddings = tf.get_variable(
-                    "lf_embeddings", shape=lf_emb_shape, initializer=EMBEDDING_INITIALIZER)
+                    "lf_embeddings", shape=lf_emb_shape,
+                    initializer=LF_EMBEDDING_INITIALIZER)
             null_embedding = tf.gather(lf_embeddings, self.env.lf_unk_id)
 
             # Weight matrices mapping input -> ~p(fn), input -> ~p(atom)
