@@ -431,9 +431,7 @@ if __name__ == "__main__":
     p.add_argument("--speaker_model", default="discrete",
                    choices=SPEAKER_MODELS.keys())
     p.add_argument("--bag_env", default=False, action="store_true")
-    p.add_argument("--item_repr_dim", type=int, default=64)
-    p.add_argument("--utterance_repr_dim", type=int, default=64)
-    p.add_argument("--embedding_dim", type=int, default=10)
+    p.add_argument("--embedding_dim", type=int, default=4)
 
     p.add_argument("--dream", default=False, action="store_true")
     p.add_argument("--num_listener_samples", type=int, default=5)
