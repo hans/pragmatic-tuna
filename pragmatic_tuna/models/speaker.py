@@ -330,6 +330,8 @@ class SequenceSpeakerModel(object):
         feed = {self.lf_toks: z, self.xent_gold_length: real_length}
         feed.update({self.xent_gold_words[t]: word_t
                      for t, word_t in enumerate(words)})
+        feed.update({self.samples[t]: word_t
+                     for t, word_t in enumerate(words)})
         sess.run(self.train_op, feed)
 
 

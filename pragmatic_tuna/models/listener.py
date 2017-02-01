@@ -385,10 +385,13 @@ class WindowedSequenceListenerModel(ListenerModel):
         if len(gold_lf) < self.max_timesteps:
             gold_lf.extend([self.env.lf_eos_id] * (self.max_timesteps - len(gold_lf)))
 
-        feed = {self.words: self._get_word_idxs(obs[1]),
+        word_idxs = self._get_word_idxs(obs[1])
+        feed = {self.words: word_idxs,
                 self.xent_gold_lf_length: real_length}
         feed.update({self.xent_gold_lf_tokens[t]: gold_lf[t]
                      for t in range(self.max_timesteps)})
+        feed.update({self.samples[t]: word_t
+                     for t, word_t in enumerate(word_idxs)})
 
         sess = tf.get_default_session()
         sess.run(self.train_op, feed)
