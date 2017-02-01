@@ -42,7 +42,33 @@ class SpeakerModel(object):
         raise NotImplementedError
 
 
-class SequenceSpeakerModel(object):
+class EnsembledSpeakerModel(SpeakerModel):
+
+    def __init__(self, models):
+        self.models = models
+
+    def build_xent_gradients(self):
+        gradients = []
+        for model in self.models:
+            model.build_xent_gradients()
+            gradients.extend(model.xent_gradients)
+
+        self.xent_gradients = gradients
+
+    def sample(self, lf):
+        model = self.models[np.random.choice(len(self.models))]
+        return model.sample(lf)
+
+    def score(self, lf, words):
+        scores = [model.score(lf, words) for model in self.models]
+        return np.log(np.mean(np.exp(scores)))
+
+    def observe(self, env_obs, gold_lf):
+        for model in self.models:
+            model.observe(env_obs, gold_lf)
+
+
+class SequenceSpeakerModel(SpeakerModel):
 
     def build_xent_gradients(self):
         gold_words = [tf.zeros((), dtype=tf.int32, name="gold_word_%i" % t)
@@ -118,7 +144,6 @@ class SequenceSpeakerModel(object):
         sess.run(self.train_op, feed)
 
 
-
 class ShallowSequenceSpeakerModel(SequenceSpeakerModel):
 
     """
@@ -184,8 +209,6 @@ class ShallowSequenceSpeakerModel(SequenceSpeakerModel):
             self.outputs = outputs
             self.probs = probs
             self.samples = samples
-
-
 
 
 class WindowedSequenceSpeakerModel(object):
@@ -259,4 +282,20 @@ class WindowedSequenceSpeakerModel(object):
             self.probs = probs
             self.samples = samples
 
+
+class EnsembledSequenceSpeakerModel(EnsembledSpeakerModel):
+
+    def __init__(self, env, n, cls=ShallowSequenceSpeakerModel,
+                 scope="speaker", lf_embeddings=None, **kwargs):
+        self.env = env
+
+        # Build the first model.
+        models = [cls(env, scope="%s_0" % scope, lf_embeddings=lf_embeddings,
+                      **kwargs)]
+        models.extend([cls(env, scope="%s_%i" % (scope, i),
+                           word_embeddings=models[0].word_embeddings,
+                           lf_embeddings=models[0].lf_embeddings)
+                        for i in range(1, n)])
+
+        super(EnsembledSequenceSpeakerModel, self).__init__(models)
 
