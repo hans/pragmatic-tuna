@@ -17,7 +17,7 @@ class SpeakerModel(object):
     def __init__(self, env, scope="listener"):
         assert not env.bag
         self.env = env
-        self._scope = tf.variable_scope9scope)
+        self._scope = tf.variable_scope(scope)
         self.feeds = []
         self.train_op = None
 
@@ -293,8 +293,8 @@ class EnsembledSequenceSpeakerModel(EnsembledSpeakerModel):
         models = [cls(env, scope="%s_0" % scope, lf_embeddings=lf_embeddings,
                       **kwargs)]
         models.extend([cls(env, scope="%s_%i" % (scope, i),
-                           word_embeddings=models[0].word_embeddings,
-                           lf_embeddings=models[0].lf_embeddings)
+                           #word_embeddings=models[0].word_embeddings,
+                           lf_embeddings=models[0].lf_embeddings, **kwargs)
                         for i in range(1, n)])
 
         super(EnsembledSequenceSpeakerModel, self).__init__(models)
