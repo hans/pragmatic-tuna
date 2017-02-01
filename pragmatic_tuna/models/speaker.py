@@ -12,251 +12,34 @@ from tensorflow.contrib.layers import layers
 from pragmatic_tuna.util import orthogonal_initializer
 
 
-class NaiveGenerativeModel(object):
+class SpeakerModel(object):
 
-    """
-    A very stupid generative utterance model $p(u | z)$ which is intended to
-    map from bag-of-features $z$ representations to bag-of-words $u$
-    representations. Optionally performs add-1 smoothing.
-    """
-
-    smooth_val = 0.1
-
-    def __init__(self, vocab_size, max_length, smooth=True):
-        self.smooth = smooth
-        self.counter = defaultdict(lambda: Counter())
-        self.vocab_size = vocab_size
-        self.max_length = max_length
-
-    def observe(self, obs, gold_lf):
-        raise NotImplementedError("not updated to process new observation format. Manually produce bag-of-words.")
-        if gold_lf is None:
-            return
-
-        u = obs[1]
-        z = gold_lf
-
-        z, u = tuple(z), tuple(u)
-        self.counter[z][u] += 1
-
-    def score(self, z, u_seq):
-        """Retrieve unnormalized p(u|z)"""
-        raise NotImplementedError("not updated to process new observation format. Manually produce bag-of-words.")
-        # TODO: weight on Z?
-        z, u = tuple(z), tuple(u)
-        score = self.counter[z][u]
-        if self.smooth:
-            # Add-1 smoothing.
-            score += self.smooth_val
-        return np.exp(score)
-
-    def sample(self, z):
-        """Sample from the distribution p(u|z)"""
-        g_dict = self.counter[tuple(z)]
-        keys = list(g_dict.keys())
-        values = np.array(list(g_dict.values()))
-
-        if self.smooth:
-            # Allow that we might sample one of the unseen u's.
-            mass_seen = np.exp(values + self.smooth_val).sum()
-            n_unseen = 2 ** self.max_length - len(g_dict)
-            mass_unseen = np.exp(self.smooth_val) * (n_unseen)
-            p_unseen = mass_unseen / (mass_unseen + mass_seen)
-
-            if np.random.random() < p_unseen:
-                print("Rejection!")
-                # Rejection-sample a random unseen utterance.
-                done = False
-                while not done:
-                    length = np.random.randint(1, self.max_length + 1)
-                    idxs = np.random.randint(self.vocab_size, size=length)
-                    utt = np.zeros(self.vocab_size)
-                    utt[idxs] = 1
-                    utt = tuple(utt)
-                    done = utt not in keys
-                return utt
-
-        distr = np.exp(values - values.max())
-        distr /= distr.sum()
-        return keys[np.random.choice(len(keys), p=distr)]
-
-
-class DiscreteGenerativeModel(object):
-
-    """
-    A generative model that maps atoms and functions of a logical form
-    z to and words of an utterance u and scores the fluency of the utterance
-    using a bigram language model.
-    """
-
-    smooth_val = 0.1
-    unk_prob = 0.01
-    #if set to 0, use +1 smoothing of bigrams instead of backoff LM
-    backoff_factor = 0
-    distortion_prob = 0.5
-
-    START_TOKEN = "<s>"
-    END_TOKEN = "</s>"
-
-    def __init__(self, env, max_timesteps=4, smooth=True):
-        self.smooth = smooth
-        self.vocab_size = env.vocab_size
-        self.max_conjuncts = max_timesteps / 2
+    def __init__(self, env, scope="listener"):
+        assert not env.bag
         self.env = env
+        self._scope = tf.variable_scope9scope)
+        self.feeds = []
+        self.train_op = None
 
-        self.counter = defaultdict(lambda: Counter())
-        self.bigramcounter = defaultdict(lambda: Counter())
-        self.unigramcounter = Counter()
+        self._build_graph()
 
-    def observe(self, obs, gold_lf):
-        if gold_lf is None:
-            return
+    def _build_graph(self):
+        raise NotImplementedError
 
-        u = obs[1]
-        z = gold_lf
+    def build_rl_gradients(self):
+        raise NotImplementedError
 
-        for lf_token in z:
-            self.counter[lf_token].update(u)
+    def build_xent_gradients(self):
+        raise NotImplementedError
 
-        words = []
-        words.extend(u)
-        #words.append(self.END_TOKEN)
+    def sample(self, lf):
+        raise NotImplementedError
 
-        prev_word = self.START_TOKEN
-        for word in words:
-            self.bigramcounter[prev_word][word] +=1
-            self.unigramcounter[word] +=1
-            prev_word = word
+    def score(self, lf, words):
+        raise NotImplementedError
 
-    def _score_word_atom(self, word, atom):
-        score = self.counter[atom][word]
-        denom = sum(self.counter[atom].values())
-        if self.smooth:
-            score += 1
-            denom += len(self.env.vocab)
-        return float(score) / denom
-
-    def _score_words_atom(self, words, atom):
-        """Return p(word | atom) for a collection `words`"""
-        counter = self.counter[atom]
-
-        score_delta = 1 if self.smooth else 0
-        scores = [counter[word] + score_delta for word in words]
-
-        denom = sum(counter.values())
-        if self.smooth:
-            denom += len(self.env.vocab)
-
-        return np.array(scores, dtype=np.float32) / denom
-
-    def _score_bigram(self, w1, w2):
-        score = self.bigramcounter[w1][w2]
-        denom = sum(self.bigramcounter[w1].values())
-        if self.smooth and self.backoff_factor == 0:
-          score += 1
-          denom += len(self.env.vocab)
-        if score < 1 :
-            return 0
-        return np.log(float(score) / denom)
-
-
-    def _score_unigram(self, w):
-        score = self.unigramcounter[w]
-        if score < 1:
-          prob = self.unk_prob
-        else:
-          prob = float(score) / sum(self.unigramcounter.values())
-
-        return np.log(prob)
-
-
-    def _score_sequence(self, u):
-        prev_word = self.START_TOKEN
-
-        words = []
-        words.extend(u)
-        #words.append(self.END_TOKEN)
-        prob = 0
-        for word in u:
-            p_bigram = self._score_bigram(prev_word, word)
-            p_bigram = ((p_bigram + np.log(1-self.backoff_factor))
-                            if p_bigram < 0
-                            else self._score_unigram(word) + np.log(self.backoff_factor))
-            prob += p_bigram
-            prev_word = word
-
-        return prob
-
-    def score(self, z, u):
-        # Limit utterance lengths to LF length.
-        if len(u) != len(z):
-            return -np.Inf
-        #compute translation probability p(u|z)
-        words = u
-        alignments = permutations(range(len(z)))
-
-        p_trans = 0
-        for a in alignments:
-            n_distortions = sum(abs(a[i] - i) for i in range(len(a)))
-            p = self.distortion_prob ** n_distortions
-
-            pairs = []
-            for i, w in enumerate(words):
-                p *= self._score_word_atom(w, z[a[i]])
-                pairs.append((w, self.env.lf_vocab[z[a[i]]]))
-            p_trans += p
-
-        p_trans = np.log(p_trans)
-
-        #compute fluency probability, i.e., lm probability
-        p_seq  = self._score_sequence(u)
-
-        return 0.1 * p_seq + 0.9 * p_trans
-
-    def sample_with_alignment(self, z, alignment):
-        unigram_denom = max(sum(self.unigramcounter.values()), 1.0)
-        unigram_probs = np.array(list(self.unigramcounter.values())) / unigram_denom
-        keys = list(self.unigramcounter.keys())
-
-        prev_word = self.START_TOKEN
-
-        u = []
-        ps = []
-        i = 0
-        for i in range(len(z)):
-
-            bigram_counts = np.array([self.bigramcounter[prev_word][w]
-                                        for w in keys])
-            bigram_denom = max(sum(bigram_counts), 1.0)
-            bigram_probs = bigram_counts / bigram_denom
-
-            cond_probs = self._score_words_atom(keys, z[alignment[i]])
-
-            interpolated = bigram_probs * (1 - self.backoff_factor) + unigram_probs * self.backoff_factor
-            distr = interpolated * cond_probs
-            distr = distr / np.sum(distr)
-
-            idx = np.random.choice(len(keys), p=distr)
-            word = keys[idx]
-            u.append(word)
-            prev_word = word
-            ps.append(distr[idx])
-
-        p = np.exp(np.sum(np.log(ps)))
-        return " ".join(u), p
-
-    def sample(self, z):
-        alignments = permutations(range(len(z)))
-        utterances = []
-        distr = []
-        for a in alignments:
-            u, p = self.sample_with_alignment(z, a)
-            utterances.append(u)
-            distr.append(p)
-
-        distr = np.array(distr) / np.sum(distr)
-        idx = np.random.choice(len(utterances), p=distr)
-        return utterances[idx]
+    def observe(self, env_obs, gold_lf):
+        raise NotImplementedError
 
 
 class SequenceSpeakerModel(object):
