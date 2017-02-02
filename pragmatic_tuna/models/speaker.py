@@ -299,3 +299,28 @@ class EnsembledSequenceSpeakerModel(EnsembledSpeakerModel):
 
         super(EnsembledSequenceSpeakerModel, self).__init__(models)
 
+    def observe(self, env_obs, gold_lf):
+        if gold_lf is None:
+            return
+
+        z = self.models[0]._pad_lf_idxs(gold_lf)
+
+        max_timesteps = self.models[0].max_timesteps
+        words = [self.env.word2idx[word] for word in env_obs[1]]
+        real_length = min(len(words) + 1, max_timesteps)
+        # Add a EOS token to words
+        if len(words) > max_timesteps:
+            words.append(self.env.word_eos_id)
+
+        sess = tf.get_default_session()
+        feed = {}
+        for model in self.models:
+            feed[model.lf_toks] = z
+            feed[model.xent_gold_length] = real_length
+
+            feed.update({model.xent_gold_words[t]: word_t
+                         for t, word_t in enumerate(words)})
+            feed.update({model.samples[t]: word_t
+                         for t, word_t in enumerate(words)})
+
+        sess.run(self.train_op, feed)
