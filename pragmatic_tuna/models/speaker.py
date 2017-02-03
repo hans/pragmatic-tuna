@@ -324,3 +324,75 @@ class EnsembledSequenceSpeakerModel(EnsembledSpeakerModel):
                          for t, word_t in enumerate(words)})
 
         sess.run(self.train_op, feed)
+
+
+class EnsembledSequenceSpeakerModel2(SequenceSpeakerModel):
+
+    """
+    Sequence speaker model which ensembles several distinct recurrent matrices.
+    """
+
+    def __init__(self, env, n=8, scope="speaker", max_timesteps=2,
+                 lf_embeddings=None, embedding_dim=10):
+        self.env = env
+        self.n = n
+        self._scope_name = scope
+        self.max_timesteps = max_timesteps
+        self.embedding_dim = embedding_dim
+
+        self.train_op = None
+
+        self._build_embeddings(lf_embeddings)
+        self._build_graph()
+
+    def _build_embeddings(self, lf_embeddings):
+        with tf.variable_scope(self._scope_name):
+            lf_emb_shape = (len(self.env.lf_vocab), self.embedding_dim)
+            if lf_embeddings is None:
+                lf_embeddings = tf.get_variable("lf_embeddings", shape=lf_emb_shape,
+                                                initializer=orthogonal_initializer())
+            assert tuple(lf_embeddings.get_shape().as_list()) == lf_emb_shape
+
+            self.lf_embeddings = lf_embeddings
+
+    def _build_graph(self):
+        with tf.variable_scope(self._scope_name):
+            self.lf_toks = tf.placeholder(tf.int32, shape=(self.max_timesteps,),
+                                          name="lf_toks")
+
+            lf_window = tf.nn.embedding_lookup(self.lf_embeddings, self.lf_toks)
+            lf_window = tf.reduce_mean(lf_window, 0)
+            lf_window = tf.stop_gradient(lf_window)
+
+            # CLM à la Andreas.
+            prev_words = tf.zeros((len(self.env.vocab),))
+            last_word = tf.zeros((len(self.env.vocab),))
+
+            # Now run a teeny utterance decoder.
+            outputs, probs, samples = [], [], []
+            output_dim = self.env.vocab_size
+            for t in range(self.max_timesteps):
+                with tf.variable_scope("recurrence", reuse=t > 0):
+                    input_t = tf.concat(0, [prev_words, last_word, lf_window])
+                    input_t = tf.expand_dims(input_t, 0)
+
+                    outputs_t = [layers.fully_connected(input_t, output_dim, tf.identity,
+                                                        scope="recurrence_%i" % i)
+                                 for i in range(self.n)]
+                    output_t = tf.add_n(outputs_t) / float(self.n)
+                    probs_t = tf.squeeze(tf.nn.softmax(output_t))
+
+                    # Sample an LF token and provide as feature to next timestep.
+                    sample_t = tf.squeeze(tf.multinomial(output_t, num_samples=1))
+
+                    last_word = tf.one_hot(sample_t, len(self.env.vocab))
+                    prev_words += last_word
+
+                    outputs.append(output_t)
+                    probs.append(probs_t)
+                    samples.append(sample_t)
+
+            self.outputs = outputs
+            self.probs = probs
+            self.samples = samples
+
