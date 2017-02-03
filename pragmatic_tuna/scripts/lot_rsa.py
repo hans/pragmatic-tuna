@@ -79,7 +79,13 @@ def infer_trial(env, obs, listener_model, speaker_model, args,
     rejs_per_sample = num_rejections / args.num_listener_samples
 
     # Debug printing.
+    seen = set()
     for lf, mixed_weight, weight in data:
+        lf = tuple(lf)
+        if lf in seen:
+            continue
+        seen.add(lf)
+
         print("LF %30s  =>  Referent %10s  =>  (%.4g, %.4g, %.4g)" %
             (env.describe_lf(lf),
             env.resolve_lf(lf)[0]["attributes"][args.atom_attribute],
