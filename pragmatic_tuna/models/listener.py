@@ -51,6 +51,13 @@ class ListenerModel(object):
     def observe(self, obs, lf_pred, reward, gold_lf):
         raise NotImplementedError
 
+    def score_batch(self, words, lfs):
+        """
+        Evaluate p(z|u) for a batch of word sequence inputs and sequence LF
+        outputs.
+        """
+        raise NotImplementedError
+
     def reset(self):
         pass
 
@@ -418,6 +425,28 @@ class WindowedSequenceListenerModel(ListenerModel):
 
         sess = tf.get_default_session()
         sess.run(self.train_op, feed)
+
+    def score_batch(self, words, lfs):
+        words = [self._get_word_idxs(words_i) for words_i in words]
+
+        lfs = [self._pad_lf_idxs(lf_i) for lf_i in lfs]
+        # Transpose to num_timesteps * batch_size
+        lfs = np.array(lfs).T
+
+        feed = {self.words: np.array(words)}
+        feed.update({self.samples[t]: lfs_t
+                     for t, lfs_t in enumerate(lfs)})
+
+        sess = tf.get_default_session()
+        probs = sess.run(self.probs, feed)
+
+        # Index the sampled word for each example at each timestep
+        batch_size = len(words)
+        probs = [probs_t[np.arange(batch_size), lf_sample_t]
+                 for probs_t, lf_sample_t in zip(probs, lfs)]
+
+        return np.prod(probs, axis=0)
+
 
 class SkipGramListenerModel(ListenerModel):
     """

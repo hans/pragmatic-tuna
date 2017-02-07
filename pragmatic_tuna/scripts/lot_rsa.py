@@ -5,6 +5,8 @@ The inference is mediated by a logical form language / language of thought (LoT)
 """
 
 from argparse import ArgumentParser
+import copy
+import itertools
 import json
 from pprint import pprint
 import re
@@ -62,22 +64,26 @@ def infer_trial(env, obs, listener_model, speaker_model, args,
         # Sample an LF z' ~ p(z|r).
         g_lf = lf #env.sample_lf(referent=referent, n_parts=len(words) // 2)
 
-        # Record unnormalized score p~(u|z)
+        # Retrieved unnormalized likelihood p~(u|z), partition p(z)
         try:
-            p_utterance = lf_score_cache[tuple(g_lf)]
+            p_utterance, Z = lf_score_cache[tuple(g_lf)]
         except KeyError:
             p_utterance = speaker_model.score(g_lf, words)
-            lf_score_cache[tuple(g_lf)] = p_utterance
+            Z = calculate_partition(g_lf, listener_model, env)
+            lf_score_cache[tuple(g_lf)] = (p_utterance, Z)
 
         lfs.append(lf)
         g_lfs.append(g_lf)
-        weights.append((np.exp(p_utterance), p_lf))
+        weights.append((np.exp(p_utterance), p_lf, Z))
+
+    print({env.describe_lf(lf): v for lf, v in lf_score_cache.items()})
 
     # Mix listener+speaker scores.
     # TODO: customizable
     alpha = 1
-    mixed_weights = [(speaker_weight ** alpha) * (listener_weight ** (1 - alpha))
-                        for speaker_weight, listener_weight in weights]
+    mixed_weights = [
+            ((speaker_weight ** alpha) * (listener_weight ** (1 - alpha))) / Z
+            for speaker_weight, listener_weight, Z in weights]
     data = sorted(zip(lfs, mixed_weights, weights), key=lambda el: el[1],
                   reverse=True)
 
@@ -91,16 +97,39 @@ def infer_trial(env, obs, listener_model, speaker_model, args,
             continue
         seen.add(lf)
 
-        print("LF %30s  =>  Referent %10s  =>  (%.4g, %.4g, %.4g)" %
+        print("LF %30s  =>  Referent %10s  =>  (%.3g, %.3g, %.3g, %.3g)" %
             (env.describe_lf(lf),
             env.resolve_lf(lf)[0]["attributes"][args.atom_attribute],
             #env.describe_lf(g_lf),
-            weight[0], weight[1], mixed_weight))
+            weight[0], weight[1], weight[2], mixed_weight))
     print("%sRejections per sample: %.2f%s" % (colors.BOLD + colors.WARNING,
                                                rejs_per_sample, colors.ENDC))
 
     listener_model.reset()
     return data, rejs_per_sample
+
+
+def calculate_partition(lf, listener_model, env):
+    """
+    Calculate the partition function `p(z)` for a given LF `z`.
+    """
+
+    # For now, we'll just evaluate the listener model for every possible
+    # utterance. Because, well, there aren't that many.
+    valid_tokens = copy.copy(env.vocab)
+    valid_tokens.remove(env.vocab[env.word_unk_id])
+    valid_tokens.remove(env.vocab[env.word_eos_id])
+    permutations = list(itertools.chain.from_iterable(
+            itertools.permutations(valid_tokens, t)
+            for t in range(1, listener_model.max_timesteps + 1)))
+
+    # Evaluate scores for the token permutations calculated above.
+    lfs = [lf] * len(permutations)
+    scores = listener_model.score_batch(permutations, lfs)
+    # TODO: This sometimes returns values > 1. Why?
+    # This partition function actually doesn't cover the entire space, as we
+    # don't enumerate invalid options like "<eos> square"
+    return sum(scores)
 
 
 def run_listener_trial(listener_model, speaker_model, env, sess, args,
@@ -343,12 +372,12 @@ def train(args):
                          bag=args.bag_env, functions=FUNCTIONS[args.fn_selection],
                          atom_attribute=args.atom_attribute)
     listener_model = WindowedSequenceListenerModel(env, embedding_dim=args.embedding_dim)
-    speaker_model = EnsembledSequenceSpeakerModel(env, 4, lf_embeddings=listener_model.lf_embeddings,
-                                                  embedding_dim=args.embedding_dim)
-    # speaker_model = ShallowSequenceSpeakerModel(env,
-    #                                            #  word_embeddings=listener_model.word_embeddings,
-    #                                              lf_embeddings=listener_model.lf_embeddings,
-    #                                              embedding_dim=args.embedding_dim)
+    # speaker_model = EnsembledSequenceSpeakerModel(env, 4, lf_embeddings=listener_model.lf_embeddings,
+    #                                               embedding_dim=args.embedding_dim)
+    speaker_model = ShallowSequenceSpeakerModel(env,
+                                               #  word_embeddings=listener_model.word_embeddings,
+                                                 lf_embeddings=listener_model.lf_embeddings,
+                                                 embedding_dim=args.embedding_dim)
 
     listener_train_op, listener_global_step = \
             build_train_graph(listener_model, env, args, scope="train/listener")
