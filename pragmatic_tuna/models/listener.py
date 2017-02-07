@@ -10,7 +10,7 @@ from pragmatic_tuna.reinforce import reinforce_episodic_gradients
 from pragmatic_tuna.util import orthogonal_initializer
 
 
-EMBEDDING_INITIALIZER = tf.truncated_normal_initializer()
+EMBEDDING_INITIALIZER = orthogonal_initializer()
 LF_EMBEDDING_INITIALIZER = orthogonal_initializer()
 
 
