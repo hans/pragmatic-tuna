@@ -252,7 +252,7 @@ class WindowedSequenceListenerModel(ListenerModel):
             self.temperature = tf.constant(1.0, name="sampling_temperature")
 
             # TODO: padding representation?
-            self.words = tf.placeholder(tf.int32, shape=(self.max_timesteps,),
+            self.words = tf.placeholder(tf.int32, shape=(None, self.max_timesteps,),
                                         name="words")
 
             emb_shape = (self.env.vocab_size, self.embedding_dim)
@@ -260,14 +260,17 @@ class WindowedSequenceListenerModel(ListenerModel):
                     "word_embeddings", shape=emb_shape, initializer=EMBEDDING_INITIALIZER)
 
             word_window = tf.nn.embedding_lookup(word_embeddings, self.words)
-            word_window = tf.reshape(word_window, (-1,))
+            word_window = tf.reshape(word_window, (-1, self.embedding_dim * self.max_timesteps))
 
             # Create embeddings for LF tokens
             lf_emb_shape = (len(self.env.lf_vocab), self.embedding_dim)
             lf_embeddings = tf.get_variable(
                     "lf_embeddings", shape=lf_emb_shape,
                     initializer=LF_EMBEDDING_INITIALIZER)
-            null_embedding = tf.gather(lf_embeddings, self.env.lf_unk_id)
+            batch_size = tf.shape(self.words)[0]
+            null_embedding = tf.tile(
+                    tf.expand_dims(tf.gather(lf_embeddings, self.env.lf_unk_id), 0),
+                    (batch_size, 1))
 
             # Weight matrices mapping input -> ~p(fn), input -> ~p(atom)
             input_dim = self.embedding_dim + self.embedding_dim * self.max_timesteps
@@ -279,7 +282,7 @@ class WindowedSequenceListenerModel(ListenerModel):
             prev_sample = null_embedding
             for t in range(self.max_timesteps):
                 with tf.variable_scope("recurrence", reuse=t > 0):
-                    input_t = tf.expand_dims(tf.concat(0, [prev_sample, word_window]), 0)
+                    input_t = tf.concat(1, [prev_sample, word_window])
 
                     # Force-sample a syntactically valid LF.
                     # i.e. alternating fn,atom,fn,atom,...
@@ -288,27 +291,29 @@ class WindowedSequenceListenerModel(ListenerModel):
                     # in the env definition. That could be bad.
                     if t % 2 == 0:
                         fn_logits = tf.matmul(input_t, W_fn) / self.temperature
-                        atom_logits = tf.zeros((1, len(self.env.lf_atoms)))
+                        atom_logits = tf.zeros((batch_size, len(self.env.lf_atoms)))
                         sample_t = tf.multinomial(fn_logits, num_samples=1)
                         fn_probs = tf.nn.softmax(fn_logits)
                         atom_probs = atom_logits
                     else:
-                        fn_logits = tf.zeros((1, len(self.env.lf_functions)))
+                        fn_logits = tf.zeros((batch_size, len(self.env.lf_functions)))
                         atom_logits = tf.matmul(input_t, W_atom) / self.temperature
                         sample_t = tf.multinomial(atom_logits, num_samples=1)
                         fn_probs = fn_logits
                         atom_probs = tf.nn.softmax(atom_logits)
 
-                    output_t = tf.squeeze(tf.concat(1, (fn_logits, atom_logits)))
-                    probs_t = tf.squeeze(tf.concat(1, (fn_probs, atom_probs)))
+                    output_t = tf.concat(1, (fn_logits, atom_logits),
+                                         name="output_%i" % t)
+                    probs_t = tf.concat(1, (fn_probs, atom_probs),
+                                        name="probs_%i" % t)
 
-                    sample_t = tf.squeeze(sample_t)
+                    sample_t = tf.squeeze(sample_t, [1])
                     if t % 2 == 1:
                         # Shift index to match standard vocabulary.
-                        sample_t += len(self.env.lf_functions)
+                        sample_t = tf.add(sample_t, len(self.env.lf_functions),
+                                          name="sample_%i" % t)
 
                     # Hack shape.
-                    sample_t.set_shape(())
                     prev_sample = tf.nn.embedding_lookup(lf_embeddings, sample_t)
 
                     outputs.append(output_t)
@@ -323,15 +328,25 @@ class WindowedSequenceListenerModel(ListenerModel):
             self.samples = samples
 
     def build_xent_gradients(self):
-        gold_lf_tokens = [tf.zeros((), dtype=tf.int32, name="gold_lf_%i" % t)
+        gold_lf_tokens = [tf.placeholder(tf.int32, shape=(None,),
+                                         name="gold_lf_%i" % t)
                           for t in range(self.max_timesteps)]
-        gold_lf_length = tf.placeholder(tf.int32, shape=(), name="gold_lf_length")
-        losses = [tf.to_float(t < gold_lf_length) *
-                  tf.nn.sparse_softmax_cross_entropy_with_logits(
-                          tf.squeeze(output_t), gold_lf_t)
-                  for t, (output_t, gold_lf_t)
-                  in enumerate(zip(self.outputs, gold_lf_tokens))]
-        loss = tf.add_n(losses) / tf.to_float(gold_lf_length)
+        gold_lf_length = tf.placeholder(tf.int32, shape=(None,),
+                                        name="gold_lf_length")
+
+        losses = []
+        for t in range(self.max_timesteps):
+            xent_t = tf.nn.sparse_softmax_cross_entropy_with_logits(
+                    self.outputs[t], gold_lf_tokens[t])
+            mask = tf.to_float(t < gold_lf_length)
+
+            # How many examples are still active?
+            num_valid = tf.reduce_sum(mask)
+            # Calculate mean xent over examples.
+            mean_xent = tf.reduce_sum(mask * xent_t) / num_valid
+            losses.append(mean_xent)
+
+        loss = tf.add_n(losses) / float(len(losses))
 
         params = tf.trainable_variables()
         gradients = tf.gradients(loss, params)
@@ -352,17 +367,26 @@ class WindowedSequenceListenerModel(ListenerModel):
         word_idxs += [self.env.word_unk_id] * (self.max_timesteps - len(word_idxs))
         return word_idxs
 
+    def _pad_lf_idxs(self, lf_idxs):
+        # # Look up LF indices. TODO: padding with something other than UNK..?
+        # lf_idxs = [self.env.lf_token_to_id[lf_tok] for lf_tok in lf]
+        assert len(lf_idxs) <= self.max_timesteps
+        lf_idxs += [self.env.lf_eos_id] * (self.max_timesteps - len(lf_idxs))
+        return lf_idxs
+
     def sample(self, words, temperature=1.0, argmax=False,
                context_free=False, evaluating=False):
         # TODO handle argmax, evaluating
 
         sess = tf.get_default_session()
-        feed = {self.words: self._get_word_idxs(words),
+        feed = {self.words: [self._get_word_idxs(words)],
                 self.temperature: temperature}
 
         rets = sess.run(self.samples + self.probs, feed)
-        sample_toks = rets[:len(self.samples)]
-        probs = rets[len(self.samples):]
+
+        # Unpack and un-batch.
+        sample_toks = [x[0] for x in rets[:len(self.samples)]]
+        probs = [x[0] for x in rets[len(self.samples):]]
 
         # Trim at EOS.
         try:
@@ -380,17 +404,16 @@ class WindowedSequenceListenerModel(ListenerModel):
         if gold_lf is None:
             return
 
-        # Pad with stop tokens
+        # Pad LF with stop tokens
         real_length = min(self.max_timesteps, len(gold_lf) + 1) # train to output a single stop token
-        if len(gold_lf) < self.max_timesteps:
-            gold_lf.extend([self.env.lf_eos_id] * (self.max_timesteps - len(gold_lf)))
+        gold_lf = self._pad_lf_idxs(gold_lf)
 
         word_idxs = self._get_word_idxs(obs[1])
-        feed = {self.words: word_idxs,
-                self.xent_gold_lf_length: real_length}
-        feed.update({self.xent_gold_lf_tokens[t]: gold_lf[t]
+        feed = {self.words: [word_idxs],
+                self.xent_gold_lf_length: [real_length]}
+        feed.update({self.xent_gold_lf_tokens[t]: [gold_lf[t]]
                      for t in range(self.max_timesteps)})
-        feed.update({self.samples[t]: lf_t
+        feed.update({self.samples[t]: [lf_t]
                      for t, lf_t in enumerate(gold_lf)})
 
         sess = tf.get_default_session()
