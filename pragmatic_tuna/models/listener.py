@@ -390,8 +390,8 @@ class WindowedSequenceListenerModel(ListenerModel):
                 self.xent_gold_lf_length: real_length}
         feed.update({self.xent_gold_lf_tokens[t]: gold_lf[t]
                      for t in range(self.max_timesteps)})
-        feed.update({self.samples[t]: word_t
-                     for t, word_t in enumerate(word_idxs)})
+        feed.update({self.samples[t]: lf_t
+                     for t, lf_t in enumerate(gold_lf)})
 
         sess = tf.get_default_session()
         sess.run(self.train_op, feed)
