@@ -371,13 +371,15 @@ def train(args):
     env = TUNAWithLoTEnv(args.corpus_path, corpus_selection=args.corpus_selection,
                          bag=args.bag_env, functions=FUNCTIONS[args.fn_selection],
                          atom_attribute=args.atom_attribute)
-    listener_model = WindowedSequenceListenerModel(env, embedding_dim=args.embedding_dim)
+    listener_model = WindowedSequenceListenerModel(env, embedding_dim=args.embedding_dim,
+                                                   max_timesteps=args.max_timesteps)
     # speaker_model = EnsembledSequenceSpeakerModel(env, 4, lf_embeddings=listener_model.lf_embeddings,
     #                                               embedding_dim=args.embedding_dim)
-    speaker_model = ShallowSequenceSpeakerModel(env,
-                                               #  word_embeddings=listener_model.word_embeddings,
+    speaker_model = WindowedSequenceSpeakerModel(env,
+                                                 word_embeddings=listener_model.word_embeddings,
                                                  lf_embeddings=listener_model.lf_embeddings,
-                                                 embedding_dim=args.embedding_dim)
+                                                 embedding_dim=args.embedding_dim,
+                                                 max_timesteps=args.max_timesteps)
 
     listener_train_op, listener_global_step = \
             build_train_graph(listener_model, env, args, scope="train/listener")
@@ -477,6 +479,7 @@ if __name__ == "__main__":
     p.add_argument("--bag_env", default=False, action="store_true")
     p.add_argument("--embedding_dim", type=int, default=4)
 
+    p.add_argument("--max_timesteps", type=int, default=2)
     p.add_argument("--dream", default=False, action="store_true")
     p.add_argument("--num_listener_samples", type=int, default=5)
     p.add_argument("--max_rejections_after_trial", type=int, default=3)

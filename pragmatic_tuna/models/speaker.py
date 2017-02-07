@@ -211,7 +211,7 @@ class ShallowSequenceSpeakerModel(SequenceSpeakerModel):
             self.samples = samples
 
 
-class WindowedSequenceSpeakerModel(object):
+class WindowedSequenceSpeakerModel(SequenceSpeakerModel):
 
     """
     Windowed sequence speaker/decoder model that mirrors
