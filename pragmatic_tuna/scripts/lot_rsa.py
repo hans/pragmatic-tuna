@@ -45,6 +45,7 @@ def infer_trial(env, obs, listener_model, speaker_model, args,
     # Sample N LFs from the predicted distribution, accepting only when they
     # resolve to a referent in the scene.
     lfs, g_lfs, weights = [], [], []
+    lf_score_cache = {}
     num_rejections = 0
     while len(weights) < args.num_listener_samples:
         lf, p_lf = listener_model.sample(words, argmax=evaluating,
@@ -61,8 +62,12 @@ def infer_trial(env, obs, listener_model, speaker_model, args,
         # Sample an LF z' ~ p(z|r).
         g_lf = lf #env.sample_lf(referent=referent, n_parts=len(words) // 2)
 
-        # Record unnormalized score p(u, z)
-        p_utterance = speaker_model.score(g_lf, words)
+        # Record unnormalized score p~(u|z)
+        try:
+            p_utterance = lf_score_cache[tuple(g_lf)]
+        except KeyError:
+            p_utterance = speaker_model.score(g_lf, words)
+            lf_score_cache[tuple(g_lf)] = p_utterance
 
         lfs.append(lf)
         g_lfs.append(g_lf)
