@@ -93,7 +93,8 @@ class SequenceSpeakerModel(SpeakerModel):
 
     def _pad_lf_idxs(self, z):
         assert len(z) <= self.max_timesteps
-        z_new = z + [self.env.lf_unk_id] * (self.max_timesteps - len(z))
+        missing_conjuncts = (self.max_timesteps - len(z)) / 2
+        z_new = z + [self.env.lf_eos_id, self.env.lf_unk_id] * int(missing_conjuncts)
         return z_new
 
     def sample(self, z):
