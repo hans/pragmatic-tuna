@@ -306,19 +306,11 @@ class WindowedSequenceListenerModel(ListenerModel):
         gold_lf_length = tf.placeholder(tf.int32, shape=(None,),
                                         name="gold_lf_length")
 
-        losses = []
-        for t in range(self.max_timesteps):
-            xent_t = tf.nn.sparse_softmax_cross_entropy_with_logits(
-                    self.outputs[t], gold_lf_tokens[t])
-            mask = tf.to_float(t < gold_lf_length)
-
-            # How many examples are still active?
-            num_valid = tf.reduce_sum(mask)
-            # Calculate mean xent over examples.
-            mean_xent = tf.reduce_sum(mask * xent_t) / num_valid
-            losses.append(mean_xent)
-
-        loss = tf.add_n(losses) / float(len(losses))
+        # `max_timesteps`-length list of 1D `batch_size` masks
+        loss_weights = [tf.to_float(t < gold_lf_length)
+                        for t in range(self.max_timesteps)]
+        loss = tf.nn.seq2seq.sequence_loss(self.outputs, gold_lf_tokens,
+                                           loss_weights)
 
         params = tf.trainable_variables()
         gradients = tf.gradients(loss, params)
