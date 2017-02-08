@@ -98,9 +98,23 @@ class WindowedSequenceListenerModel(ListenerModel):
     """
 
     def __init__(self, env, scope="listener", max_timesteps=2, embedding_dim=10):
+        self.env = env
         self.max_timesteps = max_timesteps
         self.embedding_dim = embedding_dim
+
+        self._build_embeddings()
         super(WindowedSequenceListenerModel, self).__init__(env, scope=scope)
+
+    def _build_embeddings(self):
+        with tf.variable_scope("embeddings", initializer=EMBEDDING_INITIALIZER):
+            # Word embeddings
+            emb_shape = (self.env.vocab_size, self.embedding_dim)
+            word_embeddings = tf.get_variable("word_embeddings", shape=emb_shape)
+            self.word_embeddings = word_embeddings
+
+            lf_emb_shape = (len(self.env.lf_vocab), self.embedding_dim)
+            lf_embeddings = tf.get_variable("lf_embeddings", shape=lf_emb_shape)
+            self.lf_embeddings = lf_embeddings
 
     def _build_graph(self):
         with self._scope:
@@ -110,21 +124,13 @@ class WindowedSequenceListenerModel(ListenerModel):
             self.words = tf.placeholder(tf.int32, shape=(None, self.max_timesteps,),
                                         name="words")
 
-            emb_shape = (self.env.vocab_size, self.embedding_dim)
-            word_embeddings = tf.get_variable(
-                    "word_embeddings", shape=emb_shape, initializer=EMBEDDING_INITIALIZER)
-
-            word_window = tf.nn.embedding_lookup(word_embeddings, self.words)
+            word_window = tf.nn.embedding_lookup(self.word_embeddings, self.words)
             word_window = tf.reshape(word_window, (-1, self.embedding_dim * self.max_timesteps))
 
             # Create embeddings for LF tokens
-            lf_emb_shape = (len(self.env.lf_vocab), self.embedding_dim)
-            lf_embeddings = tf.get_variable(
-                    "lf_embeddings", shape=lf_emb_shape,
-                    initializer=LF_EMBEDDING_INITIALIZER)
             batch_size = tf.shape(self.words)[0]
             null_embedding = tf.tile(
-                    tf.expand_dims(tf.gather(lf_embeddings, self.env.lf_unk_id), 0),
+                    tf.expand_dims(tf.gather(self.lf_embeddings, self.env.lf_unk_id), 0),
                     (batch_size, 1))
 
             # Weight matrices mapping input -> ~p(fn), input -> ~p(atom)
@@ -169,14 +175,11 @@ class WindowedSequenceListenerModel(ListenerModel):
                                           name="sample_%i" % t)
 
                     # Hack shape.
-                    prev_sample = tf.nn.embedding_lookup(lf_embeddings, sample_t)
+                    prev_sample = tf.nn.embedding_lookup(self.lf_embeddings, sample_t)
 
                     outputs.append(output_t)
                     probs.append(probs_t)
                     samples.append(sample_t)
-
-            self.word_embeddings = word_embeddings
-            self.lf_embeddings = lf_embeddings
 
             self.outputs = outputs
             self.probs = probs
