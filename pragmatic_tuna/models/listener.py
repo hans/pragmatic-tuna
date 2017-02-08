@@ -378,7 +378,9 @@ class WindowedSequenceListenerModel(ListenerModel):
         # # Look up LF indices. TODO: padding with something other than UNK..?
         # lf_idxs = [self.env.lf_token_to_id[lf_tok] for lf_tok in lf]
         assert len(lf_idxs) <= self.max_timesteps
-        lf_idxs += [self.env.lf_eos_id] * (self.max_timesteps - len(lf_idxs))
+        missing_conjuncts = (self.max_timesteps - len(lf_idxs)) / 2
+        assert int(missing_conjuncts) == missing_conjuncts
+        lf_idxs += [self.env.lf_eos_id, self.env.lf_unk_id] * int(missing_conjuncts)
         return lf_idxs
 
     def sample(self, words, temperature=1.0, argmax=False,
@@ -399,13 +401,17 @@ class WindowedSequenceListenerModel(ListenerModel):
         try:
             eos_pos = sample_toks.index(self.env.lf_eos_id)
         except ValueError:
-            pass
+            ret_lf = sample_toks
         else:
             sample_toks = sample_toks[:eos_pos + 1]
+            ret_lf = sample_toks[:eos_pos]
 
+        # Calculate probability including single <eos> token
         total_prob = np.prod([probs_t[sample_t]
-                              for probs_t, sample_t in zip(probs, sample_toks)])
-        return sample_toks, total_prob
+                              for probs_t, sample_t
+                              in zip(probs, sample_toks)])
+
+        return ret_lf, total_prob
 
     def observe(self, obs, lf_pred, reward, gold_lf):
         if gold_lf is None:

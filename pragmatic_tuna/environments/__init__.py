@@ -314,6 +314,13 @@ class TUNAWithLoTEnv(TUNAEnv):
         return ret
 
     def describe_lf(self, id_list):
+        try:
+            eos_pos = id_list.index(self.lf_eos_id)
+        except ValueError:
+            pass
+        else:
+            id_list = id_list[:eos_pos]
+
         parts = ["%s(%s)" % (self.lf_vocab[fn_id], self.lf_vocab[atom_id])
                  for fn_id, atom_id in zip(id_list[::2], id_list[1::2])]
         return " AND ".join(parts)
