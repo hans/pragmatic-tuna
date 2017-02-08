@@ -49,9 +49,21 @@ def infer_trial(env, obs, listener_model, speaker_model, args,
     lfs, g_lfs, weights = [], [], []
     lf_score_cache = {}
     num_rejections = 0
+
+    # Pre-sample a batch, and refresh as necessary.
+    pseudo_batch = [words] * args.num_listener_samples
+    sample_batch_cursor = len(pseudo_batch)
+
     while len(weights) < args.num_listener_samples:
-        lf, p_lf = listener_model.sample(words, argmax=evaluating,
-                                         evaluating=evaluating)
+        if sample_batch_cursor == len(pseudo_batch):
+            sample_batch = listener_model.sample_batch(
+                    pseudo_batch, argmax=evaluating, evaluating=evaluating)
+            sample_batch_cursor = 0
+            continue
+        sample_batch_lfs, sample_batch_probs = sample_batch
+        lf = sample_batch_lfs[sample_batch_cursor]
+        p_lf = sample_batch_probs[sample_batch_cursor]
+        sample_batch_cursor += 1
 
         # Resolve referent.
         referent = env.resolve_lf(lf)

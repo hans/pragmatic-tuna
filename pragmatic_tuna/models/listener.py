@@ -385,33 +385,38 @@ class WindowedSequenceListenerModel(ListenerModel):
 
     def sample(self, words, temperature=1.0, argmax=False,
                context_free=False, evaluating=False):
+        ret_lfs, total_probs = self.sample_batch([words])
+        return ret_lfs[0], total_probs[0]
+
+    def sample_batch(self, words, temperature=1.0, argmax=False,
+                     context_free=False, evaluating=False):
         # TODO handle argmax, evaluating
+        batch_size = len(words)
 
         sess = tf.get_default_session()
-        feed = {self.words: [self._get_word_idxs(words)],
+        feed = {self.words: [self._get_word_idxs(words_i)
+                             for words_i in words],
                 self.temperature: temperature}
 
         rets = sess.run(self.samples + self.probs, feed)
 
-        # Unpack and un-batch.
-        sample_toks = [x[0] for x in rets[:len(self.samples)]]
-        probs = [x[0] for x in rets[len(self.samples):]]
+        # Unpack.
+        sample_toks = rets[:len(self.samples)]
+        probs = rets[len(self.samples):]
 
-        # Trim at EOS.
-        try:
-            eos_pos = sample_toks.index(self.env.lf_eos_id)
-        except ValueError:
-            ret_lf = sample_toks
-        else:
-            sample_toks = sample_toks[:eos_pos + 1]
-            ret_lf = sample_toks[:eos_pos]
+        # Calculate sequence probability as batch.
+        done = np.zeros(batch_size)
+        total_probs = np.ones(batch_size)
+        batch_range = np.arange(batch_size)
+        ret_lfs = [[] for _ in range(batch_size)]
+        for t, (samples_t, probs_t) in enumerate(zip(sample_toks, probs)):
+            total_probs *= probs_t[batch_range, samples_t]
+            done = np.logical_or(done, samples_t == self.env.lf_eos_id)
+            for i, sample_t_i in enumerate(samples_t):
+                if not done[i]:
+                    ret_lfs[i].append(sample_t_i)
 
-        # Calculate probability including single <eos> token
-        total_prob = np.prod([probs_t[sample_t]
-                              for probs_t, sample_t
-                              in zip(probs, sample_toks)])
-
-        return ret_lf, total_prob
+        return ret_lfs, total_probs
 
     def observe(self, obs, lf_pred, reward, gold_lf):
         if gold_lf is None:
