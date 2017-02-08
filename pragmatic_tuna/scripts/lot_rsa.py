@@ -379,9 +379,13 @@ def build_train_graph(model, env, args, scope="train"):
 
 
 def train(args):
+    max_conjuncts = args.max_timesteps / 2
+    assert int(max_conjuncts) == max_conjuncts
+    max_conjuncts = int(max_conjuncts)
+
     env = TUNAWithLoTEnv(args.corpus_path, corpus_selection=args.corpus_selection,
                          bag=args.bag_env, functions=FUNCTIONS[args.fn_selection],
-                         atom_attribute=args.atom_attribute)
+                         max_conjuncts=max_conjuncts, atom_attribute=args.atom_attribute)
     listener_model = WindowedSequenceListenerModel(env, embedding_dim=args.embedding_dim,
                                                    max_timesteps=args.max_timesteps)
     # speaker_model = EnsembledSequenceSpeakerModel(env, 4, lf_embeddings=listener_model.lf_embeddings,

@@ -237,6 +237,7 @@ class TUNAWithLoTEnv(TUNAEnv):
 
         self.atom_attribute = atom_attribute
         self.max_conjuncts = max_conjuncts
+        self.max_tokens = self.max_conjuncts * 2
         self._build_lfs(functions, atom_attribute)
 
     def _build_lfs(self, functions, atom_attribute):
@@ -411,6 +412,33 @@ class TUNAWithLoTEnv(TUNAEnv):
                 else:
                     lfs.append(lf)
         return lfs
+
+    def get_word_idxs(self, words, pad_to_length=None):
+        """
+        Convert a list of vocabulary words to word indices and pad at right.
+        """
+        idxs = [self.word2idx[word] for word in words]
+        if pad_to_length is None:
+            pad_to_length = self.max_tokens
+
+        assert len(idxs) <= pad_to_length
+        if len(idxs) < pad_to_length:
+            idxs += [self.word_eos_id] * (pad_to_length - len(idxs))
+
+        return idxs
+
+    def pad_lf_idxs(self, lf_idxs, pad_to_length=None):
+        """
+        Pad an LF idx sequence.
+        """
+        if pad_to_length is None:
+            pad_to_length = self.max_tokens
+
+        assert len(lf_idxs) <= pad_to_length
+        missing_conjuncts = (pad_to_length - len(lf_idxs)) / 2
+        assert int(missing_conjuncts) == missing_conjuncts
+        lf_idxs += [self.lf_eos_id, self.lf_unk_id] * int(missing_conjuncts)
+        return lf_idxs
 
     def _intersect_lists(self, list1, list2):
         result = []

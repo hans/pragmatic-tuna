@@ -92,22 +92,9 @@ class SequenceSpeakerModel(SpeakerModel):
         return ((self.xent_gold_words, self.xent_gold_length),
                 (self.xent_gradients,))
 
-    def _get_word_idxs(self, words):
-        # Look up word indices. TODO: padding with something other than UNK..?
-        word_idxs = [self.env.word2idx[word] for word in words]
-        assert len(word_idxs) <= self.max_timesteps
-        word_idxs += [self.env.word_unk_id] * (self.max_timesteps - len(word_idxs))
-        return word_idxs
-
-    def _pad_lf_idxs(self, z):
-        assert len(z) <= self.max_timesteps
-        missing_conjuncts = (self.max_timesteps - len(z)) / 2
-        z_new = z + [self.env.lf_eos_id, self.env.lf_unk_id] * int(missing_conjuncts)
-        return z_new
-
     def sample(self, z):
         sess = tf.get_default_session()
-        feed = {self.lf_toks: self._pad_lf_idxs(z)}
+        feed = {self.lf_toks: self.env.pad_lf_idxs(z)}
 
         sample = sess.run(self.samples, feed)
         try:
@@ -122,7 +109,7 @@ class SequenceSpeakerModel(SpeakerModel):
     def score(self, z, u):
         sess = tf.get_default_session()
 
-        z = self._pad_lf_idxs(z)
+        z = self.env.pad_lf_idxs(z)
         words = [self.env.word2idx[word] for word in u]
 
         feed = {self.lf_toks: z}
@@ -136,11 +123,11 @@ class SequenceSpeakerModel(SpeakerModel):
         if gold_lf is None:
             return
 
-        z = self._pad_lf_idxs(gold_lf)
+        z = self.env.pad_lf_idxs(gold_lf)
 
         words = obs[1]
         real_length = min(len(words) + 1, self.max_timesteps) # train to output a single EOS token
-        words = self._get_word_idxs(words)
+        words = self.env.get_word_idxs(words)
 
         sess = tf.get_default_session()
         feed = {self.lf_toks: z, self.xent_gold_length: [real_length]}
@@ -310,7 +297,7 @@ class EnsembledSequenceSpeakerModel(EnsembledSpeakerModel):
         if gold_lf is None:
             return
 
-        z = self.models[0]._pad_lf_idxs(gold_lf)
+        z = self.env.pad_lf_idxs(gold_lf)
 
         max_timesteps = self.models[0].max_timesteps
         words = [self.env.word2idx[word] for word in env_obs[1]]

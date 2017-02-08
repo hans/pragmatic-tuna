@@ -324,22 +324,6 @@ class WindowedSequenceListenerModel(ListenerModel):
         return ((self.xent_gold_lf_tokens, self.xent_gold_lf_length),
                 (self.xent_gradients,))
 
-    def _get_word_idxs(self, words):
-        # Look up word indices. TODO: padding with something other than UNK..?
-        word_idxs = [self.env.word2idx[word] for word in words]
-        assert len(word_idxs) <= self.max_timesteps
-        word_idxs += [self.env.word_unk_id] * (self.max_timesteps - len(word_idxs))
-        return word_idxs
-
-    def _pad_lf_idxs(self, lf_idxs):
-        # # Look up LF indices. TODO: padding with something other than UNK..?
-        # lf_idxs = [self.env.lf_token_to_id[lf_tok] for lf_tok in lf]
-        assert len(lf_idxs) <= self.max_timesteps
-        missing_conjuncts = (self.max_timesteps - len(lf_idxs)) / 2
-        assert int(missing_conjuncts) == missing_conjuncts
-        lf_idxs += [self.env.lf_eos_id, self.env.lf_unk_id] * int(missing_conjuncts)
-        return lf_idxs
-
     def sample(self, words, temperature=1.0, argmax=False, evaluating=False):
         ret_lfs, total_probs = self.sample_batch([words])
         return ret_lfs[0], total_probs[0]
@@ -349,7 +333,7 @@ class WindowedSequenceListenerModel(ListenerModel):
         batch_size = len(words)
 
         sess = tf.get_default_session()
-        feed = {self.words: [self._get_word_idxs(words_i)
+        feed = {self.words: [self.env.get_word_idxs(words_i)
                              for words_i in words],
                 self.temperature: temperature}
 
@@ -379,9 +363,9 @@ class WindowedSequenceListenerModel(ListenerModel):
 
         # Pad gold output LF.
         real_length = min(self.max_timesteps, len(gold_lf) + 1) # train to output a single stop token
-        gold_lf = self._pad_lf_idxs(gold_lf)
+        gold_lf = self.env.pad_lf_idxs(gold_lf)
 
-        word_idxs = self._get_word_idxs(obs[1])
+        word_idxs = self.env.get_word_idxs(obs[1])
         feed = {self.words: [word_idxs],
                 self.xent_gold_lf_length: [real_length]}
         feed.update({self.xent_gold_lf_tokens[t]: [gold_lf[t]]
@@ -393,9 +377,9 @@ class WindowedSequenceListenerModel(ListenerModel):
         sess.run(self.train_op, feed)
 
     def score_batch(self, words, lfs):
-        words = [self._get_word_idxs(words_i) for words_i in words]
+        words = [self.env.get_word_idxs(words_i) for words_i in words]
 
-        lfs = [self._pad_lf_idxs(lf_i) for lf_i in lfs]
+        lfs = [self.env.pad_lf_idxs(lf_i) for lf_i in lfs]
         # Transpose to num_timesteps * batch_size
         lfs = np.array(lfs).T
 
