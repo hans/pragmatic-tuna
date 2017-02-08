@@ -314,8 +314,7 @@ def eval_offline_cf(listener_model, examples, env):
             lf_candidate_tok_ids.append(tuple(ids))
 
         # DEV: assumes we're using a non-BOW listener model
-        sampled_lf, p = listener_model.sample(words, argmax=True,
-                                              context_free=True, evaluating=True)
+        sampled_lf, p = listener_model.sample(words, argmax=True, evaluating=True)
         listener_model.reset()
         success = tuple(sampled_lf) in lf_candidate_tok_ids
         results.append((words_string, env.describe_lf(sampled_lf), success))

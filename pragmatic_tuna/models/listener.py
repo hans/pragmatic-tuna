@@ -39,8 +39,7 @@ class ListenerModel(object):
     def build_xent_gradients(self):
         raise NotImplementedError
 
-    def sample(self, words, temperature=None,
-               context_free=False, argmax=False, evaluating=False):
+    def sample(self, words, temperature=None, argmax=False, evaluating=False):
         """
         Returns:
             lf: LF token ID sequence
@@ -86,40 +85,6 @@ class EnsembledListenerModel(ListenerModel):
     def reset(self):
         for model in self.models:
             model.reset()
-
-
-class EnsembledSkipGramListenerModel(EnsembledListenerModel):
-
-    def __init__(self, env, n):
-        self.env = env
-        models = [SkipGramListenerModel(env, scope="listener%i" % i)
-                  for i in range(n)]
-        super(EnsembledSkipGramListenerModel, self).__init__(models)
-
-    def observe(self, obs, lf_pred, reward, gold_lf):
-        if gold_lf is None:
-            return
-
-        referent = self.env.resolve_lf(gold_lf)[0]
-        for model in self.models:
-            model._populate_cache(obs[1], context_free=True)
-
-        # Build gold vector
-        model = self.models[0]
-        gold_lfs = np.zeros((len(model.lf_cache), 1))
-        for i, lf in enumerate(model.lf_cache):
-            lf = model.to_lot_lf(lf)
-            if lf == gold_lf:
-                gold_lfs[i] = 1.0
-        gold_lfs /= np.sum(gold_lfs)
-
-        train_feeds = {}
-        for model in self.models:
-            train_feeds.update({model.feats: model.feat_matrix,
-                                model.gold_lfs: gold_lfs})
-
-        sess = tf.get_default_session()
-        sess.run(self.train_op, train_feeds)
 
 
 class SimpleListenerModel(ListenerModel):
@@ -383,13 +348,11 @@ class WindowedSequenceListenerModel(ListenerModel):
         lf_idxs += [self.env.lf_eos_id, self.env.lf_unk_id] * int(missing_conjuncts)
         return lf_idxs
 
-    def sample(self, words, temperature=1.0, argmax=False,
-               context_free=False, evaluating=False):
+    def sample(self, words, temperature=1.0, argmax=False, evaluating=False):
         ret_lfs, total_probs = self.sample_batch([words])
         return ret_lfs[0], total_probs[0]
 
-    def sample_batch(self, words, temperature=1.0, argmax=False,
-                     context_free=False, evaluating=False):
+    def sample_batch(self, words, temperature=1.0, argmax=False, evaluating=False):
         # TODO handle argmax, evaluating
         batch_size = len(words)
 
