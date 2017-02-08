@@ -153,6 +153,11 @@ def run_listener_trial(listener_model, speaker_model, env, sess, args,
     first_successful_lf_pred = None
     rejs_per_sample = np.inf
     while rejs_per_sample > args.max_rejections_after_trial or not success:
+        if n_iterations > 1000:
+            print("%sFailed to converge after 1000 listener trials. Dying.%s"
+                  % (colors.FAIL, colors.ENDC))
+            break
+
         lfs, rejs_per_sample = \
                 infer_trial(env, obs, listener_model, speaker_model, args,
                             evaluating=evaluating)
