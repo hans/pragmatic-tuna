@@ -71,15 +71,16 @@ class EnsembledSpeakerModel(SpeakerModel):
 class SequenceSpeakerModel(SpeakerModel):
 
     def build_xent_gradients(self):
-        gold_words = [tf.zeros((), dtype=tf.int32, name="gold_word_%i" % t)
+        gold_words = [tf.placeholder(tf.int32, shape=(None,),
+                                     name="gold_word_%i" % t)
                       for t in range(self.max_timesteps)]
-        gold_length = tf.placeholder(tf.int32, shape=(), name="gold_length")
-        losses = [tf.to_float(t < gold_length) *
-                  tf.nn.sparse_softmax_cross_entropy_with_logits(
-                          tf.squeeze(output_t), gold_word_t)
-                  for t, (output_t, gold_word_t)
-                  in enumerate(zip(self.outputs, gold_words))]
-        loss = tf.add_n(losses) / tf.to_float(gold_length)
+        gold_length = tf.placeholder(tf.int32, shape=(None,),
+                                     name="gold_lengths")
+
+        loss_weights = [tf.to_float(t < gold_length)
+                        for t in range(self.max_timesteps)]
+        loss = tf.nn.seq2seq.sequence_loss(self.outputs, gold_words,
+                                           loss_weights)
 
         params = tf.trainable_variables()
         gradients = tf.gradients(loss, params)
@@ -90,6 +91,13 @@ class SequenceSpeakerModel(SpeakerModel):
 
         return ((self.xent_gold_words, self.xent_gold_length),
                 (self.xent_gradients,))
+
+    def _get_word_idxs(self, words):
+        # Look up word indices. TODO: padding with something other than UNK..?
+        word_idxs = [self.env.word2idx[word] for word in words]
+        assert len(word_idxs) <= self.max_timesteps
+        word_idxs += [self.env.word_unk_id] * (self.max_timesteps - len(word_idxs))
+        return word_idxs
 
     def _pad_lf_idxs(self, z):
         assert len(z) <= self.max_timesteps
@@ -130,15 +138,13 @@ class SequenceSpeakerModel(SpeakerModel):
 
         z = self._pad_lf_idxs(gold_lf)
 
-        words = [self.env.word2idx[word] for word in obs[1]]
+        words = obs[1]
         real_length = min(len(words) + 1, self.max_timesteps) # train to output a single EOS token
-        # Add a EOS token to words
-        if len(words) < self.max_timesteps:
-            words.append(self.env.word_eos_id)
+        words = self._get_word_idxs(words)
 
         sess = tf.get_default_session()
-        feed = {self.lf_toks: z, self.xent_gold_length: real_length}
-        feed.update({self.xent_gold_words[t]: word_t
+        feed = {self.lf_toks: z, self.xent_gold_length: [real_length]}
+        feed.update({self.xent_gold_words[t]: [word_t]
                      for t, word_t in enumerate(words)})
         feed.update({self.samples[t]: word_t
                      for t, word_t in enumerate(words)})
