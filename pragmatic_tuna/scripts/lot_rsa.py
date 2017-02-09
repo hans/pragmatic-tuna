@@ -23,8 +23,8 @@ from pragmatic_tuna.environments.spatial import *
 from pragmatic_tuna.util import colors
 
 
-def infer_trial(env, obs, listener_model, speaker_model, args,
-                evaluating=False):
+def infer_trial(env, obs, listener_model, speaker_model,
+                num_listener_samples=128, debug=True, evaluating=False):
     """
     Run RSA inference for a given trial.
 
@@ -33,7 +33,7 @@ def infer_trial(env, obs, listener_model, speaker_model, args,
         obs: Observation from environment
         listener_model:
         speaker_model:
-        args:
+        num_listener_samples:
         evaluating: If `True`, will run argmax-inference rather than sampling
 
     Returns:
@@ -100,20 +100,21 @@ def infer_trial(env, obs, listener_model, speaker_model, args,
     rejs_per_sample = num_rejections / args.num_listener_samples
 
     # Debug printing.
-    seen = set()
-    for lf, mixed_weight, weight in data:
-        lf = tuple(lf)
-        if lf in seen:
-            continue
-        seen.add(lf)
+    if debug:
+        seen = set()
+        for lf, mixed_weight, weight in data:
+            lf = tuple(lf)
+            if lf in seen:
+                continue
+            seen.add(lf)
 
-        print("LF %30s  =>  Referent %10s  =>  (%.3g, %.3g, %.3g, %.3g)" %
-            (env.describe_lf(lf),
-            env.resolve_lf(lf)[0]["attributes"][args.atom_attribute],
-            #env.describe_lf(g_lf),
-            weight[0], weight[1], weight[2], mixed_weight))
-    print("%sRejections per sample: %.2f%s" % (colors.BOLD + colors.WARNING,
-                                               rejs_per_sample, colors.ENDC))
+            print("LF %30s  =>  Referent %10s  =>  (%.3g, %.3g, %.3g, %.3g)" %
+                (env.describe_lf(lf),
+                env.resolve_lf(lf)[0]["attributes"][env.atom_attribute],
+                #env.describe_lf(g_lf),
+                weight[0], weight[1], weight[2], mixed_weight))
+        print("%sRejections per sample: %.2f%s" % (colors.BOLD + colors.WARNING,
+                                                rejs_per_sample, colors.ENDC))
 
     listener_model.reset()
     return data, rejs_per_sample
@@ -134,8 +135,9 @@ def run_listener_trial(listener_model, speaker_model, env, sess, args,
             break
 
         lfs, rejs_per_sample = \
-                infer_trial(env, obs, listener_model, speaker_model, args,
-                            evaluating=evaluating)
+                infer_trial(env, obs, listener_model, speaker_model,
+                            num_listener_samples=args.num_listener_samples,
+                            debug=args.debug, evaluating=evaluating)
 
         # Now select action based on maximum score.
         lf_pred = lfs[0][0]
@@ -202,7 +204,9 @@ def run_dream_trial(listener_model, generative_model, env, sess, args):
         obs = (items, words)
 
         # Run listener model q(z|u).
-        l_lfs, _ = infer_trial(env, obs, listener_model, generative_model, args)
+        l_lfs, _ = infer_trial(env, obs, listener_model, generative_model,
+                               num_listener_samples=args.num_listener_samples,
+                               debug=False)
         # Literally dereference and see if we get the expected referent.
         l_referent = env.resolve_lf(l_lfs[0][0])
         if l_referent:
@@ -461,6 +465,7 @@ if __name__ == "__main__":
     p = ArgumentParser()
 
     p.add_argument("--logdir", default="/tmp/tuna")
+    p.add_argument("--debug", action="store_true", default=False)
     p.add_argument("--analyze_weights", default=False, action="store_true")
 
     p.add_argument("--corpus_path", required=True)
