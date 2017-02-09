@@ -370,13 +370,7 @@ def train(args):
                          max_conjuncts=max_conjuncts, atom_attribute=args.atom_attribute)
     listener_model = WindowedSequenceListenerModel(env, embedding_dim=args.embedding_dim,
                                                    max_timesteps=args.max_timesteps)
-    # speaker_model = EnsembledSequenceSpeakerModel(env, 4, lf_embeddings=listener_model.lf_embeddings,
-    #                                               embedding_dim=args.embedding_dim)
-    speaker_model = WindowedSequenceSpeakerModel(env,
-                                                 word_embeddings=listener_model.word_embeddings,
-                                                 lf_embeddings=listener_model.lf_embeddings,
-                                                 embedding_dim=args.embedding_dim,
-                                                 max_timesteps=args.max_timesteps)
+    speaker_model = SPEAKER_MODELS[args.speaker_model](env, listener_model, args)
 
     listener_train_op, listener_global_step = \
             build_train_graph(listener_model, env, args, scope="train/listener")
@@ -450,9 +444,18 @@ def train(args):
 
 
 SPEAKER_MODELS = {
-    "naive": lambda env, _: NaiveGenerativeModel(env),
-    "discrete": lambda env, _: DiscreteGenerativeModel(env),
-    "window":  lambda env, emb_dim: WindowedSequenceSpeakerModel(env, embedding_dim=emb_dim)
+    "sequence":  lambda env, listener, args: \
+            WindowedSequenceSpeakerModel(env,
+                                         word_embeddings=listener.word_embeddings,
+                                         lf_embeddings=listener.lf_embeddings,
+                                         embedding_dim=args.embedding_dim,
+                                         max_timesteps=args.max_timesteps),
+    "shallow": lambda env, listener, args: \
+            ShallowSequenceSpeakerModel(env,
+                                        lf_embeddings=listener.lf_embeddings,
+                                        embedding_dim=args.embedding_dim,
+                                        max_timesteps=args.max_timesteps),
+    "ensemble": None # TODO set up
 }
 
 
@@ -471,7 +474,7 @@ if __name__ == "__main__":
                    help=("Path to JSON file containing gold listener "
                          "utterance -> LF interpretations"))
 
-    p.add_argument("--speaker_model", default="discrete",
+    p.add_argument("--speaker_model", default="shallow",
                    choices=SPEAKER_MODELS.keys())
     p.add_argument("--bag_env", default=False, action="store_true")
     p.add_argument("--embedding_dim", type=int, default=4)
@@ -480,7 +483,6 @@ if __name__ == "__main__":
     p.add_argument("--dream", default=False, action="store_true")
     p.add_argument("--num_listener_samples", type=int, default=5)
     p.add_argument("--max_rejections_after_trial", type=int, default=3)
-    #p.add_argument("--batch", action="store_true", default=False)
     p.add_argument("--argmax_listener", action="store_true", default=False)
 
     p.add_argument("--num_runs", default=1, type=int,
