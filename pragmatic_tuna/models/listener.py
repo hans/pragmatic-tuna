@@ -2,6 +2,9 @@
 Defines discriminative listener models.
 """
 
+import copy
+import itertools
+
 import numpy as np
 import tensorflow as tf
 from tensorflow.contrib.layers import layers
@@ -41,9 +44,24 @@ class ListenerModel(object):
 
     def sample(self, words, temperature=None, argmax=False, evaluating=False):
         """
+        Conditionally sample an LF given an input utterance.
+
         Returns:
-            lf: LF token ID sequence
-            p_lf: float scalar p(lf)
+            lf: LF token idx sequence
+            p_lf: Probability of sampled LF under model
+        """
+        lfs, p_lfs = self.sample_batch([words])
+        return lfs[0], p_lfs[0]
+
+    def sample_batch(self, words, temperature=None, argmax=False, evaluating=False):
+        """
+        Conditionally sample a batch of LFs given a batch of input utterances.
+
+        Args:
+            words: List of token sequences (strings)
+        Returns:
+            lfs:
+            p_lfs:
         """
         raise NotImplementedError
 
@@ -56,6 +74,28 @@ class ListenerModel(object):
         outputs.
         """
         raise NotImplementedError
+
+    def marginalize(self, lf):
+        """
+        Compute the marginal p(z) by marginalizing out utterances p(z|u).
+        """
+        # For now, we'll just evaluate the listener model for every possible
+        # utterance. Because, well, there aren't that many.
+        valid_tokens = copy.copy(self.env.vocab)
+        valid_tokens.remove(self.env.vocab[self.env.word_unk_id])
+        valid_tokens.remove(self.env.vocab[self.env.word_eos_id])
+        permutations = list(itertools.chain.from_iterable(
+                itertools.permutations(valid_tokens, t)
+                for t in range(1, self.max_timesteps + 1)))
+
+        # Evaluate scores for the token permutations calculated above.
+        lfs = [lf] * len(permutations)
+        scores = self.score_batch(permutations, lfs)
+
+        # TODO: This sometimes returns values > 1. Why?
+        # This partition function actually doesn't even cover the entire space,
+        # as we don't enumerate invalid options like "<eos> square"
+        return sum(scores)
 
     def reset(self):
         pass

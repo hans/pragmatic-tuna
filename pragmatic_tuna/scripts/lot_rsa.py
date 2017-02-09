@@ -81,7 +81,7 @@ def infer_trial(env, obs, listener_model, speaker_model, args,
             p_utterance, Z = lf_score_cache[tuple(g_lf)]
         except KeyError:
             p_utterance = speaker_model.score(g_lf, words)
-            Z = calculate_partition(g_lf, listener_model, env)
+            Z = listener_model.marginalize(g_lf)
             lf_score_cache[tuple(g_lf)] = (p_utterance, Z)
 
         lfs.append(lf)
@@ -119,29 +119,6 @@ def infer_trial(env, obs, listener_model, speaker_model, args,
 
     listener_model.reset()
     return data, rejs_per_sample
-
-
-def calculate_partition(lf, listener_model, env):
-    """
-    Calculate the partition function `p(z)` for a given LF `z`.
-    """
-
-    # For now, we'll just evaluate the listener model for every possible
-    # utterance. Because, well, there aren't that many.
-    valid_tokens = copy.copy(env.vocab)
-    valid_tokens.remove(env.vocab[env.word_unk_id])
-    valid_tokens.remove(env.vocab[env.word_eos_id])
-    permutations = list(itertools.chain.from_iterable(
-            itertools.permutations(valid_tokens, t)
-            for t in range(1, listener_model.max_timesteps + 1)))
-
-    # Evaluate scores for the token permutations calculated above.
-    lfs = [lf] * len(permutations)
-    scores = listener_model.score_batch(permutations, lfs)
-    # TODO: This sometimes returns values > 1. Why?
-    # This partition function actually doesn't cover the entire space, as we
-    # don't enumerate invalid options like "<eos> square"
-    return sum(scores)
 
 
 def run_listener_trial(listener_model, speaker_model, env, sess, args,
