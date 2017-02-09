@@ -88,8 +88,6 @@ def infer_trial(env, obs, listener_model, speaker_model, args,
         g_lfs.append(g_lf)
         weights.append((np.exp(p_utterance), p_lf, Z))
 
-    print({env.describe_lf(lf): v for lf, v in lf_score_cache.items()})
-
     # Mix listener+speaker scores.
     # TODO: customizable
     alpha = 1
