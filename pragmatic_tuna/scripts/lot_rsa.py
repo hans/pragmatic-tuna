@@ -77,12 +77,13 @@ def infer_trial(env, obs, listener_model, speaker_model,
         g_lf = lf #env.sample_lf(referent=referent, n_parts=len(words) // 2)
 
         # Retrieved unnormalized likelihood p~(u|z), partition p(z)
+        cache_key = tuple(g_lf)
         try:
-            p_utterance, Z = lf_score_cache[tuple(g_lf)]
+            p_utterance, Z = lf_score_cache[cache_key]
         except KeyError:
             p_utterance = speaker_model.score(g_lf, words)
             Z = listener_model.marginalize(g_lf)
-            lf_score_cache[tuple(g_lf)] = (p_utterance, Z)
+            lf_score_cache[cache_key] = (p_utterance, Z)
 
         lfs.append(lf)
         g_lfs.append(g_lf)
