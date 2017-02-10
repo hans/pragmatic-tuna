@@ -5,7 +5,10 @@ The inference is mediated by a logical form language / language of thought (LoT)
 """
 
 from argparse import ArgumentParser
+import copy
+import itertools
 import json
+from pprint import pprint
 import re
 
 import numpy as np
@@ -20,8 +23,8 @@ from pragmatic_tuna.environments.spatial import *
 from pragmatic_tuna.util import colors
 
 
-def infer_trial(env, obs, listener_model, speaker_model, args,
-                evaluating=False):
+def infer_trial(env, obs, listener_model, speaker_model,
+                num_listener_samples=128, debug=True, evaluating=False):
     """
     Run RSA inference for a given trial.
 
@@ -30,7 +33,7 @@ def infer_trial(env, obs, listener_model, speaker_model, args,
         obs: Observation from environment
         listener_model:
         speaker_model:
-        args:
+        num_listener_samples:
         evaluating: If `True`, will run argmax-inference rather than sampling
 
     Returns:
@@ -39,16 +42,28 @@ def infer_trial(env, obs, listener_model, speaker_model, args,
         rejs_per_sample:
     """
 
-    items, utterance_bag, words = obs
+    items, words = obs
 
     # Sample N LFs from the predicted distribution, accepting only when they
     # resolve to a referent in the scene.
     lfs, g_lfs, weights = [], [], []
+    lf_score_cache = {}
     num_rejections = 0
+
+    # Pre-sample a batch, and refresh as necessary.
+    pseudo_batch = [words] * args.num_listener_samples
+    sample_batch_cursor = len(pseudo_batch)
+
     while len(weights) < args.num_listener_samples:
-        lf, p_lf = listener_model.sample(utterance_bag, words,
-                                         argmax=evaluating,
-                                         evaluating=evaluating)
+        if sample_batch_cursor == len(pseudo_batch):
+            sample_batch = listener_model.sample_batch(
+                    pseudo_batch, argmax=evaluating, evaluating=evaluating)
+            sample_batch_cursor = 0
+            continue
+        sample_batch_lfs, sample_batch_probs = sample_batch
+        lf = sample_batch_lfs[sample_batch_cursor]
+        p_lf = sample_batch_probs[sample_batch_cursor]
+        sample_batch_cursor += 1
 
         # Resolve referent.
         referent = env.resolve_lf(lf)
@@ -61,17 +76,49 @@ def infer_trial(env, obs, listener_model, speaker_model, args,
         # Sample an LF z' ~ p(z|r).
         g_lf = lf #env.sample_lf(referent=referent, n_parts=len(words) // 2)
 
-        # Record unnormalized score p(u, z)
-        p_utterance = speaker_model.score(g_lf, utterance_bag, words)
+        # Retrieved unnormalized likelihood p~(u|z), partition p(z)
+        cache_key = tuple(g_lf)
+        try:
+            p_utterance, Z = lf_score_cache[cache_key]
+        except KeyError:
+            p_utterance = speaker_model.score(g_lf, words)
+            Z = listener_model.marginalize(g_lf)
+            lf_score_cache[cache_key] = (p_utterance, Z)
 
         lfs.append(lf)
         g_lfs.append(g_lf)
-        weights.append((np.exp(p_utterance), p_lf))
+        weights.append((np.exp(p_utterance), p_lf, Z))
+
+    # Mix listener+speaker scores.
+    # TODO: customizable
+    alpha = 1
+    mixed_weights = [
+            ((speaker_weight ** alpha) * (listener_weight ** (1 - alpha))) / Z
+            for speaker_weight, listener_weight, Z in weights]
+    data = sorted(zip(lfs, mixed_weights, weights), key=lambda el: el[1],
+                  reverse=True)
 
     rejs_per_sample = num_rejections / args.num_listener_samples
 
+    # Debug printing.
+    if debug:
+        seen = set()
+        for lf, mixed_weight, weight in data:
+            lf = tuple(lf)
+            if lf in seen:
+                continue
+            seen.add(lf)
+
+            print("LF %30s  =>  Referent %10s  =>  (%.3g, %.3g, %.3g, %.3g)" %
+                (env.describe_lf(lf),
+                env.resolve_lf(lf)[0]["attributes"][env.atom_attribute],
+                #env.describe_lf(g_lf),
+                weight[0], weight[1], weight[2], mixed_weight))
+        print("%sRejections per sample: %.2f%s" % (colors.BOLD + colors.WARNING,
+                                                rejs_per_sample, colors.ENDC))
+
     listener_model.reset()
-    return lfs, weights, rejs_per_sample
+    return data, rejs_per_sample
 
 
 def run_listener_trial(listener_model, speaker_model, env, sess, args,
@@ -79,31 +126,19 @@ def run_listener_trial(listener_model, speaker_model, env, sess, args,
     env.configure(dreaming=False)
     obs = env.reset()
 
-    n_iterations, first_success = 0, -1
+    n_iterations, success, first_success = 0, False, -1
     first_successful_lf_pred = None
     rejs_per_sample = np.inf
-    while rejs_per_sample > args.max_rejections_after_trial:
-        lfs, lf_weights, rejs_per_sample = \
-                infer_trial(env, obs, listener_model, speaker_model, args,
-                            evaluating=evaluating)
+    while rejs_per_sample > args.max_rejections_after_trial or not success:
+        if n_iterations > 1000:
+            print("%sFailed to converge after 1000 listener trials. Dying.%s"
+                  % (colors.FAIL, colors.ENDC))
+            break
 
-        # Mix listener+speaker scores.
-        # TODO: customizable
-        alpha = 0.5
-        mixed_weights = [(speaker_weight ** alpha) * (listener_weight ** (1 - alpha))
-                         for speaker_weight, listener_weight in lf_weights]
-        lfs = sorted(zip(lfs, mixed_weights, lf_weights),
-                     key=lambda el: el[1], reverse=True)
-
-        # Debug printing.
-        for lf, mixed_weight, weight in lfs:
-            print("LF %30s  =>  Referent %10s  =>  (%.4g, %.4g, %.4g)" %
-                (env.describe_lf(lf),
-                env.resolve_lf(lf)[0]["attributes"][args.atom_attribute],
-                #env.describe_lf(g_lf),
-                weight[0], weight[1], mixed_weight))
-        print("%sRejections per sample: %.2f%s" % (colors.BOLD + colors.WARNING,
-                                                   rejs_per_sample, colors.ENDC))
+        lfs, rejs_per_sample = \
+                infer_trial(env, obs, listener_model, speaker_model,
+                            num_listener_samples=args.num_listener_samples,
+                            debug=args.debug, evaluating=evaluating)
 
         # Now select action based on maximum score.
         lf_pred = lfs[0][0]
@@ -146,62 +181,60 @@ def run_dream_trial(listener_model, generative_model, env, sess, args):
     Run a single dream trial.
     """
     env.configure(dreaming=True)
-    items, _, _ = env.reset()
+    items, gold_words = env.reset()
 
     referent_idx = [i for i, referent in enumerate(env._domain)
                     if referent["target"]][0]
     referent = env._domain[referent_idx]
 
-    for run_i in range(2):
-        success = False
-        i = 0
-        while not success:
-            print("Dream trial %i" % i)
+    success = False
+    string_matches = False
+    i = 0
+    while not success or not string_matches:
+        print("Dream trial %i" % i)
 
-            # Sample an LF from p(z|r).
-            g_lf = env.sample_lf(referent=referent_idx)
+        # Sample an LF from p(z|r).
+        g_lf = env.sample_lf(referent=referent_idx)
 
-            # Sample utterances from p(u|z).
-            words = generative_model.sample(g_lf).split()
-            word_ids = np.array([env.word2idx[word]
-                                    for word in words])
+        # Sample utterances from p(u|z).
+        words = generative_model.sample(g_lf).split()
+        word_ids = np.array([env.word2idx[word]
+                                for word in words])
 
-            g_ut = np.zeros(env.vocab_size)
-            if len(word_ids):
-                g_ut[word_ids] = 1
+        # Build a fake observation object for inference.
+        obs = (items, words)
 
-            # Run listener model q(z|u).
-            l_lf, p = listener_model.sample(g_ut, words, temperature=0.5)
-            # Literally dereference and see if we get the expected referent.
-            # TODO: run multiple particles through this whole process!
-            l_referent = env.resolve_lf(l_lf)
-            if l_referent:
-                success = l_referent[0] == referent
+        # Run listener model q(z|u).
+        l_lfs, _ = infer_trial(env, obs, listener_model, generative_model,
+                               num_listener_samples=args.num_listener_samples,
+                               debug=False)
+        # Literally dereference and see if we get the expected referent.
+        l_referent = env.resolve_lf(l_lfs[0][0])
+        if l_referent:
+            success = l_referent[0] == referent
 
-            print(
-    """    Referent:\t\t%s
-    z ~ p(z|r):\t\t%s
-    u ~ p(u|z):\t\t%s
-    z' ~ q(z|u):\t%s
-    Deref:\t\t%s""" %
-                (referent["attributes"][args.atom_attribute],
-                 env.describe_lf(g_lf),
-                 " ".join(words),
-                 env.describe_lf(l_lf),
-                 [l_referent_i["attributes"][args.atom_attribute] for l_referent_i in l_referent]))
+        color = colors.OKGREEN if success else colors.FAIL
+        print("%s%s => %s%s" % (colors.BOLD + color, " ".join(words),
+                                env.describe_lf(l_lfs[0][0]), colors.ENDC))
 
-            i += 1
-            if i > 1000:
-                print("%sFailed to dream successfully after 1000 trials. Dying.%s"
-                      % (colors.FAIL, colors.ENDC))
-                break
+        # TODO: This is only a good stopping criterion when we force the LF to
+        # be the same as the gold LF. Otherwise it's too strict!
+        string_matches = gold_words == words
 
-            listener_model.reset()
+        i += 1
+        if i > 1000:
+            print("%sFailed to dream successfully after 1000 trials. Dying.%s"
+                    % (colors.FAIL, colors.ENDC))
+            break
 
-        if success:
-            # Construct an "observation" for the generative model.
-            obs = (items, g_ut, words)
-            generative_model.observe(obs, g_lf)
+        listener_model.reset()
+
+        input_obs = (items, gold_words) # obs if success else (items, None, gold_words)
+        generative_model.observe(input_obs, l_lfs[0][0]) # g_lf)
+
+        # TODO: do this in a batch..
+        # if success:
+        #     generative_model.observe(obs, g_lf)
 
 
 def eval_offline_ctx(listener_model, speaker_model, examples, env, sess, args):
@@ -266,8 +299,7 @@ def eval_offline_cf(listener_model, examples, env):
             lf_candidate_tok_ids.append(tuple(ids))
 
         # DEV: assumes we're using a non-BOW listener model
-        sampled_lf, p = listener_model.sample(None, words, argmax=True,
-                                              context_free=True, evaluating=True)
+        sampled_lf, p = listener_model.sample(words, argmax=True, evaluating=True)
         listener_model.reset()
         success = tuple(sampled_lf) in lf_candidate_tok_ids
         results.append((words_string, env.describe_lf(sampled_lf), success))
@@ -318,23 +350,29 @@ def build_train_graph(model, env, args, scope="train"):
     else:
         raise NotImplementedError("undefined learning method " + args.learning_method)
 
-    global_step = tf.Variable(0, name="global_step", dtype=tf.int64, trainable=False)
-    opt = tf.train.GradientDescentOptimizer(args.learning_rate)
-    train_op = opt.apply_gradients(gradients, global_step=global_step)
+    with tf.variable_scope(scope):
+        global_step = tf.Variable(0, name="global_step", dtype=tf.int64,
+                                  trainable=False)
+        opt = tf.train.AdagradOptimizer(args.learning_rate)
+        train_op = opt.apply_gradients(gradients, global_step=global_step)
 
-    # Make a dummy train_op that works with TF partial_run.
-    with tf.control_dependencies([train_op]):
-        train_op = tf.constant(0.0, name="dummy_train_op")
+        # Make a dummy train_op that works with TF partial_run.
+        with tf.control_dependencies([train_op]):
+            train_op = tf.constant(0.0, name="dummy_train_op")
 
     return train_op, global_step
 
 
 def train(args):
+    max_conjuncts = args.max_timesteps / 2
+    assert int(max_conjuncts) == max_conjuncts
+    max_conjuncts = int(max_conjuncts)
+
     env = TUNAWithLoTEnv(args.corpus_path, corpus_selection=args.corpus_selection,
                          bag=args.bag_env, functions=FUNCTIONS[args.fn_selection],
                          atom_attribute=args.atom_attribute)
-    listener_model = LISTENER_MODELS[args.listener_model](env, args.embedding_dim)
-    speaker_model = SPEAKER_MODELS[args.speaker_model](env, args.embedding_dim)
+    listener_model = LISTENER_MODELS[args.listener_model](env, args)
+    speaker_model = SPEAKER_MODELS[args.speaker_model](env, listener_model, args)
 
     listener_train_op, listener_global_step = \
             build_train_graph(listener_model, env, args, scope="train/listener")
@@ -362,9 +400,10 @@ def train(args):
                 for i in trange(args.num_trials):
                     tqdm.write("\n%s==============\nLISTENER TRIAL\n==============%s"
                             % (colors.HEADER, colors.ENDC))
-                    first_success, best_lf, gold_lf_pos = run_listener_trial(listener_model, speaker_model,
-                                                       env, sess, args)
-                    run_online_results.append(gold_lf_pos == 0)
+
+                    first_success, _, _ = run_listener_trial(listener_model, speaker_model,
+                                                             env, sess, args)
+                    run_online_results.append(first_success == 0)
 
                     if args.dream:
                         tqdm.write("\n%s===========\nDREAM TRIAL\n===========%s"
@@ -408,14 +447,24 @@ def train(args):
 
 
 SPEAKER_MODELS = {
-    "naive": lambda env, _: NaiveGenerativeModel(env),
-    "discrete": lambda env, _: DiscreteGenerativeModel(env),
-    "window":  lambda env, emb_dim: WindowedSequenceSpeakerModel(env, embedding_dim=emb_dim)
+    "sequence":  lambda env, listener, args: \
+            WindowedSequenceSpeakerModel(env,
+                                         word_embeddings=listener.word_embeddings,
+                                         lf_embeddings=listener.lf_embeddings,
+                                         embedding_dim=args.embedding_dim,
+                                         max_timesteps=args.max_timesteps),
+    "shallow": lambda env, listener, args: \
+            ShallowSequenceSpeakerModel(env,
+                                        lf_embeddings=listener.lf_embeddings,
+                                        embedding_dim=args.embedding_dim,
+                                        max_timesteps=args.max_timesteps),
+    "ensemble": None # TODO set up
 }
 
 LISTENER_MODELS = {
-    "skipgram": lambda env, _: SkipGramListenerModel(env),
-    "window": lambda env, emb_dim: WindowedSequenceListenerModel(env, embedding_dim=emb_dim)
+    "window": lambda env, args: WindowedSequenceListenerModel(
+        env, embedding_dim=args.embedding_dim,
+        max_timesteps=args.max_timesteps)
 }
 
 
@@ -423,6 +472,7 @@ if __name__ == "__main__":
     p = ArgumentParser()
 
     p.add_argument("--logdir", default="/tmp/tuna")
+    p.add_argument("--debug", action="store_true", default=False)
     p.add_argument("--analyze_weights", default=False, action="store_true")
 
     p.add_argument("--corpus_path", required=True)
@@ -434,19 +484,17 @@ if __name__ == "__main__":
                    help=("Path to JSON file containing gold listener "
                          "utterance -> LF interpretations"))
 
-    p.add_argument("--speaker_model", default="discrete",
+    p.add_argument("--speaker_model", default="shallow",
                    choices=SPEAKER_MODELS.keys())
-    p.add_argument("--listener_model", default="skipgram",
+    p.add_argument("--listener_model", default="window",
                    choices=LISTENER_MODELS.keys())
     p.add_argument("--bag_env", default=False, action="store_true")
-    p.add_argument("--item_repr_dim", type=int, default=64)
-    p.add_argument("--utterance_repr_dim", type=int, default=64)
-    p.add_argument("--embedding_dim", type=int, default=10)
+    p.add_argument("--embedding_dim", type=int, default=4)
 
+    p.add_argument("--max_timesteps", type=int, default=2)
     p.add_argument("--dream", default=False, action="store_true")
     p.add_argument("--num_listener_samples", type=int, default=5)
     p.add_argument("--max_rejections_after_trial", type=int, default=3)
-    #p.add_argument("--batch", action="store_true", default=False)
     p.add_argument("--argmax_listener", action="store_true", default=False)
 
     p.add_argument("--num_runs", default=1, type=int,
@@ -456,4 +504,7 @@ if __name__ == "__main__":
     p.add_argument("--learning_rate", default=0.1, type=float)
     p.add_argument("--momentum", default=0.9, type=float)
 
-    train(p.parse_args())
+    args = p.parse_args()
+    pprint(vars(args))
+
+    train(args)
