@@ -333,7 +333,7 @@ class TUNAWithLoTEnv(TUNAEnv):
         if available_atoms is None:
             available_atoms = self.lf_atoms
         fn_name = EOS
-        while fn_name != EOS:
+        while fn_name == EOS:
             fn_name = random.choice(self.lf_functions)
         atom = random.choice(available_atoms)
 
