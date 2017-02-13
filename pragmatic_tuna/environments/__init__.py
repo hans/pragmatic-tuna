@@ -435,6 +435,8 @@ class TUNAWithLoTEnv(TUNAEnv):
         """
         Pad an LF idx sequence.
         """
+        lf_idxs = lf_idxs[:]
+
         if pad_to_length is None:
             pad_to_length = self.max_tokens
 
