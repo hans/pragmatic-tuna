@@ -370,6 +370,7 @@ def train(args):
 
     env = TUNAWithLoTEnv(args.corpus_path, corpus_selection=args.corpus_selection,
                          bag=args.bag_env, functions=FUNCTIONS[args.fn_selection],
+                         max_conjuncts=max_conjuncts,
                          atom_attribute=args.atom_attribute)
     listener_model = LISTENER_MODELS[args.listener_model](env, args)
     speaker_model = SPEAKER_MODELS[args.speaker_model](env, listener_model, args)
