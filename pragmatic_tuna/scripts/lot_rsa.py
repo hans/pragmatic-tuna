@@ -79,22 +79,19 @@ def infer_trial(env, obs, listener_model, speaker_model,
         # Retrieved unnormalized likelihood p~(u|z), partition p(z)
         cache_key = tuple(g_lf)
         try:
-            p_utterance, Z = lf_score_cache[cache_key]
+            p_utterance = lf_score_cache[cache_key]
         except KeyError:
             p_utterance = speaker_model.score(g_lf, words)
-            Z = listener_model.marginalize(g_lf)
-            lf_score_cache[cache_key] = (p_utterance, Z)
+            lf_score_cache[cache_key] = p_utterance
 
         lfs.append(lf)
         g_lfs.append(g_lf)
-        weights.append((np.exp(p_utterance), p_lf, Z))
+        weights.append((np.exp(p_utterance), p_lf))
 
     # Mix listener+speaker scores.
     # TODO: customizable
-    alpha = 1
-    mixed_weights = [
-            ((speaker_weight ** alpha) * (listener_weight ** (1 - alpha))) / Z
-            for speaker_weight, listener_weight, Z in weights]
+    mixed_weights = [speaker_weight / listener_weight
+                     for speaker_weight, listener_weight in weights]
     data = sorted(zip(lfs, mixed_weights, weights), key=lambda el: el[1],
                   reverse=True)
 
@@ -109,11 +106,11 @@ def infer_trial(env, obs, listener_model, speaker_model,
                 continue
             seen.add(lf)
 
-            print("LF %30s  =>  Referent %10s  =>  (%.3g, %.3g, %.3g, %.3g)" %
+            print("LF %30s  =>  Referent %10s  =>  (%.3g, %.3g, %.3g)" %
                 (env.describe_lf(lf),
                 env.resolve_lf(lf)[0]["attributes"][env.atom_attribute],
                 #env.describe_lf(g_lf),
-                weight[0], weight[1], weight[2], mixed_weight))
+                weight[0], weight[1], mixed_weight))
         print("%sRejections per sample: %.2f%s" % (colors.BOLD + colors.WARNING,
                                                 rejs_per_sample, colors.ENDC))
 
