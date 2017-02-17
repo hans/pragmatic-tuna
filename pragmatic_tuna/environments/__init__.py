@@ -177,8 +177,10 @@ class TUNAEnv(gym.Env):
         return np.array(self._trials)[trial_idxs]
 
 
-    def _reset(self):
-        if self.randomize:
+    def _reset(self, trial=None):
+        if trial != None:
+            self._trial = trial
+        elif self.randomize:
             self._trial = random.choice(self._trials)
         elif self.dreaming:
             self._trial = self._dream_trial()

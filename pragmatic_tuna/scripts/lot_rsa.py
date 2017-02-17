@@ -173,6 +173,12 @@ def run_listener_trial(listener_model, speaker_model, env, sess, args,
 
     return first_success, first_successful_lf_pred, gold_lf_pos
 
+def run_batch_dream_trials(listener_model, generative_model, env, sess, args):
+
+    trials = env._sample_prev_trials(args.dream_samples)
+    
+
+
 def run_dream_trial(listener_model, generative_model, env, sess, args):
     """
     Run a single dream trial.
@@ -501,6 +507,8 @@ if __name__ == "__main__":
     p.add_argument("--num_trials", default=100, type=int)
     p.add_argument("--learning_rate", default=0.1, type=float)
     p.add_argument("--momentum", default=0.9, type=float)
+    p.add_argument("--dream_samples", default=1, type=int)
+    
 
     args = p.parse_args()
     pprint(vars(args))
