@@ -141,21 +141,29 @@ class SequenceSpeakerModel(SpeakerModel):
                      for t, word_t in enumerate(words)})
         sess.run(self.train_op, feed)
     
-    def batch_observe(self, words, gold_lfs):
+    def batch_observe(self, words_lists, gold_lfs):
         n = len(gold_lfs)
-        #z = [np.zeros(shape=n, dtype=np.int32) for _ in range(self.max_timesteps)]
-        #for i, gold_lf in enumerate(gold_lfs):
-        #    padded_lf = self.env.pad_lf_idxs(gold_lf)
-        #    for j in range(self.max_timesteps):
-        #        z[j][i] = padded_lf[j]
+        z = np.zeros(shape=(self.max_timesteps, n), dtype=np.int32)
+        real_lengths = np.zeros(shape=n, dtype=np.int32)
+        for i, gold_lf in enumerate(gold_lfs):
+            padded_lf = self.env.pad_lf_idxs(gold_lf)
+            for j in range(self.max_timesteps):
+                z[j][i] = padded_lf[j]
 
-        #sess = tf.get_default_session()
-        #feed = {self.lf_toks: z, self.xent_gold_length: [real_length]}
-        #feed.update({self.xent_gold_words[t]: [word_t]
-        #             for t, word_t in enumerate(words)})
-        #feed.update({self.samples[t]: word_t
-        #             for t, word_t in enumerate(words)})
-        #sess.run(self.train_op, feed)
+        gold_words = [np.zeros(shape=n, dtype=np.int32) for _ in range(self.max_timesteps)]
+        for i, words in enumerate(words_lists):
+            real_lengths[i] = min(len(words) + 1, self.max_timesteps)
+            words = self.env.get_word_idxs(words)
+            for j in range(len(words)):
+                gold_words[j][i] = words[j]
+        
+        sess = tf.get_default_session()
+        feed = {self.lf_toks: z, self.xent_gold_length: real_lengths}
+        feed.update({self.xent_gold_words[t]: word_t
+                    for t, word_t in enumerate(gold_words)})
+        feed.update({self.samples[t]: word_t
+                     for t, word_t in enumerate(gold_words)})
+        sess.run(self.train_op, feed)
         
         
         
