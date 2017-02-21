@@ -211,8 +211,9 @@ class WindowedSequenceListenerModel(ListenerModel):
                     sample_t = tf.squeeze(sample_t, [1])
                     if t % 2 == 1:
                         # Shift index to match standard vocabulary.
-                        sample_t = tf.add(sample_t, len(self.env.lf_functions),
-                                          name="sample_%i" % t)
+                        sample_t = tf.add(sample_t, len(self.env.lf_functions))
+                    # Rename
+                    sample_t = tf.identity(sample_t, name="sample_%i" % t)
 
                     # Hack shape.
                     prev_sample = tf.nn.embedding_lookup(self.lf_embeddings, sample_t)
