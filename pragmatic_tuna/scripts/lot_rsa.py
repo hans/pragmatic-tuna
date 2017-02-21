@@ -234,12 +234,11 @@ def run_dream_trial(listener_model, generative_model, env, sess, args):
 
         listener_model.reset()
 
-        input_obs = (items, gold_words) # obs if success else (items, None, gold_words)
-        generative_model.observe(input_obs, l_lfs[0][0]) # g_lf)
-
-        # TODO: do this in a batch..
-        # if success:
-        #     generative_model.observe(obs, g_lf)
+        if success:
+            # TODO: can use `obs` here if we know the listener model to be
+            # stable
+            input_obs = (items, gold_words)
+            generative_model.observe(input_obs, l_lfs[0][0])
 
 
 def eval_offline_ctx(listener_model, speaker_model, examples, env, sess, args):

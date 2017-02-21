@@ -160,7 +160,6 @@ class WindowedSequenceListenerModel(ListenerModel):
         with self._scope:
             self.temperature = tf.constant(1.0, name="sampling_temperature")
 
-            # TODO: padding representation?
             self.words = tf.placeholder(tf.int32, shape=(None, self.max_timesteps,),
                                         name="words")
 
