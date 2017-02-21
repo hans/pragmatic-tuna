@@ -290,6 +290,13 @@ class TUNAWithLoTEnv(TUNAEnv):
         return []
 
     def resolve_lf(self, id_list):
+        """
+        Resolve an LF token sequence to a list of referents in the current
+        domain.
+
+        Returns:
+            referents: List of members of `self._domain`
+        """
         if len(id_list) == 0 or id_list[0] == self.lf_eos_id:
             return []
 
@@ -306,6 +313,19 @@ class TUNAWithLoTEnv(TUNAEnv):
                                            self.resolve_lf_part(fn, atom))
 
         return matches
+
+    def check_lf(self, id_list):
+        """
+        Check whether the given LF token sequence resolves to a target referent.
+
+        Returns:
+            bool
+        """
+        referents = self.resolve_lf(id_list)
+        if not referents:
+            return False
+
+        return referents[0]["target"]
 
     def _intersect_list(self, xs, ys):
         ret = []

@@ -155,21 +155,23 @@ def run_listener_trial(listener_model, speaker_model, env, sess, args,
             first_successful_lf_pred = lf_pred
         n_iterations += 1
 
-        # Find the highest-scoring LF that dereferences to the correct referent.
+        # Find the highest-scoring LF that dereferences to the correct
+        # referent.
         gold_lf, gold_lf_pos = None, -1
-        for i, (lf_i, _, _) in enumerate(lfs):
-            resolved = env.resolve_lf(lf_i)
-            if resolved and resolved[0]["target"]:
-                gold_lf = lf_i
-                gold_lf_pos = i
-                break
-        if not silent and gold_lf is not None:
-            print("gold", env.describe_lf(gold_lf), gold_lf_pos)
+        try:
+            gold_lf, gold_lf_pos = \
+                    next((lf_i, i) for i, (lf_i, _, _) in enumerate(lfs)
+                         if env.check_lf(lf_i))
+        except StopIteration:
+            gold_lf, gold_lf_pos = None, -1
+        else:
+            if not silent:
+                print("gold", env.describe_lf(gold_lf), gold_lf_pos)
 
-        # Update model parameters.
-        if not evaluating:
-            listener_model.observe(obs, lf_pred, reward, gold_lf)
-            speaker_model.observe(obs, gold_lf)
+            # Update model parameters.
+            if not evaluating:
+                listener_model.observe(obs, lf_pred, reward, gold_lf)
+                speaker_model.observe(obs, gold_lf)
 
         listener_model.reset()
 
