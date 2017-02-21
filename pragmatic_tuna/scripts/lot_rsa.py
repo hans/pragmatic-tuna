@@ -95,7 +95,7 @@ def infer_trial(env, obs, listener_model, speaker_model,
     data = sorted(zip(lfs, mixed_weights, weights), key=lambda el: el[1],
                   reverse=True)
 
-    rejs_per_sample = num_rejections / args.num_listener_samples
+    rejs_per_sample = num_rejections / num_listener_samples
 
     # Debug printing.
     if debug:
@@ -119,32 +119,36 @@ def infer_trial(env, obs, listener_model, speaker_model,
 
 
 def run_listener_trial(listener_model, speaker_model, env, sess, args,
-                       evaluating=False):
+                       evaluating=False, silent=False):
     env.configure(dreaming=False)
     obs = env.reset()
 
     n_iterations, success, first_success = 0, False, -1
     first_successful_lf_pred = None
     rejs_per_sample = np.inf
-    while rejs_per_sample > args.max_rejections_after_trial or not success:
+    terminate = False
+    while not terminate:
         if n_iterations > 1000:
-            print("%sFailed to converge after 1000 listener trials. Dying.%s"
-                  % (colors.FAIL, colors.ENDC))
+            if not silent:
+                print("%sFailed to converge after 1000 listener trials. Dying.%s"
+                      % (colors.FAIL, colors.ENDC))
             break
 
         lfs, rejs_per_sample = \
                 infer_trial(env, obs, listener_model, speaker_model,
                             num_listener_samples=args.num_listener_samples,
-                            debug=args.debug, evaluating=evaluating)
+                            debug=args.debug and not silent,
+                            evaluating=evaluating)
 
         # Now select action based on maximum score.
         lf_pred = lfs[0][0]
         _, reward, _, _ = env.step(lf_pred)
 
         success = reward > 0
-        color = colors.OKGREEN if success else colors.FAIL
-        print("%s%s => %s%s" % (colors.BOLD + color, env._trial["string_description"],
-                                env.describe_lf(lf_pred), colors.ENDC))
+        if not silent:
+            color = colors.OKGREEN if success else colors.FAIL
+            print("%s%s => %s%s" % (colors.BOLD + color, env._trial["string_description"],
+                                    env.describe_lf(lf_pred), colors.ENDC))
 
         if success and first_success == -1:
             first_success = n_iterations
@@ -159,17 +163,19 @@ def run_listener_trial(listener_model, speaker_model, env, sess, args,
                 gold_lf = lf_i
                 gold_lf_pos = i
                 break
-        if gold_lf is not None:
+        if not silent and gold_lf is not None:
             print("gold", env.describe_lf(gold_lf), gold_lf_pos)
 
+        # Update model parameters.
         if not evaluating:
-            # Update listener parameters.
             listener_model.observe(obs, lf_pred, reward, gold_lf)
-
-            # Update speaker parameters.
             speaker_model.observe(obs, gold_lf)
 
         listener_model.reset()
+
+        # Termination condition
+        terminate = evaluating \
+                or (success and rejs_per_sample <= args.max_rejections_after_trial)
 
     return first_success, first_successful_lf_pred, gold_lf_pos
 
@@ -244,10 +250,10 @@ def eval_offline_ctx(listener_model, speaker_model, examples, env, sess, args):
     env.configure(reset_cursor=True)
 
     learned_mapping = {}
-    for i in trange(args.num_trials):
+    for i in trange(args.num_test_trials):
         first_success, best_lf, gold_lf_pos = run_listener_trial(
                 listener_model, speaker_model, env, sess, args,
-                evaluating=True)
+                evaluating=True, silent=True)
         if best_lf is None:
             continue
 
@@ -499,6 +505,7 @@ if __name__ == "__main__":
                    help="Number of times to repeat entire training process")
     p.add_argument("--learning_method", default="xent", choices=["rl", "xent"])
     p.add_argument("--num_trials", default=100, type=int)
+    p.add_argument("--num_test_trials", default=20, type=int)
     p.add_argument("--learning_rate", default=0.1, type=float)
     p.add_argument("--momentum", default=0.9, type=float)
 
