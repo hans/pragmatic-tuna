@@ -168,7 +168,7 @@ class TUNAEnv(gym.Env):
 
         return trial.copy(items=new_items)
 
-    def _sample_prev_trials(self, k):
+    def sample_prev_trials(self, k):
         if self.randomize:
             raise RuntimeError("Sampling previous trials is not compatible "
                                           "with random traversal of examples.")

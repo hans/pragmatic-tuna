@@ -183,10 +183,10 @@ def run_listener_trial(listener_model, speaker_model, env, sess, args,
 
 def run_batch_dream_trials(listener_model, generative_model, env, sess, args):
 
-    trials = env._sample_prev_trials(args.dream_samples)
+    trials = env.sample_prev_trials(args.dream_samples)
     gold_lfs = []
     gold_utterances = []
-    
+
     for trial in trials:
         items, gold_words = env._set_trial(trial)
         referent_idx = [i for i, referent in enumerate(env._domain)
