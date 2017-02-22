@@ -173,7 +173,8 @@ class TUNAEnv(gym.Env):
             raise RuntimeError("Sampling previous trials is not compatible "
                                           "with random traversal of examples.")
 
-        trial_idxs = np.random.choice(self._cursor, size=k)
+        k = min(k, self._cursor)
+        trial_idxs = np.random.choice(self._cursor, size=k, replace=False)
         print(trial_idxs)
         y = [self._trials[i] for i in trial_idxs]
         return y
