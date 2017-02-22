@@ -210,9 +210,10 @@ def run_batch_dream_trials(listener_model, generative_model, env, sess, args):
             obs = (items, words)
 
             # Run listener model q(z|u).
-            l_lfs, _ = infer_trial(env, obs, listener_model, generative_model,
-                                   num_listener_samples=args.num_listener_samples,
-                                   debug=False)
+            l_lfs, rejs_per_sample = \
+                    infer_trial(env, obs, listener_model, generative_model,
+                                num_listener_samples=args.num_listener_samples,
+                                debug=False)
             # Literally dereference and see if we get the expected referent.
             l_referent = env.resolve_lf(l_lfs[0][0])
             if l_referent:
@@ -221,6 +222,8 @@ def run_batch_dream_trials(listener_model, generative_model, env, sess, args):
             color = colors.OKGREEN if success else colors.FAIL
             print("%s%s => %s%s" % (colors.BOLD + color, " ".join(words),
                                     env.describe_lf(l_lfs[0][0]), colors.ENDC))
+            print("%sRejections per sample: %.2f%s" % (colors.BOLD + colors.WARNING,
+                                                       rejs_per_sample, colors.ENDC))
 
             # TODO: This is only a good stopping criterion when we force the LF to
             # be the same as the gold LF. Otherwise it's too strict!
@@ -233,15 +236,12 @@ def run_batch_dream_trials(listener_model, generative_model, env, sess, args):
                 break
 
             listener_model.reset()
+
         if success and string_matches:
-                gold_lfs.append(l_lfs[0][0])
-                gold_utterances.append(gold_words)
-        
-        
+            gold_lfs.append(l_lfs[0][0])
+            gold_utterances.append(gold_words)
+
     generative_model.batch_observe(gold_utterances, gold_lfs)
-                
-        
-        
 
 
 def run_dream_trial(listener_model, generative_model, env, sess, args):
@@ -476,7 +476,7 @@ def train(args):
                     if args.dream:
                         tqdm.write("\n%s===========\nDREAM TRIAL\n===========%s"
                                 % (colors.HEADER, colors.ENDC))
-                        
+
                         if args.dream_samples == 1:
                             run_dream_trial(listener_model, speaker_model,
                                             env, sess, args)
@@ -578,7 +578,7 @@ if __name__ == "__main__":
     p.add_argument("--learning_rate", default=0.1, type=float)
     p.add_argument("--momentum", default=0.9, type=float)
     p.add_argument("--dream_samples", default=1, type=int)
-    
+
 
     args = p.parse_args()
     pprint(vars(args))
