@@ -202,7 +202,7 @@ def run_batch_dream_trials(listener_model, generative_model, env, sess, args):
             g_lf = env.sample_lf(referent=referent_idx)
 
             # Sample utterances from p(u|z).
-            words = generative_model.sample(g_lf).split()
+            words = generative_model.sample(g_lf, argmax=True).split()
             word_ids = np.array([env.word2idx[word]
                                     for word in words])
 

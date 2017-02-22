@@ -32,7 +32,7 @@ class SpeakerModel(object):
     def build_xent_gradients(self):
         raise NotImplementedError
 
-    def sample(self, lf):
+    def sample(self, lf, argmax=False):
         raise NotImplementedError
 
     def score(self, lf, words):
@@ -58,9 +58,10 @@ class EnsembledSpeakerModel(SpeakerModel):
 
         self.xent_gradients = gradients
 
-    def sample(self, lf):
+    def sample(self, lf, argmax=False):
         model = self.models[np.random.choice(len(self.models))]
-        return model.sample(lf)
+        # TODO not correct implementation in case of argmax=true
+        return model.sample(lf, argmax=argmax)
 
     def score(self, lf, words):
         scores = [model.score(lf, words) for model in self.models]
@@ -95,9 +96,10 @@ class SequenceSpeakerModel(SpeakerModel):
         return ((self.xent_gold_words, self.xent_gold_length),
                 (self.xent_gradients,))
 
-    def sample(self, z):
+    def sample(self, z, argmax=False):
         sess = tf.get_default_session()
-        feed = {self.lf_toks: [self.env.pad_lf_idxs(z)]}
+        feed = {self.lf_toks: [self.env.pad_lf_idxs(z)],
+                self.temperature: 0.0001 if argmax else 1.0}
 
         samples = sess.run(self.samples, feed)
         sample = [x[0] for x in samples]
@@ -187,6 +189,7 @@ class ShallowSequenceSpeakerModel(SequenceSpeakerModel):
         with tf.variable_scope(self._scope_name):
             self.lf_toks = tf.placeholder(tf.int32, shape=(None, self.max_timesteps),
                                           name="lf_toks")
+            self.temperature = tf.constant(1.0, name="temperature")
 
             lf_window = tf.nn.embedding_lookup(self.lf_embeddings, self.lf_toks)
             lf_window = tf.reduce_mean(lf_window, 1)
@@ -209,7 +212,7 @@ class ShallowSequenceSpeakerModel(SequenceSpeakerModel):
                     output_t = layers.fully_connected(input_t,
                                                       output_dim, tf.identity)
 
-                    probs_t = tf.nn.softmax(output_t)
+                    probs_t = tf.nn.softmax(output_t / self.temperature)
 
                     # Sample an LF token and provide as feature to next timestep.
                     sample_t = tf.squeeze(tf.multinomial(output_t, num_samples=1), [1],
@@ -267,6 +270,7 @@ class WindowedSequenceSpeakerModel(SequenceSpeakerModel):
         with tf.variable_scope(self._scope_name):
             self.lf_toks = tf.placeholder(tf.int32, shape=(None, self.max_timesteps),
                                           name="lf_toks")
+            self.temperature = tf.constant(1.0, name="temperature")
 
             batch_size = tf.shape(self.lf_toks)[0]
             lf_window_dim = self.max_timesteps * self.embedding_dim
@@ -285,7 +289,7 @@ class WindowedSequenceSpeakerModel(SequenceSpeakerModel):
                     input_t = tf.concat(1, [prev_sample, lf_window])
                     output_t = layers.fully_connected(input_t,
                                                       output_dim, tf.identity)
-                    probs_t = tf.nn.softmax(output_t)
+                    probs_t = tf.nn.softmax(output_t / self.temperature)
 
                     # Sample an LF token and provide as feature to next timestep.
                     sample_t = tf.squeeze(tf.multinomial(output_t, num_samples=1), [1],
