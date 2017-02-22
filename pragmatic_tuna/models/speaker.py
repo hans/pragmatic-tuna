@@ -282,7 +282,6 @@ class WindowedSequenceSpeakerModel(SequenceSpeakerModel):
             prev_sample = null_embedding
             for t in range(self.max_timesteps):
                 with tf.variable_scope("recurrence", reuse=t > 0):
-                    print(prev_sample.get_shape(), lf_window.get_shape())
                     input_t = tf.concat(1, [prev_sample, lf_window])
                     output_t = layers.fully_connected(input_t,
                                                       output_dim, tf.identity)
