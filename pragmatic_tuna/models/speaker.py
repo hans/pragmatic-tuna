@@ -119,8 +119,8 @@ class SequenceSpeakerModel(SpeakerModel):
         feed = {self.lf_toks: np.array([z])}
         feed.update({self.samples[t]: np.array([[word]]) for t, word in enumerate(words)})
 
-        probs = sess.run(self.probs[0][:len(words)], feed)
-        probs = [probs_t[word_t] for probs_t, word_t in zip(probs, words)]
+        probs = sess.run(self.probs, feed)
+        probs = [probs_t[0, word_t] for probs_t, word_t in zip(probs, words)]
         return np.log(np.prod(probs))
 
     def observe(self, obs, gold_lf):
