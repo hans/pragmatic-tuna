@@ -86,8 +86,11 @@ class TUNAEnv(gym.Env):
     def observation_space(self):
         return self._observation_space
 
-    def _observe(self):
-        items = [self._item_to_vector(item) for item in self._domain]
+    def _observe(self, domain=None):
+        if domain == None:
+            domain = self._domain
+
+        items = [self._item_to_vector(item) for item in domain]
 
         desc_words = nltk.word_tokenize(self._trial["string_description"])
         desc_word_ids = np.array([self.word2idx[desc_word]
@@ -165,6 +168,24 @@ class TUNAEnv(gym.Env):
 
         return trial.copy(items=new_items)
 
+    def _sample_prev_trials(self, k):
+        if self.randomize:
+            raise RuntimeError("Sampling previous trials is not compatible "
+                                          "with random traversal of examples.")
+
+        k = min(k, self._cursor)
+        trial_idxs = np.random.choice(self._cursor, size=k, replace=False)
+        print(trial_idxs)
+        y = [self._trials[i] for i in trial_idxs]
+        return y
+
+    def _set_trial(self, trial):
+        self._trial = trial
+        self._domain = self._trial["domain"]
+
+        return self._observe()
+
+
     def _reset(self):
         if self.randomize:
             self._trial = random.choice(self._trials)
@@ -175,8 +196,7 @@ class TUNAEnv(gym.Env):
             self._trial = self._trials[self._cursor]
             self._cursor += 1
 
-        self._domain = self._trial["domain"]
-        return self._observe()
+        return self._set_trial(self._trial)
 
     def _step(self, action):
         chosen = self._domain[action]
@@ -274,33 +294,43 @@ class TUNAWithLoTEnv(TUNAEnv):
         self.lf_unk_id = self.lf_token_to_id[UNK]
         self.lf_eos_id = self.lf_token_to_id[EOS]
 
-    def _resolve_atom(self, atom_str):
-        return [item for item in self._domain
+    def _resolve_atom(self, atom_str, domain=None):
+        if domain == None:
+            domain = self._domain
+
+        return [item for item in domain
                 if item["attributes"][self.atom_attribute] == atom_str]
 
     @property
     def action_space(self):
         return spaces.DiscreteSequence(len(self.lf_vocab), self.max_conjuncts * 2)
 
-    def resolve_lf_part(self, lf_function, lf_atom):
+    def resolve_lf_part(self, lf_function, lf_atom, domain=None):
+        if domain == None:
+            domain = self._domain
+
         atom_objs = self._resolve_atom(lf_atom)
         if atom_objs:
-            return [item for item in self._domain
+            return [item for item in domain
                     if lf_function(atom_objs, item)]
         return []
 
-    def resolve_lf(self, id_list):
+    def resolve_lf(self, id_list, domain=None):
         """
         Resolve an LF token sequence to a list of referents in the current
         domain.
 
         Returns:
-            referents: List of members of `self._domain`
+            referents: List whose elements are a subset of `domain`
+            domain: List of potential referents or `self._domain` by default
         """
         if len(id_list) == 0 or id_list[0] == self.lf_eos_id:
             return []
 
-        matches = self._domain
+        if domain == None:
+            domain = self._domain
+
+        matches = domain
         for fn_id, atom_id in zip(id_list[::2], id_list[1::2]):
             if fn_id == self.lf_eos_id:
                 break
@@ -310,7 +340,7 @@ class TUNAWithLoTEnv(TUNAEnv):
             assert atom in self.lf_atoms
 
             matches = self._intersect_list(matches,
-                                           self.resolve_lf_part(fn, atom))
+                                           self.resolve_lf_part(fn, atom, domain=domain))
 
         return matches
 
@@ -360,7 +390,7 @@ class TUNAWithLoTEnv(TUNAEnv):
         # Convert to LF token IDs.
         return [self.lf_token_to_id[fn_name], self.lf_token_to_id[atom]]
 
-    def sample_lf(self, referent=None, n_parts=None):
+    def sample_lf(self, referent=None, n_parts=None, domain=None):
         """
         Sample a logical form representation `z ~ p(z|r, w)` for the current
         world `w` with referent `r`.
@@ -369,15 +399,19 @@ class TUNAWithLoTEnv(TUNAEnv):
             referent: ID of referent. If not given, the target referent for
                 this trial is used.
         """
+
+        if domain is None:
+            domain = self._domain
+
         if referent is None:
-            referent = [item for item in self._domain if item["target"]][0]
+            referent = [item for item in domain if item["target"]][0]
         elif referent != "any":
-            referent = self._domain[referent]
+            referent = domain[referent]
 
         # Find possible atoms to use.
         if referent != "any":
             available_atoms = list(set([item["attributes"][self.atom_attribute]
-                                    for item in self._domain]))
+                                    for item in domain]))
         else:
             available_atoms = None
 
@@ -407,7 +441,7 @@ class TUNAWithLoTEnv(TUNAEnv):
 
             i += 1
 
-    def enumerate_lfs(self, lf_prefix=(), includeOnlyPossibleReferents=True):
+    def enumerate_lfs(self, lf_prefix=(), includeOnlyPossibleReferents=True, domain=None):
         """
             Enumerate all possible LF function-atom combinations.
             If lf_prefix contains part of an LF, the function returns
@@ -417,7 +451,7 @@ class TUNAWithLoTEnv(TUNAEnv):
         lfs = []
 
         if includeOnlyPossibleReferents:
-            referents = self._domain
+            referents = domain if domain != None else self._domain
 
 
         for fn_name in self.lf_functions:

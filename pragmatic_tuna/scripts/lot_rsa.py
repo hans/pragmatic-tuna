@@ -181,6 +181,69 @@ def run_listener_trial(listener_model, speaker_model, env, sess, args,
 
     return first_success, first_successful_lf_pred, gold_lf_pos
 
+def run_batch_dream_trials(listener_model, generative_model, env, sess, args):
+
+    trials = env._sample_prev_trials(args.dream_samples)
+    gold_lfs = []
+    gold_utterances = []
+    
+    for trial in trials:
+        items, gold_words = env._set_trial(trial)
+        referent_idx = [i for i, referent in enumerate(env._domain)
+                        if referent["target"]][0]
+        referent = env._domain[referent_idx]
+        success = False
+        string_matches = False
+        i = 0
+        while not success or not string_matches:
+            print("Dream trial %i" % i)
+
+            # Sample an LF from p(z|r).
+            g_lf = env.sample_lf(referent=referent_idx)
+
+            # Sample utterances from p(u|z).
+            words = generative_model.sample(g_lf).split()
+            word_ids = np.array([env.word2idx[word]
+                                    for word in words])
+
+            # Build a fake observation object for inference.
+            obs = (items, words)
+
+            # Run listener model q(z|u).
+            l_lfs, _ = infer_trial(env, obs, listener_model, generative_model,
+                                   num_listener_samples=args.num_listener_samples,
+                                   debug=False)
+            # Literally dereference and see if we get the expected referent.
+            l_referent = env.resolve_lf(l_lfs[0][0])
+            if l_referent:
+                success = l_referent[0] == referent
+
+            color = colors.OKGREEN if success else colors.FAIL
+            print("%s%s => %s%s" % (colors.BOLD + color, " ".join(words),
+                                    env.describe_lf(l_lfs[0][0]), colors.ENDC))
+
+            # TODO: This is only a good stopping criterion when we force the LF to
+            # be the same as the gold LF. Otherwise it's too strict!
+            string_matches = gold_words == words
+
+            i += 1
+            if i > 1000:
+                print("%sFailed to dream successfully after 1000 trials. Dying.%s"
+                        % (colors.FAIL, colors.ENDC))
+                break
+
+            listener_model.reset()
+        if success and string_matches:
+                gold_lfs.append(l_lfs[0][0])
+                gold_utterances.append(gold_words)
+        
+        
+    generative_model.batch_observe(gold_utterances, gold_lfs)
+                
+        
+        
+
+
 def run_dream_trial(listener_model, generative_model, env, sess, args):
     """
     Run a single dream trial.
@@ -413,8 +476,13 @@ def train(args):
                     if args.dream:
                         tqdm.write("\n%s===========\nDREAM TRIAL\n===========%s"
                                 % (colors.HEADER, colors.ENDC))
-                        run_dream_trial(listener_model, speaker_model,
-                                        env, sess, args)
+                        
+                        if args.dream_samples == 1:
+                            run_dream_trial(listener_model, speaker_model,
+                                            env, sess, args)
+                        else:
+                            run_batch_dream_trials(listener_model, speaker_model,
+                                                  env, sess, args)
 
                 online_results.append(run_online_results)
 
@@ -509,6 +577,8 @@ if __name__ == "__main__":
     p.add_argument("--num_test_trials", default=20, type=int)
     p.add_argument("--learning_rate", default=0.1, type=float)
     p.add_argument("--momentum", default=0.9, type=float)
+    p.add_argument("--dream_samples", default=1, type=int)
+    
 
     args = p.parse_args()
     pprint(vars(args))

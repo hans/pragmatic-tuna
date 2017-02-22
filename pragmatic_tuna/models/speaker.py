@@ -41,6 +41,9 @@ class SpeakerModel(object):
     def observe(self, env_obs, gold_lf):
         raise NotImplementedError
 
+    def batch_observe(self, words, gold_lfs):
+        raise NotImplementedError
+
 
 class EnsembledSpeakerModel(SpeakerModel):
 
@@ -94,9 +97,10 @@ class SequenceSpeakerModel(SpeakerModel):
 
     def sample(self, z):
         sess = tf.get_default_session()
-        feed = {self.lf_toks: self.env.pad_lf_idxs(z)}
+        feed = {self.lf_toks: [self.env.pad_lf_idxs(z)]}
 
-        sample = sess.run(self.samples, feed)
+        samples = sess.run(self.samples, feed)
+        sample = [x[0] for x in samples]
         try:
             stop_idx = sample.index(self.env.word_eos_id)
             sample = sample[:stop_idx]
@@ -112,29 +116,41 @@ class SequenceSpeakerModel(SpeakerModel):
         z = self.env.pad_lf_idxs(z)
         words = [self.env.word2idx[word] for word in u]
 
-        feed = {self.lf_toks: z}
-        feed.update({self.samples[t]: word for t, word in enumerate(words)})
+        feed = {self.lf_toks: [z]}
+        feed.update({self.samples[t]: [word] for t, word in enumerate(words)})
 
-        probs = sess.run(self.probs[:len(words)], feed)
-        probs = [probs_t[word_t] for probs_t, word_t in zip(probs, words)]
+        probs = sess.run(self.probs, feed)
+        probs = [probs_t[0, word_t] for probs_t, word_t in zip(probs, words)]
         return np.log(np.prod(probs))
 
     def observe(self, obs, gold_lf):
         if gold_lf is None:
             return
 
-        z = self.env.pad_lf_idxs(gold_lf)
+        return self.batch_observe([obs[1]], [gold_lf])
 
-        words = obs[1]
-        real_length = min(len(words) + 1, self.max_timesteps) # train to output a single EOS token
-        words = self.env.get_word_idxs(words)
+    def batch_observe(self, words_lists, gold_lfs):
+        n = len(gold_lfs)
+        z = np.zeros(shape=(n, self.max_timesteps), dtype=np.int32)
+        real_lengths = np.zeros(shape=n, dtype=np.int32)
+        for i, gold_lf in enumerate(gold_lfs):
+            padded_lf = self.env.pad_lf_idxs(gold_lf)
+            for j in range(self.max_timesteps):
+                z[i][j] = padded_lf[j]
+
+        gold_words = [np.zeros(shape=(n,), dtype=np.int32) for _ in range(self.max_timesteps)]
+        for i, words in enumerate(words_lists):
+            real_lengths[i] = min(len(words) + 1, self.max_timesteps)
+            words = self.env.get_word_idxs(words)
+            for j in range(len(words)):
+                gold_words[j][i] = words[j]
 
         sess = tf.get_default_session()
-        feed = {self.lf_toks: z, self.xent_gold_length: [real_length]}
-        feed.update({self.xent_gold_words[t]: [word_t]
-                     for t, word_t in enumerate(words)})
+        feed = {self.lf_toks: z, self.xent_gold_length: real_lengths}
+        feed.update({self.xent_gold_words[t]: word_t
+                    for t, word_t in enumerate(gold_words)})
         feed.update({self.samples[t]: word_t
-                     for t, word_t in enumerate(words)})
+                     for t, word_t in enumerate(gold_words)})
         sess.run(self.train_op, feed)
 
 
@@ -169,29 +185,35 @@ class ShallowSequenceSpeakerModel(SequenceSpeakerModel):
 
     def _build_graph(self):
         with tf.variable_scope(self._scope_name):
-            self.lf_toks = tf.placeholder(tf.int32, shape=(self.max_timesteps,),
+            self.lf_toks = tf.placeholder(tf.int32, shape=(None, self.max_timesteps),
                                           name="lf_toks")
 
             lf_window = tf.nn.embedding_lookup(self.lf_embeddings, self.lf_toks)
-            lf_window = tf.reduce_mean(lf_window, 0)
+            lf_window = tf.reduce_mean(lf_window, 1)
             lf_window = tf.stop_gradient(lf_window)
 
+            batch_size = tf.shape(self.lf_toks)[0]
+
             # CLM à la Andreas.
-            prev_words = tf.zeros((len(self.env.vocab),))
-            last_word = tf.zeros((len(self.env.vocab),))
+
+            # TODO: ugly trick to get the right dimension. is there a better way?
+            prev_words = tf.zeros((batch_size, len(self.env.vocab)))
+            last_word = tf.zeros((batch_size, len(self.env.vocab)))
 
             # Now run a teeny utterance decoder.
             outputs, probs, samples = [], [], []
             output_dim = self.env.vocab_size
             for t in range(self.max_timesteps):
                 with tf.variable_scope("recurrence", reuse=t > 0):
-                    input_t = tf.concat(0, [prev_words, last_word, lf_window])
-                    output_t = layers.fully_connected(tf.expand_dims(input_t, 0),
+                    input_t = tf.concat(1, [prev_words, last_word, lf_window])
+                    output_t = layers.fully_connected(input_t,
                                                       output_dim, tf.identity)
-                    probs_t = tf.squeeze(tf.nn.softmax(output_t))
+
+                    probs_t = tf.nn.softmax(output_t)
 
                     # Sample an LF token and provide as feature to next timestep.
-                    sample_t = tf.squeeze(tf.multinomial(output_t, num_samples=1))
+                    sample_t = tf.squeeze(tf.multinomial(output_t, num_samples=1), [1],
+                                          name="sample_%i" % t)
 
                     last_word = tf.one_hot(sample_t, len(self.env.vocab))
                     prev_words += last_word
@@ -243,13 +265,16 @@ class WindowedSequenceSpeakerModel(SequenceSpeakerModel):
 
     def _build_graph(self):
         with tf.variable_scope(self._scope_name):
-            self.lf_toks = tf.placeholder(tf.int32, shape=(self.max_timesteps,),
+            self.lf_toks = tf.placeholder(tf.int32, shape=(None, self.max_timesteps),
                                           name="lf_toks")
 
+            batch_size = tf.shape(self.lf_toks)[0]
+            lf_window_dim = self.max_timesteps * self.embedding_dim
             lf_window = tf.nn.embedding_lookup(self.lf_embeddings, self.lf_toks)
-            lf_window = tf.reshape(lf_window, (-1,))
+            lf_window = tf.reshape(lf_window, (batch_size, lf_window_dim))
 
-            null_embedding = tf.gather(self.word_embeddings, self.env.word_unk_id)
+            null_embedding = tf.gather(self.word_embeddings,
+                                       tf.fill((batch_size,), self.env.word_unk_id))
 
             # Now run a teeny utterance decoder.
             outputs, probs, samples = [], [], []
@@ -257,13 +282,15 @@ class WindowedSequenceSpeakerModel(SequenceSpeakerModel):
             prev_sample = null_embedding
             for t in range(self.max_timesteps):
                 with tf.variable_scope("recurrence", reuse=t > 0):
-                    input_t = tf.concat(0, [prev_sample, lf_window])
-                    output_t = layers.fully_connected(tf.expand_dims(input_t, 0),
+                    print(prev_sample.get_shape(), lf_window.get_shape())
+                    input_t = tf.concat(1, [prev_sample, lf_window])
+                    output_t = layers.fully_connected(input_t,
                                                       output_dim, tf.identity)
-                    probs_t = tf.squeeze(tf.nn.softmax(output_t))
+                    probs_t = tf.nn.softmax(output_t)
 
                     # Sample an LF token and provide as feature to next timestep.
-                    sample_t = tf.squeeze(tf.multinomial(output_t, num_samples=1))
+                    sample_t = tf.squeeze(tf.multinomial(output_t, num_samples=1), [1],
+                                          name="sample_%i" % t)
                     prev_sample = tf.nn.embedding_lookup(self.word_embeddings, sample_t)
 
                     # TODO support stop token here?
@@ -353,7 +380,6 @@ class EnsembledSequenceSpeakerModel2(SequenceSpeakerModel):
         with tf.variable_scope(self._scope_name):
             self.lf_toks = tf.placeholder(tf.int32, shape=(self.max_timesteps,),
                                           name="lf_toks")
-
             lf_window = tf.nn.embedding_lookup(self.lf_embeddings, self.lf_toks)
             lf_window = tf.reduce_mean(lf_window, 0)
             lf_window = tf.stop_gradient(lf_window)
