@@ -186,64 +186,84 @@ def run_listener_trial(listener_model, speaker_model, env, sess, args,
 def run_batch_dream_trials(listener_model, generative_model, env, sess, args):
 
     trials = env.sample_prev_trials(args.dream_samples)
-    gold_lfs = []
-    gold_utterances = []
 
-    for trial in trials:
-        items, gold_words = env._set_trial(trial)
-        referent_idx = [i for i, referent in enumerate(env._domain)
-                        if referent["target"]][0]
-        referent = env._domain[referent_idx]
-        success = False
-        string_matches = False
-        i = 0
-        while not success or not string_matches:
-            LOGGER.info("Dream trial %i" % i)
+    # Outer loop stopping criterion
+    listener_converged = False
+    i = 0
 
-            # Sample an LF from p(z|r).
-            g_lf = env.sample_lf(referent=referent_idx)
+    while not listener_converged:
+        gold_lfs, gold_utterances = [], []
+        listener_converged = True
 
-            # Sample utterances from p(u|z).
-            words = generative_model.sample(g_lf, argmax=True).split()
-            word_ids = np.array([env.word2idx[word]
-                                    for word in words])
+        for trial_i in trange(len(trials), desc="Dream trial", leave=False):
+            trial = trials[trial_i]
+            items, gold_words = env._set_trial(trial)
+            referent_idx = [i for i, referent in enumerate(env._domain)
+                            if referent["target"]][0]
+            referent = env._domain[referent_idx]
+            success = False
+            string_matches = False
+            j = 0
+            while not success or not string_matches:
+                LOGGER.info("Dream trial %i" % j)
 
-            # Build a fake observation object for inference.
-            obs = (items, words)
+                # Sample an LF from p(z|r).
+                g_lf = env.sample_lf(referent=referent_idx)
 
-            # Run listener model q(z|u).
-            l_lfs, rejs_per_sample = \
-                    infer_trial(env, obs, listener_model, generative_model,
-                                num_listener_samples=args.num_listener_samples,
-                                debug=False)
-            # Literally dereference and see if we get the expected referent.
-            l_referent = env.resolve_lf(l_lfs[0][0])
-            if l_referent:
-                success = l_referent[0] == referent
+                # Sample utterances from p(u|z).
+                words = generative_model.sample(g_lf).split()
+                word_ids = np.array([env.word2idx[word]
+                                        for word in words])
 
-            color = colors.OKGREEN if success else colors.FAIL
-            LOGGER.info("%s%s => %s%s", colors.BOLD + color, " ".join(words),
-                                        env.describe_lf(l_lfs[0][0]), colors.ENDC)
-            LOGGER.info("%sRejections per sample: %.2f%s",
-                        colors.BOLD + colors.WARNING, rejs_per_sample, colors.ENDC)
+                # Build a fake observation object for inference.
+                obs = (items, words)
 
-            # TODO: This is only a good stopping criterion when we force the LF to
-            # be the same as the gold LF. Otherwise it's too strict!
-            string_matches = gold_words == words
+                # Run listener model q(z|u).
+                l_lfs, rejs_per_sample = \
+                        infer_trial(env, obs, listener_model, generative_model,
+                                    num_listener_samples=args.num_listener_samples,
+                                    debug=False)
+                # Literally dereference and see if we get the expected referent.
+                l_referent = env.resolve_lf(l_lfs[0][0])
+                if l_referent:
+                    success = l_referent[0] == referent
 
-            i += 1
-            if i > 1000:
-                LOGGER.error("%sFailed to dream successfully after 1000 trials. Dying.%s",
-                             colors.FAIL, colors.ENDC)
-                break
+                color = colors.OKGREEN if success else colors.FAIL
+                LOGGER.info("%s%s => %s%s", colors.BOLD + color, " ".join(words),
+                                            env.describe_lf(l_lfs[0][0]), colors.ENDC)
+                LOGGER.info("%sRejections per sample: %.2f%s",
+                            colors.BOLD + colors.WARNING, rejs_per_sample, colors.ENDC)
 
-            listener_model.reset()
+                # TODO: This is only a good stopping criterion when we force the LF to
+                # be the same as the gold LF. Otherwise it's too strict!
+                string_matches = gold_words == words
 
-        if success and string_matches:
-            gold_lfs.append(l_lfs[0][0])
-            gold_utterances.append(gold_words)
+                j += 1
+                if j > 1000:
+                    LOGGER.error("%sFailed to dream successfully after 1000 trials. Dying.%s",
+                                colors.FAIL, colors.ENDC)
+                    break
 
-    generative_model.observe_batch(gold_utterances, gold_lfs)
+                listener_model.reset()
+
+            if success and string_matches:
+                gold_lfs.append(l_lfs[0][0])
+                gold_utterances.append(gold_words)
+
+            listener_converged = listener_converged and \
+                    rejs_per_sample <= args.max_rejections_after_trial
+
+        if len(gold_utterances) > 0:
+            listener_model.observe_batch(gold_utterances, gold_lfs)
+            generative_model.observe_batch(gold_utterances, gold_lfs)
+
+        if i > 10:
+            LOGGER.error("%sFailed to converge listener after 10 dream runs. Dying.%s",
+                         colors.FAIL, colors.ENDC)
+            break
+        if not listener_converged:
+            LOGGER.warn("%sListener not converged. Repeating dream trial.%s",
+                        colors.WARNING, colors.ENDC)
 
 
 def run_dream_trial(listener_model, generative_model, env, sess, args):
