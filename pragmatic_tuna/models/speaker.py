@@ -41,7 +41,7 @@ class SpeakerModel(object):
     def observe(self, env_obs, gold_lf):
         raise NotImplementedError
 
-    def batch_observe(self, words, gold_lfs):
+    def observe_batch(self, words, gold_lfs):
         raise NotImplementedError
 
 
@@ -129,9 +129,9 @@ class SequenceSpeakerModel(SpeakerModel):
         if gold_lf is None:
             return
 
-        return self.batch_observe([obs[1]], [gold_lf])
+        return self.observe_batch([obs[1]], [gold_lf])
 
-    def batch_observe(self, words_lists, gold_lfs):
+    def observe_batch(self, words_lists, gold_lfs):
         n = len(gold_lfs)
         z = np.zeros(shape=(n, self.max_timesteps), dtype=np.int32)
         real_lengths = np.zeros(shape=n, dtype=np.int32)

@@ -243,7 +243,7 @@ def run_batch_dream_trials(listener_model, generative_model, env, sess, args):
             gold_lfs.append(l_lfs[0][0])
             gold_utterances.append(gold_words)
 
-    generative_model.batch_observe(gold_utterances, gold_lfs)
+    generative_model.observe_batch(gold_utterances, gold_lfs)
 
 
 def run_dream_trial(listener_model, generative_model, env, sess, args):
