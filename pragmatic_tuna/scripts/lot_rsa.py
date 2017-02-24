@@ -5,22 +5,24 @@ The inference is mediated by a logical form language / language of thought (LoT)
 """
 
 from argparse import ArgumentParser
-import copy
-import itertools
 import json
+import logging
+import os.path
 from pprint import pprint
 import re
 
 import numpy as np
 import tensorflow as tf
 from tqdm import trange, tqdm
-import nltk
 
 from pragmatic_tuna.environments import TUNAWithLoTEnv
 from pragmatic_tuna.models.listener import *
 from pragmatic_tuna.models.speaker import *
 from pragmatic_tuna.environments.spatial import *
 from pragmatic_tuna.util import colors
+
+
+LOGGER = logging.getLogger(__name__)
 
 
 def infer_trial(env, obs, listener_model, speaker_model,
@@ -106,13 +108,13 @@ def infer_trial(env, obs, listener_model, speaker_model,
                 continue
             seen.add(lf)
 
-            print("LF %30s  =>  Referent %10s  =>  (%.3g, %.3g, %.3g)" %
-                (env.describe_lf(lf),
-                env.resolve_lf(lf)[0]["attributes"][env.atom_attribute],
-                #env.describe_lf(g_lf),
-                weight[0], weight[1], mixed_weight))
-        print("%sRejections per sample: %.2f%s" % (colors.BOLD + colors.WARNING,
-                                                rejs_per_sample, colors.ENDC))
+            LOGGER.debug("LF %30s  =>  Referent %10s  =>  (%.3g, %.3g, %.3g)",
+                         env.describe_lf(lf),
+                         env.resolve_lf(lf)[0]["attributes"][env.atom_attribute],
+                         #env.describe_lf(g_lf),
+                         weight[0], weight[1], mixed_weight)
+        LOGGER.debug("%sRejections per sample: %.2f%s", colors.BOLD + colors.WARNING,
+                                                        rejs_per_sample, colors.ENDC)
 
     listener_model.reset()
     return data, rejs_per_sample
@@ -130,8 +132,8 @@ def run_listener_trial(listener_model, speaker_model, env, sess, args,
     while not terminate:
         if n_iterations > 1000:
             if not silent:
-                print("%sFailed to converge after 1000 listener trials. Dying.%s"
-                      % (colors.FAIL, colors.ENDC))
+                LOGGER.error("%sFailed to converge after 1000 listener trials. Dying.%s",
+                             colors.FAIL, colors.ENDC)
             break
 
         lfs, rejs_per_sample = \
@@ -147,8 +149,8 @@ def run_listener_trial(listener_model, speaker_model, env, sess, args,
         success = reward > 0
         if not silent:
             color = colors.OKGREEN if success else colors.FAIL
-            print("%s%s => %s%s" % (colors.BOLD + color, env._trial["string_description"],
-                                    env.describe_lf(lf_pred), colors.ENDC))
+            LOGGER.info("%s%s => %s%s", colors.BOLD + color, env._trial["string_description"],
+                                        env.describe_lf(lf_pred), colors.ENDC)
 
         if success and first_success == -1:
             first_success = n_iterations
@@ -166,7 +168,7 @@ def run_listener_trial(listener_model, speaker_model, env, sess, args,
             gold_lf, gold_lf_pos = None, -1
         else:
             if not silent:
-                print("gold", env.describe_lf(gold_lf), gold_lf_pos)
+                LOGGER.info("gold %s %i", env.describe_lf(gold_lf), gold_lf_pos)
 
             # Update model parameters.
             if not evaluating:
@@ -196,7 +198,7 @@ def run_batch_dream_trials(listener_model, generative_model, env, sess, args):
         string_matches = False
         i = 0
         while not success or not string_matches:
-            print("Dream trial %i" % i)
+            LOGGER.info("Dream trial %i" % i)
 
             # Sample an LF from p(z|r).
             g_lf = env.sample_lf(referent=referent_idx)
@@ -220,10 +222,10 @@ def run_batch_dream_trials(listener_model, generative_model, env, sess, args):
                 success = l_referent[0] == referent
 
             color = colors.OKGREEN if success else colors.FAIL
-            print("%s%s => %s%s" % (colors.BOLD + color, " ".join(words),
-                                    env.describe_lf(l_lfs[0][0]), colors.ENDC))
-            print("%sRejections per sample: %.2f%s" % (colors.BOLD + colors.WARNING,
-                                                       rejs_per_sample, colors.ENDC))
+            LOGGER.info("%s%s => %s%s", colors.BOLD + color, " ".join(words),
+                                        env.describe_lf(l_lfs[0][0]), colors.ENDC)
+            LOGGER.info("%sRejections per sample: %.2f%s",
+                        colors.BOLD + colors.WARNING, rejs_per_sample, colors.ENDC)
 
             # TODO: This is only a good stopping criterion when we force the LF to
             # be the same as the gold LF. Otherwise it's too strict!
@@ -231,8 +233,8 @@ def run_batch_dream_trials(listener_model, generative_model, env, sess, args):
 
             i += 1
             if i > 1000:
-                print("%sFailed to dream successfully after 1000 trials. Dying.%s"
-                        % (colors.FAIL, colors.ENDC))
+                LOGGER.error("%sFailed to dream successfully after 1000 trials. Dying.%s",
+                             colors.FAIL, colors.ENDC)
                 break
 
             listener_model.reset()
@@ -259,7 +261,7 @@ def run_dream_trial(listener_model, generative_model, env, sess, args):
     string_matches = False
     i = 0
     while not success or not string_matches:
-        print("Dream trial %i" % i)
+        LOGGER.info("Dream trial %i" % i)
 
         # Sample an LF from p(z|r).
         g_lf = env.sample_lf(referent=referent_idx)
@@ -282,8 +284,8 @@ def run_dream_trial(listener_model, generative_model, env, sess, args):
             success = l_referent[0] == referent
 
         color = colors.OKGREEN if success else colors.FAIL
-        print("%s%s => %s%s" % (colors.BOLD + color, " ".join(words),
-                                env.describe_lf(l_lfs[0][0]), colors.ENDC))
+        LOGGER.info("%s%s => %s%s", colors.BOLD + color, " ".join(words),
+                                    env.describe_lf(l_lfs[0][0]), colors.ENDC)
 
         # TODO: This is only a good stopping criterion when we force the LF to
         # be the same as the gold LF. Otherwise it's too strict!
@@ -291,8 +293,8 @@ def run_dream_trial(listener_model, generative_model, env, sess, args):
 
         i += 1
         if i > 1000:
-            print("%sFailed to dream successfully after 1000 trials. Dying.%s"
-                    % (colors.FAIL, colors.ENDC))
+            LOGGER.error("%sFailed to dream successfully after 1000 trials. Dying.%s",
+                         colors.FAIL, colors.ENDC)
             break
 
         listener_model.reset()
@@ -337,7 +339,7 @@ def eval_offline_ctx(listener_model, speaker_model, examples, env, sess, args):
         check_results.append((words_string, check_i))
 
         color = colors.OKGREEN if check_i else colors.FAIL
-        print("\t%s%30s => %30s%s"
+        LOGGER.info("\t%s%30s => %30s%s"
               % (color, words_string, learned_mapping_i, colors.ENDC))
 
     return check_results
@@ -372,7 +374,7 @@ def eval_offline_cf(listener_model, examples, env):
         results.append((words_string, env.describe_lf(sampled_lf), success))
 
         color = colors.OKGREEN if success else colors.FAIL
-        print("\t%s%30s => %30s%s" % (color, words_string, env.describe_lf(sampled_lf), colors.ENDC))
+        LOGGER.info("\t%s%30s => %30s%s" % (color, words_string, env.describe_lf(sampled_lf), colors.ENDC))
 
     return results
 
@@ -384,18 +386,18 @@ def eval_offline(listener_model, speaker_model, env, sess, args):
     with open(args.gold_path, "r") as gold_f:
         listener_examples = json.load(gold_f)
 
-        print("\n%s==========\nOFFLINE EVALUATION\n==========%s"
-            % (colors.HEADER, colors.ENDC))
+        LOGGER.info("\n%s==========\nOFFLINE EVALUATION\n==========%s",
+                    colors.HEADER, colors.ENDC)
 
         # Context-grounded offline evaluation.
-        print("%sWith context:%s" % (colors.HEADER, colors.ENDC))
+        LOGGER.info("%sWith context:%s", colors.HEADER, colors.ENDC)
         ctx_results = eval_offline_ctx(
                 listener_model, speaker_model, listener_examples,
                 env, sess, args)
         ctx_successes = [s for _, s in ctx_results]
 
         # Context-free offline evaluation.
-        print("\n%sWithout context:%s" % (colors.HEADER, colors.ENDC))
+        LOGGER.info("\n%sWithout context:%s", colors.HEADER, colors.ENDC)
         cf_results = eval_offline_cf(
                 listener_model, listener_examples, env)
         cf_successes = [s for _, _, s in cf_results]
@@ -451,6 +453,10 @@ def train(args):
     listener_model.train_op = listener_train_op
     speaker_model.train_op = speaker_train_op
 
+    # Prepare for logging/summaries/etc.
+    tf.gfile.MakeDirs(args.logdir)
+    LOGGER.propagate = False
+
     # Offline metrics
     ctx_results, cf_results = [], []
     # Online metrics
@@ -458,6 +464,8 @@ def train(args):
     with tf.Session() as sess:
         with sess.as_default():
             for run_i in range(args.num_runs):
+                logfile = os.path.join(args.logdir, "run_%i.log" % run_i)
+                LOGGER.handlers = [logging.FileHandler(logfile)]
                 env.configure(reset_cursor=True)
 
                 tqdm.write("%sBeginning training run %i.%s\n\n" % (colors.BOLD, run_i, colors.ENDC))
@@ -466,16 +474,16 @@ def train(args):
                 run_online_results = []
 
                 for i in trange(args.num_trials):
-                    tqdm.write("\n%s==============\nLISTENER TRIAL\n==============%s"
-                            % (colors.HEADER, colors.ENDC))
+                    LOGGER.info("\n%s==============\nLISTENER TRIAL\n==============%s",
+                                colors.HEADER, colors.ENDC)
 
                     first_success, _, _ = run_listener_trial(listener_model, speaker_model,
                                                              env, sess, args)
                     run_online_results.append(first_success == 0)
 
                     if args.dream:
-                        tqdm.write("\n%s===========\nDREAM TRIAL\n===========%s"
-                                % (colors.HEADER, colors.ENDC))
+                        LOGGER.info("\n%s===========\nDREAM TRIAL\n===========%s",
+                                    colors.HEADER, colors.ENDC)
 
                         if args.dream_samples == 1:
                             run_dream_trial(listener_model, speaker_model,
@@ -491,32 +499,32 @@ def train(args):
                 ctx_results.append(ctx_successes)
                 cf_results.append(cf_successes)
 
-    print("\n%s==========\nOVERALL EVALUATION\n==========%s"
-          % (colors.HEADER, colors.ENDC))
+    LOGGER.info("\n%s==========\nOVERALL EVALUATION\n==========%s",
+                colors.HEADER, colors.ENDC)
     avg_online_accuracy = np.array(online_results).mean(axis=0)
-    print("%sAverage online accuracy: %.3f%%%s"
-          % (colors.BOLD, avg_online_accuracy.mean() * 100, colors.ENDC))
-    print("%sOnline accuracy per trial:%s\n\t%s"
-          % (colors.BOLD, colors.ENDC,
-             "\n\t".join("%i\t%.3f" % (i, acc_i * 100)
-                         for i, acc_i in enumerate(avg_online_accuracy))))
+    LOGGER.info("%sAverage online accuracy: %.3f%%%s",
+                colors.BOLD, avg_online_accuracy.mean() * 100, colors.ENDC)
+    LOGGER.info("%sOnline accuracy per trial:%s\n\t%s",
+                colors.BOLD, colors.ENDC,
+                 "\n\t".join("%i\t%.3f" % (i, acc_i * 100)
+                             for i, acc_i in enumerate(avg_online_accuracy)))
 
     if args.gold_path:
         avg_ctx_accuracy = np.mean(ctx_results, axis=0)
-        print("%sAverage offline accuracy with context: %.3f%%%s"
-              % (colors.BOLD, avg_ctx_accuracy.mean() * 100, colors.ENDC))
-        print("%sAverage offline accuracy with context per trial:%s\n\t%s"
-              % (colors.BOLD, colors.ENDC,
-                 "\n\t".join("%i\t%.3f" % (i, acc_i * 100)
-                             for i, acc_i in enumerate(avg_ctx_accuracy))))
+        LOGGER.info("%sAverage offline accuracy with context: %.3f%%%s",
+                    colors.BOLD, avg_ctx_accuracy.mean() * 100, colors.ENDC)
+        LOGGER.info("%sAverage offline accuracy with context per trial:%s\n\t%s",
+                    colors.BOLD, colors.ENDC,
+                    "\n\t".join("%i\t%.3f" % (i, acc_i * 100)
+                                for i, acc_i in enumerate(avg_ctx_accuracy)))
 
         avg_cf_accuracy = np.mean(cf_results, axis=0)
-        print("%sAverage offline accuracy without context: %.3f%%%s"
-              % (colors.BOLD, avg_cf_accuracy.mean() * 100, colors.ENDC))
-        print("%sAverage offline accuracy without context per trial:%s\n\t%s"
-              % (colors.BOLD, colors.ENDC,
-                 "\n\t".join("%i\t%.3f" % (i, acc_i * 100)
-                             for i, acc_i in enumerate(avg_cf_accuracy))))
+        LOGGER.info("%sAverage offline accuracy without context: %.3f%%%s",
+                    colors.BOLD, avg_cf_accuracy.mean() * 100, colors.ENDC)
+        LOGGER.info("%sAverage offline accuracy without context per trial:%s\n\t%s",
+                    colors.BOLD, colors.ENDC,
+                    "\n\t".join("%i\t%.3f" % (i, acc_i * 100)
+                                for i, acc_i in enumerate(avg_cf_accuracy)))
 
 
 SPEAKER_MODELS = {
@@ -579,8 +587,9 @@ if __name__ == "__main__":
     p.add_argument("--momentum", default=0.9, type=float)
     p.add_argument("--dream_samples", default=1, type=int)
 
-
     args = p.parse_args()
     pprint(vars(args))
+
+    LOGGER.setLevel(logging.DEBUG)
 
     train(args)
