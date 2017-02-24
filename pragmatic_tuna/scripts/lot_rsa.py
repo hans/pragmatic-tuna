@@ -469,7 +469,7 @@ def train(args):
                 env.configure(reset_cursor=True)
 
                 tqdm.write("%sBeginning training run %i.%s\n\n" % (colors.BOLD, run_i, colors.ENDC))
-                sess.run(tf.initialize_all_variables())
+                sess.run(tf.global_variables_initializer())
 
                 run_online_results = []
 
