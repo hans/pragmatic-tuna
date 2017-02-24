@@ -316,7 +316,7 @@ def eval_offline_ctx(listener_model, speaker_model, examples, env, sess, args):
     env.configure(reset_cursor=True)
 
     learned_mapping = {}
-    for i in trange(args.num_test_trials):
+    for i in trange(args.num_test_trials, desc="Test trial"):
         first_success, best_lf, gold_lf_pos = run_listener_trial(
                 listener_model, speaker_model, env, sess, args,
                 evaluating=True, silent=True)
@@ -473,7 +473,7 @@ def train(args):
 
                 run_online_results = []
 
-                for i in trange(args.num_trials):
+                for i in trange(args.num_trials, desc="Trial"):
                     LOGGER.info("\n%s==============\nLISTENER TRIAL\n==============%s",
                                 colors.HEADER, colors.ENDC)
 
