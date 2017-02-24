@@ -65,7 +65,10 @@ class ListenerModel(object):
         """
         raise NotImplementedError
 
-    def observe(self, obs, lf_pred, reward, gold_lf):
+    def observe(self, obs, gold_lf):
+        raise NotImplementedError
+
+    def observe_batch(self, words, lfs):
         raise NotImplementedError
 
     def score_batch(self, words, lfs):
@@ -118,9 +121,6 @@ class EnsembledListenerModel(ListenerModel):
         # TODO if argmax, should sample from all models
         model = self.models[np.random.choice(len(self.models))]
         return model.sample(words, **kwargs)
-
-    def observe(self, obs, lf_pred, reward, gold_lf):
-        raise NotImplementedError
 
     def reset(self):
         for model in self.models:
@@ -283,21 +283,25 @@ class WindowedSequenceListenerModel(ListenerModel):
 
         return ret_lfs, total_probs
 
-    def observe(self, obs, lf_pred, reward, gold_lf):
+    def observe(self, obs, gold_lf):
         if gold_lf is None:
             return
 
-        # Pad gold output LF.
-        real_length = min(self.max_timesteps, len(gold_lf) + 1) # train to output a single stop token
-        gold_lf = self.env.pad_lf_idxs(gold_lf)
+        self.observe_batch([obs[1]], [gold_lf])
 
-        word_idxs = self.env.get_word_idxs(obs[1])
-        feed = {self.words: [word_idxs],
-                self.xent_gold_lf_length: [real_length]}
-        feed.update({self.xent_gold_lf_tokens[t]: [gold_lf[t]]
-                     for t in range(self.max_timesteps)})
-        feed.update({self.samples[t]: [lf_t]
-                     for t, lf_t in enumerate(gold_lf)})
+    def observe_batch(self, words, lfs):
+        words = [self.env.get_word_idxs(words_i) for words_i in words]
+        real_lengths = [min(self.max_timesteps, len(lf_i) + 1) for lf_i in lfs]
+        lfs = [self.env.pad_lf_idxs(lf_i) for lf_i in lfs]
+        # Transpose to num_timesteps * batch_size
+        lfs = np.array(lfs).T
+
+        feed = {self.words: np.array(words),
+                self.xent_gold_lf_length: real_lengths}
+        feed.update({self.xent_gold_lf_tokens[t]: lfs_t
+                     for t, lfs_t in enumerate(lfs)})
+        feed.update({self.samples[t]: lf_t
+                     for t, lf_t in enumerate(lfs)})
 
         sess = tf.get_default_session()
         sess.run(self.train_op, feed)

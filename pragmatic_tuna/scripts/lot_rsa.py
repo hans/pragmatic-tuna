@@ -172,7 +172,7 @@ def run_listener_trial(listener_model, speaker_model, env, sess, args,
 
             # Update model parameters.
             if not evaluating:
-                listener_model.observe(obs, lf_pred, reward, gold_lf)
+                listener_model.observe(obs, gold_lf)
                 speaker_model.observe(obs, gold_lf)
 
         listener_model.reset()
