@@ -2,8 +2,9 @@
     "spatial_simple_ambiguous": {
         "attributes": {
             "y": [
+                -1,
                 0,
-                1
+                1,
             ],
             "shape": [
                 "square",
@@ -64,14 +65,6 @@
                         "id": 1,
                         "target": true
                     },
-                    {
-                        "attributes": {
-                            "y": 2,
-                            "shape": "circle"
-                        },
-                        "id": 2,
-                        "target": false
-                    }
                 ],
                 "string_description": "the square above circle"
             },
