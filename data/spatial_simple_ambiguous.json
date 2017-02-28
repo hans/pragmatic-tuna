@@ -1,0 +1,112 @@
+{
+    "spatial_simple_ambiguous": {
+        "attributes": {
+            "y": [
+                0,
+                1
+            ],
+            "shape": [
+                "square",
+                "circle"
+            ]
+        },
+        "vocab": [
+            "square",
+            "circle",
+            "above",
+            "the"
+        ],
+        "trials": [
+            {
+                "id": "learn_square",
+                "domain": [
+                    {
+                        "attributes": {
+                            "y": 0,
+                            "shape": "square"
+                        },
+                        "id": 0,
+                        "target": true
+                    }
+                ],
+                "string_description": "the square"
+            },
+            {
+                "id": "learn_circle",
+                "domain": [
+                    {
+                        "attributes": {
+                            "y": 0,
+                            "shape": "circle"
+                        },
+                        "id": 0,
+                        "target": true
+                    }
+                ],
+                "string_description": "the circle"
+            },
+            {
+                "id": "learn_above",
+                "domain": [
+                    {
+                        "attributes": {
+                            "y": 0,
+                            "shape": "circle"
+                        },
+                        "id": 0,
+                        "target": false
+                    },
+                    {
+                        "attributes": {
+                            "y": 1,
+                            "shape": "square"
+                        },
+                        "id": 1,
+                        "target": true
+                    },
+                    {
+                        "attributes": {
+                            "y": 2,
+                            "shape": "circle"
+                        },
+                        "id": 2,
+                        "target": false
+                    }
+                ],
+                "string_description": "the square above circle"
+            },
+            {
+                "id": "test_above",
+                "domain": [
+                    {
+                        "attributes": {
+                            "y": 1,
+                            "shape": "circle"
+                        },
+                        "id": 0,
+                        "target": true
+                    },
+                    {
+                        "attributes": {
+                            "y": 0,
+                            "shape": "square"
+                        },
+                        "id": 1,
+                        "target": false
+                    },
+                    {
+                        "attributes": {
+                            "y": -1,
+                            "shape": "circle"
+                        },
+                        "id": 2,
+                        "target": false
+                    },
+
+                ],
+                "string_description": "the circle above square"
+            }
+
+        ]
+    }
+}
