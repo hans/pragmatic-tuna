@@ -4,7 +4,7 @@
             "y": [
                 -1,
                 0,
-                1,
+                1
             ],
             "shape": [
                 "square",
@@ -64,7 +64,7 @@
                         },
                         "id": 1,
                         "target": true
-                    },
+                    }
                 ],
                 "string_description": "the square above circle"
             },
