@@ -311,8 +311,11 @@ class TUNAWithLoTEnv(TUNAEnv):
 
         atom_objs = self._resolve_atom(lf_atom)
         if atom_objs:
-            return [item for item in domain
-                    if lf_function(atom_objs, item)]
+            items = []
+            for atom_obj in atom_objs:
+                items.extend([item for item in domain
+                    if lf_function(atom_objs, item)])
+            return items
         return []
 
     def resolve_lf(self, id_list, domain=None):
