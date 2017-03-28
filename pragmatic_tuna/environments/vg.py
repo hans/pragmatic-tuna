@@ -30,6 +30,10 @@ class VGEnv(gym.Env):
         self.vocab2idx = {w: idx for idx, w in enumerate(self.vocab)}
         self.graph_vocab2idx = {w: idx for idx, w in enumerate(self.vocab)}
 
+        self.max_timesteps = max([len(trial["utterance"])
+                                  for corpus in self.corpora
+                                  for trial in self.corpora[corpus]])
+
     def _process_corpus(self, corpus_path):
         with open(corpus_path, "r") as corpus_f:
             corpus_data = json.load(corpus_f)
