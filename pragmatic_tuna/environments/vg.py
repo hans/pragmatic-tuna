@@ -91,7 +91,7 @@ class VGEnv(gym.Env):
         for idx in idxs:
             trial = corpus[idx]
             utterances.append(trial["utterance"])
-            positive_candidates.append(trial["domain_positive"][0])
+            positive_candidates.append(trial["domain_positive"])
 
             neg_samples = min(negative_samples, len(trial["domain_negative"]))
             neg_idxs = np.random.choice(len(trial["domain_negative"]), size=neg_samples, replace=False)
