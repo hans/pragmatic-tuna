@@ -2,6 +2,7 @@
 Defines ranking listener models.
 """
 
+import numpy as np
 import tensorflow as tf
 from tensorflow.contrib.layers import layers
 
@@ -61,14 +62,42 @@ class RankingListenerModel(object):
         """
         raise NotImplementedError
 
+    def _prepare_batch(self, words_batch, candidates_batch):
+        """
+        Pad in-place.
+
+        Returns:
+            words: num_timesteps * batch_size padded indices
+            candidates: batch_size * num_candidates * 3
+        """
+        # Pad words.
+        lengths = np.empty(len(words_batch))
+        eos_id = self.env.vocab2idx[self.env.EOS]
+        for i, words_i in enumerate(words_batch):
+            lengths[i] = len(words_i)
+            if lengths[i] < self.max_timesteps:
+                words_i.extend([eos_id] * (self.max_timesteps - lengths[i]))
+        words_batch = np.asarray(words_batch).T
+
+        # Pad candidates.
+        num_candidates = np.empty(len(candidates_batch))
+        for i, candidates_i in enumerate(candidates_batch):
+            num_candidates[i] = len(candidates_i)
+            if num_candidates[i] < self.max_candidates:
+                pad_length = self.max_candidates - num_candidates[i]
+                candidates_i.extend([(0, 0, 0)] * (pad_length))
+
+        return words_batch, candidates_batch, lengths, num_candidates
+
 
 class BoWRankingListener(RankingListenerModel):
 
     def __init__(self, env, embeddings=None, graph_embeddings=None,
-                 embedding_dim=50, **kwargs):
+                 embedding_dim=50, hidden_dim=128, **kwargs):
         self.embeddings = embeddings
         self.graph_embeddings = graph_embeddings
         self.embedding_dim = embedding_dim
+        self.hidden_dim = hidden_dim
 
         super().__init__(env, **kwargs)
 
@@ -98,12 +127,39 @@ class BoWRankingListener(RankingListenerModel):
                                          name="candidates")
         # TODO support training graph as well
 
+        # Embed utterances.
         embedded = [tf.nn.embedding_lookup(self.embeddings, words_i)
                     for words_i in self.words]
         # TODO handle variable lengths better
         embedded = tf.reduce_mean(embedded, axis=0)
+        embedded = layers.fully_connected(embedded, self.hidden_dim)
 
         # Embed candidates.
         embedded_cands = tf.nn.embedding_lookup(self.graph_embeddings, self.candidates)
-        embedded_cands = tf.reshape(embedded_cands, (-1, self.max_candidates, 3 * self.embedding_dim))
-        print(embedded_cands.get_shape())
+        # Flatten candidates to 2d matrix.
+        embedded_cands = tf.reshape(embedded_cands, (-1, 3 * self.embedding_dim))
+        embedded_cands = layers.fully_connected(embedded_cands, self.hidden_dim)
+
+        # Tile utterance representations.
+        embedded = tf.reshape(embedded, (-1, 1, self.hidden_dim))
+        embedded = tf.tile(embedded, (1, self.max_candidates, 1))
+        embedded = tf.reshape(embedded, (-1, self.hidden_dim))
+
+        # Take dot product to yield scores.
+        scores = tf.reduce_sum(embedded * embedded_cands, axis=1)
+        self.scores = tf.reshape(scores, (-1, self.max_candidates))
+
+    def rank(self, words_batch, candidates_batch):
+        words_batch, candidates_batch, lengths, num_candidates = \
+                self._prepare_batch(words_batch, candidates_batch)
+
+        feed = {self.words[t]: words_batch[t] for t in range(self.max_timesteps)}
+        feed[self.candidates] = candidates_batch
+        feed[self.lengths] = lengths
+
+        sess = tf.get_default_session()
+        scores = sess.run(self.scores, feed)
+
+        scores = [scores_i[:num_candidates_i]
+                  for scores_i, num_candidates_i in zip(scores, num_candidates)]
+        return scores
