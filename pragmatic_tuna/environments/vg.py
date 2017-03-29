@@ -94,8 +94,13 @@ class VGEnv(gym.Env):
             positive_candidates.append(trial["domain_positive"])
 
             neg_samples = min(negative_samples, len(trial["domain_negative"]))
-            neg_idxs = np.random.choice(len(trial["domain_negative"]), size=neg_samples, replace=False)
-            negative_candidates.append([trial["domain_negative"][neg_idx] for neg_idx in neg_idxs])
+            if neg_samples > 0:
+                neg_idxs = np.random.choice(len(trial["domain_negative"]), size=neg_samples, replace=False)
+                negative_candidates.append([trial["domain_negative"][neg_idx] for neg_idx in neg_idxs])
+            else:
+                # TODO how to handle this?
+                eos_id = self.graph_vocab2idx[EOS]
+                negative_candidates.append([(eos_id, eos_id, eos_id)])
 
         return utterances, positive_candidates, negative_candidates
 
