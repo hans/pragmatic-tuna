@@ -163,45 +163,29 @@ class VisualGenomeFilter(object):
                     trial['domain'] = domain
                     self.trials.append(trial)
 
+    def _appply_object_stream_function_to_json_file(self, f, function):
+        f.seek(0)
+        object_streamer = ObjectStreamer()
+        object_streamer.add_catch_all_listener(function)
+        data = f.read(100000)
+        while data != "":
+            object_streamer.consume(data)
+            data = f.read(100000)
+
     def main(self, args):
 
         f = open(args.corpus_path, 'r')
 
-        object_streamer = ObjectStreamer()
-        object_streamer.add_catch_all_listener(self._filter_candidates)
-        data = f.read(100000)
-        while data != "":
-            object_streamer.consume(data)
-            data = f.read(100000)
+        self._appply_object_stream_function_to_json_file(f, self._filter_candidates)
 
         self.train_set = self.train_candidates.difference(self.fast_mapping_candidates)
         self.fast_mapping_set = self.fast_mapping_candidates.intersection(self.train_candidates)
 
-        f.seek(0)
-        object_streamer = ObjectStreamer()
-        object_streamer.add_catch_all_listener(self._store_known_objects)
-        data = f.read(100000)
-        while data != "":
-            object_streamer.consume(data)
-            data = f.read(100000)
+        self._appply_object_stream_function_to_json_file(f, self._store_known_objects)
 
-        f.seek(0)
-        object_streamer = ObjectStreamer()
-        object_streamer.add_catch_all_listener(self._filter_fast_mapping_trials)
-        data = f.read(100000)
-        while data != "":
-            object_streamer.consume(data)
-            data = f.read(100000)
+        self._appply_object_stream_function_to_json_file(f, self._filter_fast_mapping_trials)
 
-
-        f.seek(0)
-        object_streamer = ObjectStreamer()
-        object_streamer.add_catch_all_listener(self._trial_listener)
-        data = f.read(100000)
-        while data != "":
-            object_streamer.consume(data)
-            data = f.read(100000)
-
+        self._appply_object_stream_function_to_json_file(f, self._trial_listener)
 
         json.dump(self.trials, sys.stdout, indent=4)
 
