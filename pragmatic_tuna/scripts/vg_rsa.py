@@ -8,23 +8,33 @@ from pragmatic_tuna.environments.vg import VGEnv
 from pragmatic_tuna.models.ranking_listener import BoWRankingListener
 
 
-def infer_trial(batch, listener_model, speaker_model):
+def run_trial(batch, listener_model, speaker_model):
     utterances, pos_candidates, neg_candidates = batch
 
+    # Run inference.
     pos_scores = listener_model.rank(utterances, pos_candidates)
     neg_scores = listener_model.rank(utterances, neg_candidates)
-    results = []
+    results, successes = [], []
     for example in zip(pos_candidates, pos_scores, neg_candidates, neg_scores):
         pos_cand_i, pos_scores_i, neg_cand_i, neg_scores_i = example
 
         pos_argmax = np.argmax(pos_scores_i)
         neg_argmax = np.argmax(neg_scores_i)
         if pos_scores_i[pos_argmax] > neg_scores_i[neg_argmax]:
-            results.append(pos_cand_i[pos_argmax])
+            result = pos_cand_i[pos_argmax]
             success = True
         else:
-            results.append(neg_cand_i[neg_argmax])
+            result = neg_cand_i[neg_argmax]
             success = False
+
+        results.append(result)
+        successes.append(success)
+
+    # Observe.
+    loss = listener_model.observe(utterances, pos_candidates, neg_candidates)
+
+    pct_success = np.mean(successes)
+    print("%5f\t%.2f" % (loss, pct_success * 100))
 
     return results
 
@@ -41,7 +51,7 @@ def main(args):
         for i in trange(args.n_iters):
             batch = env.get_batch("train", batch_size=args.batch_size,
                                   negative_samples=args.negative_samples)
-            predictions = infer_trial(batch, listener_model, speaker_model)
+            predictions = run_trial(batch, listener_model, speaker_model)
 
 
 if __name__ == '__main__':

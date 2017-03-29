@@ -60,6 +60,8 @@ class RankingListenerModel(object):
         Returns:
             None
         """
+        # TODO: update docs for true_referent_batch (it's nested like
+        # false_referents just because symmetry is easier)
         raise NotImplementedError
 
     def _prepare_batch(self, words_batch, candidates_batch):
@@ -123,8 +125,9 @@ class BoWRankingListener(RankingListenerModel):
         self.words = [tf.placeholder(tf.int32, shape=(None,), name="words_%i" % i)
                       for i in range(self.max_timesteps)]
 
-        self.candidates = tf.placeholder(tf.int32, shape=(None, self.max_candidates, 3),
+        self.candidates = tf.placeholder(tf.int32, shape=(None, None, 3),
                                          name="candidates")
+        num_candidates = tf.shape(self.candidates)[1]
         # TODO support training graph as well
 
         # Embed utterances.
@@ -142,12 +145,30 @@ class BoWRankingListener(RankingListenerModel):
 
         # Tile utterance representations.
         embedded = tf.reshape(embedded, (-1, 1, self.hidden_dim))
-        embedded = tf.tile(embedded, (1, self.max_candidates, 1))
+        embedded = tf.tile(embedded, (1, num_candidates, 1))
         embedded = tf.reshape(embedded, (-1, self.hidden_dim))
 
         # Take dot product to yield scores.
         scores = tf.reduce_sum(embedded * embedded_cands, axis=1)
-        self.scores = tf.reshape(scores, (-1, self.max_candidates))
+        self.scores = tf.reshape(scores, (-1, num_candidates))
+
+        ########## Loss
+        # Assumes that the positive candidate is always provided first in the
+        # candidate list.
+        batch_size = tf.shape(self.lengths)[0]
+        pos_indices = tf.range(batch_size) * num_candidates
+
+        neg_indices = tf.tile(tf.reshape(tf.range(1, num_candidates), (1, -1)), (batch_size, 1))
+        neg_indices += tf.reshape(tf.range(batch_size) * num_candidates, (-1, 1))
+        neg_indices = tf.reshape(neg_indices, (-1,))
+
+        objective = tf.reduce_mean(tf.gather(scores, pos_indices)) - tf.reduce_mean(tf.gather(scores, neg_indices))
+        # TODO L2
+        self.loss = -objective
+
+        ######### Training.
+        opt = tf.train.MomentumOptimizer(0.01, 0.9)
+        self._train_op = opt.minimize(self.loss)
 
     def rank(self, words_batch, candidates_batch):
         words_batch, candidates_batch, lengths, num_candidates = \
@@ -163,3 +184,19 @@ class BoWRankingListener(RankingListenerModel):
         scores = [scores_i[:num_candidates_i]
                   for scores_i, num_candidates_i in zip(scores, num_candidates)]
         return scores
+
+    def observe(self, words_batch, true_referents_batch, false_referents_batch):
+        words_batch, false_referents_batch, lengths, num_false_referents = \
+                self._prepare_batch(words_batch, false_referents_batch)
+
+        candidates_batch = [true_referent_i + false_referents_i
+                            for true_referent_i, false_referents_i
+                            in zip(true_referents_batch, false_referents_batch)]
+
+        feed = {self.words[t]: words_batch[t] for t in range(self.max_timesteps)}
+        feed[self.candidates] = candidates_batch
+        feed[self.lengths] = lengths
+
+        sess = tf.get_default_session()
+        _, loss = sess.run((self._train_op, self.loss), feed)
+        return loss
