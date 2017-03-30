@@ -162,9 +162,12 @@ class BoWRankingListener(RankingListenerModel):
         neg_indices += tf.reshape(tf.range(batch_size) * num_candidates, (-1, 1))
         neg_indices = tf.reshape(neg_indices, (-1,))
 
-        objective = tf.reduce_mean(tf.gather(scores, pos_indices)) - tf.reduce_mean(tf.gather(scores, neg_indices))
-        # TODO L2
-        self.loss = -objective
+        pos_scores = tf.reshape(tf.gather(scores, pos_indices), (-1, 1))
+        neg_scores = tf.reshape(tf.gather(scores, neg_indices), (-1, num_candidates - 1))
+        margin = tf.constant(1.0, name="loss_margin")
+        margin_diffs = tf.maximum(0., margin + neg_scores - pos_scores)
+        margin_diffs = tf.reduce_sum(margin_diffs, axis=1)
+        self.loss = tf.reduce_mean(margin_diffs)
 
         ######### Training.
         opt = tf.train.MomentumOptimizer(0.01, 0.9)
