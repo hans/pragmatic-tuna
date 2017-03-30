@@ -128,13 +128,13 @@ class BoWRankingListener(RankingListenerModel):
         self.candidates = tf.placeholder(tf.int32, shape=(None, None, 3),
                                          name="candidates")
         num_candidates = tf.shape(self.candidates)[1]
-        # TODO support training graph as well
 
         # Embed utterances.
-        embedded = [tf.nn.embedding_lookup(self.embeddings, words_i)
-                    for words_i in self.words]
-        # TODO handle variable lengths better
-        embedded = tf.reduce_mean(embedded, axis=0)
+        lengths_temp = tf.to_float(tf.expand_dims(self.lengths, 1))
+        embedded = [tf.to_float(t < lengths_temp) \
+                        * tf.nn.embedding_lookup(self.embeddings, words_t)
+                    for t, words_t in enumerate(self.words)]
+        embedded = tf.reduce_sum(embedded, axis=0) / lengths_temp
         embedded = layers.fully_connected(embedded, self.hidden_dim)
 
         # Embed candidates.
