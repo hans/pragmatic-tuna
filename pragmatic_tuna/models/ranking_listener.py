@@ -4,7 +4,7 @@ Defines ranking listener models.
 
 import numpy as np
 import tensorflow as tf
-from tensorflow.contrib.layers import layers
+from tensorflow.contrib import layers
 
 from pragmatic_tuna.util import orthogonal_initializer
 
@@ -154,8 +154,12 @@ class BoWRankingListener(RankingListenerModel):
         embedded = tf.tile(embedded, (1, num_candidates, 1))
         embedded = tf.reshape(embedded, (-1, self.hidden_dim))
 
+        # Concat and compute a bit more.
+        concat = tf.concat((embedded, embedded_cands), 1)
+        concat = layers.fully_connected(concat, self.hidden_dim, activation_fn=tf.tanh)
+        scores = tf.squeeze(layers.fully_connected(concat, 1, activation_fn=tf.tanh), [1])
+
         # Take dot product to yield scores.
-        scores = tf.reduce_sum(embedded * embedded_cands, axis=1)
         self.scores = tf.reshape(scores, (-1, num_candidates))
 
         ########## Loss
