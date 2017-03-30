@@ -44,14 +44,15 @@ class VGEnv(gym.Env):
             if trial["type"] not in corpora:
                 corpora[trial["type"]] = []
 
-            for word in trial["utterance"].split():
+            utterance = trial["utterance"].lower()
+            for word in utterance.split():
                 vocab.add(word)
 
             domain_positive, domain_negative = [], []
             for subgraph in trial["domain"]:
-                obj1 = subgraph["object1"][:subgraph["object1"].index(".")]
-                obj2 = subgraph["object2"][:subgraph["object2"].index(".")]
-                reln = subgraph["reln"][:subgraph["reln"].index(".")]
+                obj1 = subgraph["object1"]
+                obj2 = subgraph["object2"]
+                reln = subgraph["reln"]
                 graph_vocab.add(obj1)
                 graph_vocab.add(obj2)
                 graph_vocab.add(reln)
@@ -60,7 +61,7 @@ class VGEnv(gym.Env):
                 domain.append((reln, obj1, obj2))
 
             corpora[trial["type"]].append({
-                "utterance": trial["utterance"],
+                "utterance": utterance,
                 "domain_positive": domain_positive,
                 "domain_negative": domain_negative
             })
