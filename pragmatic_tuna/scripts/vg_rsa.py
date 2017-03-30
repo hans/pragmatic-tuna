@@ -8,6 +8,7 @@ from pragmatic_tuna.environments.vg import VGEnv
 from pragmatic_tuna.models.ranking_listener import BoWRankingListener
 
 
+LEARNING_RATE = 0.005
 def run_trial(batch, listener_model, speaker_model):
     utterances, pos_candidates, neg_candidates = batch
 
@@ -31,7 +32,11 @@ def run_trial(batch, listener_model, speaker_model):
         successes.append(success)
 
     # Observe.
-    loss = listener_model.observe(utterances, pos_candidates, neg_candidates)
+    global LEARNING_RATE
+    loss = listener_model.observe(utterances, pos_candidates, neg_candidates, learning_rate=LEARNING_RATE)
+    if loss < 2.0 and LEARNING_RATE == 0.005:
+        pass#tqdm.write("========== Cutting learning rate.")
+        #LEARNING_RATE = 0.0005
 
     pct_success = np.mean(successes)
     tqdm.write("%5f\t%.2f" % (loss, pct_success * 100))

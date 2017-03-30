@@ -101,7 +101,7 @@ class RankingListenerModel(object):
 class BoWRankingListener(RankingListenerModel):
 
     def __init__(self, env, embeddings=None, graph_embeddings=None,
-                 embedding_dim=128, hidden_dim=256, **kwargs):
+                 embedding_dim=128, hidden_dim=512, **kwargs):
         self.embeddings = embeddings
         self.graph_embeddings = graph_embeddings
         self.embedding_dim = embedding_dim
@@ -170,13 +170,14 @@ class BoWRankingListener(RankingListenerModel):
 
         pos_scores = tf.reshape(tf.gather(scores, pos_indices), (-1, 1))
         neg_scores = tf.reshape(tf.gather(scores, neg_indices), (-1, num_candidates - 1))
-        margin = tf.constant(1.0, name="loss_margin")
+        margin = tf.constant(0.5, name="loss_margin")
         margin_diffs = tf.maximum(0., margin + neg_scores - pos_scores)
         margin_diffs = tf.reduce_sum(margin_diffs, axis=1)
         self.loss = tf.reduce_mean(margin_diffs)
 
         ######### Training.
-        opt = tf.train.MomentumOptimizer(0.01, 0.9)
+        self.learning_rate = tf.Variable(0.01, name="learning_rate")
+        opt = tf.train.AdagradOptimizer(self.learning_rate)
         self._train_op = opt.minimize(self.loss)
 
     def rank(self, words_batch, candidates_batch):
@@ -194,7 +195,8 @@ class BoWRankingListener(RankingListenerModel):
                   for scores_i, num_candidates_i in zip(scores, num_candidates)]
         return scores
 
-    def observe(self, words_batch, true_referents_batch, false_referents_batch):
+    def observe(self, words_batch, true_referents_batch, false_referents_batch,
+                learning_rate=None):
         words_batch, false_referents_batch, lengths, num_false_referents = \
                 self._prepare_batch(words_batch, false_referents_batch)
 
@@ -206,6 +208,8 @@ class BoWRankingListener(RankingListenerModel):
         feed = {self.words[t]: words_batch[t] for t in range(self.max_timesteps)}
         feed[self.candidates] = candidates_batch
         feed[self.lengths] = lengths
+        if learning_rate is not None:
+            feed[self.learning_rate] = learning_rate
 
         sess = tf.get_default_session()
         _, loss = sess.run((self._train_op, self.loss), feed)
