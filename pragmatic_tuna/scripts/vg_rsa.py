@@ -79,6 +79,8 @@ def main(args):
                     print("\n========== False:")
                     print("\n".join(false))
 
+            sv.request_stop()
+
 
 if __name__ == '__main__':
     p = ArgumentParser()
