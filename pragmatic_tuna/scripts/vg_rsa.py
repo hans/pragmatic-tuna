@@ -34,9 +34,9 @@ def run_trial(batch, listener_model, speaker_model):
     loss = listener_model.observe(utterances, pos_candidates, neg_candidates)
 
     pct_success = np.mean(successes)
-    print("%5f\t%.2f" % (loss, pct_success * 100))
+    tqdm.write("%5f\t%.2f" % (loss, pct_success * 100))
 
-    return results
+    return results, loss, pct_success
 
 def main(args):
     env = VGEnv(args.corpus_path)
@@ -48,10 +48,30 @@ def main(args):
     sess.run(tf.global_variables_initializer())
 
     with sess.as_default():
+        losses, pct_successes = [], []
         for i in trange(args.n_iters):
             batch = env.get_batch("train", batch_size=args.batch_size,
                                   negative_samples=args.negative_samples)
-            predictions = run_trial(batch, listener_model, speaker_model)
+            predictions, loss, pct_success = run_trial(batch, listener_model, speaker_model)
+
+            losses.append(loss)
+            pct_successes.append(pct_success)
+
+            if i == args.n_iters - 1:
+                # Debug: print utterances
+                correct, false = [], []
+                b_utt, b_pos, b_neg = batch
+                for utterance, pos_cands, neg_cands, prediction in zip(b_utt, b_pos, b_neg, predictions):
+                    utterance = " ".join([env.vocab[idx] for idx in utterance])
+
+                    dest = correct if prediction == pos_cands[0] else false
+                    dest.append("%30s\t%s" % (utterance, " ".join([env.graph_vocab[idx] for idx in prediction])))
+
+                print("=========== Correct:")
+                print("\n".join(correct))
+
+                print("\n========== False:")
+                print("\n".join(false))
 
 
 if __name__ == '__main__':
