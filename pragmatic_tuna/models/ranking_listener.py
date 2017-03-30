@@ -101,7 +101,7 @@ class RankingListenerModel(object):
 class BoWRankingListener(RankingListenerModel):
 
     def __init__(self, env, embeddings=None, graph_embeddings=None,
-                 embedding_dim=50, hidden_dim=128, **kwargs):
+                 embedding_dim=128, hidden_dim=256, **kwargs):
         self.embeddings = embeddings
         self.graph_embeddings = graph_embeddings
         self.embedding_dim = embedding_dim

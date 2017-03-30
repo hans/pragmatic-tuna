@@ -44,7 +44,7 @@ class VGEnv(gym.Env):
             if trial["type"] not in corpora:
                 corpora[trial["type"]] = []
 
-            utterance = trial["utterance"].lower()
+            utterance = trial["utterance"].lower().strip(".!?")
             for word in utterance.split():
                 vocab.add(word)
 
