@@ -66,7 +66,7 @@ class RankingListenerModel(object):
 
     def _prepare_batch(self, words_batch, candidates_batch):
         """
-        Pad in-place.
+        Pad (not in-place).
 
         Returns:
             words: num_timesteps * batch_size padded indices
@@ -75,21 +75,27 @@ class RankingListenerModel(object):
         # Pad words.
         lengths = np.empty(len(words_batch))
         eos_id = self.env.vocab2idx[self.env.EOS]
+        words_batch_ret = []
         for i, words_i in enumerate(words_batch):
             lengths[i] = len(words_i)
+            ret_i = words_i[:]
             if lengths[i] < self.max_timesteps:
-                words_i.extend([eos_id] * (self.max_timesteps - lengths[i]))
-        words_batch = np.asarray(words_batch).T
+                ret_i.extend([eos_id] * (self.max_timesteps - lengths[i]))
+            words_batch_ret.append(ret_i)
+        words_batch_ret = np.asarray(words_batch_ret).T
 
         # Pad candidates.
         num_candidates = np.empty(len(candidates_batch))
+        candidates_batch_ret = []
         for i, candidates_i in enumerate(candidates_batch):
             num_candidates[i] = len(candidates_i)
+            ret_i = candidates_i[:]
             if num_candidates[i] < self.max_candidates:
                 pad_length = self.max_candidates - num_candidates[i]
-                candidates_i.extend([(0, 0, 0)] * (pad_length))
+                ret_i.extend([(0, 0, 0)] * (pad_length))
+            candidates_batch_ret.append(ret_i)
 
-        return words_batch, candidates_batch, lengths, num_candidates
+        return words_batch_ret, candidates_batch_ret, lengths, num_candidates
 
 
 class BoWRankingListener(RankingListenerModel):
@@ -196,6 +202,7 @@ class BoWRankingListener(RankingListenerModel):
                             for true_referent_i, false_referents_i
                             in zip(true_referents_batch, false_referents_batch)]
 
+        # TODO don't update on false candidates
         feed = {self.words[t]: words_batch[t] for t in range(self.max_timesteps)}
         feed[self.candidates] = candidates_batch
         feed[self.lengths] = lengths
