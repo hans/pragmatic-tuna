@@ -178,11 +178,9 @@ class BoWRankingListener(RankingListenerModel):
         margin_diffs = tf.maximum(0., margin + neg_scores - pos_scores)
         margin_diffs = tf.reduce_sum(margin_diffs, axis=1)
         self.loss = tf.reduce_mean(margin_diffs)
+        tf.summary.scalar("loss", self.loss)
 
-        ######### Training.
-        self.learning_rate = tf.Variable(0.001, name="learning_rate")
-        opt = tf.train.MomentumOptimizer(self.learning_rate, 0.9)#AdagradOptimizer(self.learning_rate)
-        self._train_op = opt.minimize(self.loss)
+        self.train_op = None
 
     def rank(self, words_batch, candidates_batch):
         words_batch, candidates_batch, lengths, num_candidates = \
@@ -199,8 +197,7 @@ class BoWRankingListener(RankingListenerModel):
                   for scores_i, num_candidates_i in zip(scores, num_candidates)]
         return scores
 
-    def observe(self, words_batch, true_referents_batch, false_referents_batch,
-                learning_rate=None):
+    def observe(self, words_batch, true_referents_batch, false_referents_batch):
         words_batch, false_referents_batch, lengths, num_false_referents = \
                 self._prepare_batch(words_batch, false_referents_batch)
 
@@ -212,9 +209,7 @@ class BoWRankingListener(RankingListenerModel):
         feed = {self.words[t]: words_batch[t] for t in range(self.max_timesteps)}
         feed[self.candidates] = candidates_batch
         feed[self.lengths] = lengths
-        if learning_rate is not None:
-            feed[self.learning_rate] = learning_rate
 
         sess = tf.get_default_session()
-        _, loss = sess.run((self._train_op, self.loss), feed)
+        _, loss = sess.run((self.train_op, self.loss), feed)
         return loss
