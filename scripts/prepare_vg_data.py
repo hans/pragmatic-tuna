@@ -4,6 +4,7 @@
 from argparse import ArgumentParser
 from jsonstreamer import ObjectStreamer
 import sys
+import json
 
 
 TRAIN_RELATIONS = ["along.r.01", "in.r.01"]
@@ -19,7 +20,7 @@ class VisualGenomeFilter(object):
         self.fast_mapping_set = set()
         self.known_objects = set()
         self.fast_mapping_trials = set()
-        self.trials = set()
+        self.trials = []
 
     # adds all images that contain a region with at least one of the relations in TRAIN_RELATION
     # to train_candidates, and images w/ a region with a relation in FAST_MAPPING_RELATIONS
@@ -112,7 +113,7 @@ class VisualGenomeFilter(object):
             domain = []
 
             #add training trial
-            if image_id in train_set:
+            if image_id in self.train_set:
                 for region in image['regions']:
                     if len(region['relationships']) != 1:
                         continue 
