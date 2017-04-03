@@ -19,7 +19,7 @@ def infer_trial(candidates, listener_scores, speaker_scores):
     return results
 
 
-def run_trial(batch, listener_model, speaker_model):
+def run_trial(batch, listener_model, speaker_model, update=True):
     utterances, candidates, lengths, n_cands = batch
 
     # Fetch model scores and rank for pragmatic listener inference.
@@ -30,15 +30,16 @@ def run_trial(batch, listener_model, speaker_model):
     successes = [result_i == candidates_i[0]
                  for result_i, candidates_i in zip(results, candidates)]
 
-    # Observe.
-    # TODO: joint optimization?
-    l_loss = listener_model.observe(*batch)
-    s_loss, avg_prob = speaker_model.observe(*batch)
+    if update:
+        # Observe.
+        # TODO: joint optimization?
+        l_loss = listener_model.observe(*batch)
+        s_loss, avg_prob = speaker_model.observe(*batch)
+    else:
+        l_loss = s_loss = avg_prob = 0.0
 
     pct_success = np.mean(successes)
-    tqdm.write("%5f\t%5f\t%5g\t%.2f" % (l_loss, s_loss, avg_prob, pct_success * 100))
-
-    return results, l_loss, pct_success
+    return results, (l_loss, s_loss), avg_prob, pct_success
 
 
 def main(args):
@@ -72,11 +73,20 @@ def main(args):
             for i in trange(args.n_iters):
                 batch = env.get_batch("train", batch_size=args.batch_size,
                                       negative_samples=args.negative_samples)
-                predictions, loss, pct_success = \
+                predictions, losses_i, avg_prob, pct_success = \
                         run_trial(batch, listener_model, speaker_model)
+                tqdm.write("%5f\t%5f\t%5g\t%.2f" % (losses_i[0], losses_i[1],
+                                                    avg_prob, pct_success * 100))
 
-                losses.append(loss)
+                losses.append(losses_i)
                 pct_successes.append(pct_success)
+
+                # Try fast-mapping.
+                batch = env.get_batch("fast_mapping", batch_size=args.batch_size,
+                                      negative_samples=args.negative_samples)
+                predictions, loss, avg_prob, pct_success = \
+                        run_trial(batch, listener_model, speaker_model, update=False)
+                tqdm.write("\t\t%5f" % (pct_success * 100))
 
                 if i == args.n_iters - 1:
                     # Debug: print utterances
