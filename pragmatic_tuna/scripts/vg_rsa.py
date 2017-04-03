@@ -75,8 +75,6 @@ def main(args):
                                       negative_samples=args.negative_samples)
                 predictions, losses_i, avg_prob, pct_success = \
                         run_trial(batch, listener_model, speaker_model)
-                tqdm.write("%5f\t%5f\t%5g\t%.2f" % (losses_i[0], losses_i[1],
-                                                    avg_prob, pct_success * 100))
 
                 losses.append(losses_i)
                 pct_successes.append(pct_success)
@@ -84,9 +82,12 @@ def main(args):
                 # Try fast-mapping.
                 batch = env.get_batch("fast_mapping", batch_size=args.batch_size,
                                       negative_samples=args.negative_samples)
-                predictions, loss, avg_prob, pct_success = \
+                _, _, _, pct_fm_success = \
                         run_trial(batch, listener_model, speaker_model, update=False)
-                tqdm.write("\t\t%5f" % (pct_success * 100))
+
+                tqdm.write("%5f\t%5f\t%5g\t%.2f\t\t%3f"
+                           % (losses_i[0], losses_i[1], avg_prob, pct_success * 100,
+                              pct_fm_success * 100))
 
                 if i == args.n_iters - 1:
                     # Debug: print utterances
