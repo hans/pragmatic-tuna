@@ -50,8 +50,13 @@ class VGEnv(gym.Env):
             if trial["type"] not in corpora:
                 corpora[trial["type"]] = []
 
-            utterance = trial["utterance"].lower().strip(".!?")
-            for word in utterance.split():
+            utterance = trial["utterance"].lower().strip(".!?").split()
+
+            # DEV: Skip trials with long utterances.
+            if len(utterance) > 10:
+                continue
+
+            for word in utterance:
                 vocab.add(word)
 
             domain_positive, domain_negative = [], []
@@ -80,7 +85,7 @@ class VGEnv(gym.Env):
         # Now reprocess trials, replacing strings with IDs.
         for corpus_name, corpus in corpora.items():
             for trial in corpus:
-                trial["utterance"] = [vocab2idx[word] for word in trial["utterance"].split()]
+                trial["utterance"] = [vocab2idx[word] for word in trial["utterance"]]
                 trial["domain_positive"] = [tuple([graph_vocab2idx[x] for x in subgraph])
                                             for subgraph in trial["domain_positive"]]
                 trial["domain_negative"] = [tuple([graph_vocab2idx[x] for x in subgraph])
