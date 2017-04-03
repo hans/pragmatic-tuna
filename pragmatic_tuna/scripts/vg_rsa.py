@@ -33,10 +33,10 @@ def run_trial(batch, listener_model, speaker_model):
     # Observe.
     # TODO: joint optimization?
     l_loss = listener_model.observe(*batch)
-    #s_loss = speaker_model.observe(*batch)
+    s_loss, avg_prob = speaker_model.observe(*batch)
 
     pct_success = np.mean(successes)
-    tqdm.write("%5f\t%.2f" % (l_loss, pct_success * 100))
+    tqdm.write("%5f\t%5f\t%4f\t%.2f" % (l_loss, s_loss, avg_prob, pct_success * 100))
 
     return results, l_loss, pct_success
 
@@ -53,11 +53,15 @@ def main(args):
             embeddings=listener_model.embeddings,
             graph_embeddings=listener_model.graph_embeddings)
 
-    global_step = tf.Variable(0, name="global_step")
     opt = tf.train.MomentumOptimizer(args.learning_rate, 0.9)
-    train_op = opt.minimize(listener_model.loss, global_step=global_step)
-    listener_model.train_op = train_op
+    l_global_step = tf.Variable(0, name="global_step_listener")
+    listener_model.train_op = opt.minimize(listener_model.loss,
+                                           global_step=l_global_step)
+    s_global_step = tf.Variable(0, name="global_step_speaker")
+    speaker_model.train_op = opt.minimize(speaker_model.loss,
+                                          global_step=s_global_step)
 
+    global_step = l_global_step + s_global_step
     sv = tf.train.Supervisor(logdir=args.logdir, global_step=global_step,
                              summary_op=None)
 
@@ -79,7 +83,10 @@ def main(args):
                     b_utt, b_cands, _, _ = batch
                     for utterance, cands, prediction in zip(b_utt.T, b_cands, predictions):
                         utterance = list(utterance)
-                        utterance = utterance[:utterance.index(env.vocab2idx[env.EOS])]
+                        try:
+                            utterance = utterance[:utterance.index(env.vocab2idx[env.EOS])]
+                        except ValueError: pass
+
                         utterance = " ".join([env.vocab[idx] for idx in utterance])
 
                         dest = correct if prediction == cands[0] else false

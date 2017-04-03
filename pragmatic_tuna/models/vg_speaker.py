@@ -25,12 +25,6 @@ class SpeakerModel(object):
     def _build_graph(self):
         raise NotImplementedError
 
-    def build_rl_gradients(self):
-        raise NotImplementedError
-
-    def build_xent_gradients(self):
-        raise NotImplementedError
-
     def sample(self, subgraphs, argmax=False):
         """
         Sample utterances using the given graph representations.
@@ -64,28 +58,6 @@ class SpeakerModel(object):
 
 
 class SequenceSpeakerModel(SpeakerModel):
-
-    def build_xent_gradients(self):
-        gold_words = [tf.placeholder(tf.int32, shape=(None,),
-                                     name="gold_word_%i" % t)
-                      for t in range(self.max_timesteps)]
-        gold_length = tf.placeholder(tf.int32, shape=(None,),
-                                     name="gold_lengths")
-
-        loss_weights = [tf.to_float(t < gold_length)
-                        for t in range(self.max_timesteps)]
-        loss = tf.nn.seq2seq.sequence_loss(self.outputs, gold_words,
-                                           loss_weights)
-
-        params = tf.trainable_variables()
-        gradients = tf.gradients(loss, params)
-
-        self.xent_gold_words = gold_words
-        self.xent_gold_length = gold_length
-        self.xent_gradients = zip(gradients, params)
-
-        return ((self.xent_gold_words, self.xent_gold_length),
-                (self.xent_gradients,))
 
     def sample(self, z, argmax=False):
         sess = tf.get_default_session()
@@ -126,35 +98,51 @@ class SequenceSpeakerModel(SpeakerModel):
 
         # probs: `num_timesteps * (batch_size * max_cands) * vocab_size`
         probs = sess.run(self.probs, feed)
+        scores = self._probs_to_scores(probs, words, lengths_rep)
 
-        # Collect cumulative probabilities for each input sequence (each
-        # candidate in each example)
+        # Reshape and trim off any padded input candidates.
+        scores = scores.reshape((batch_size, num_candidates))
+        scores = [scores_i[:n_cands_i]
+                  for scores_i, n_cands_i in zip(scores, n_cands)]
+        return scores
+
+    def _probs_to_scores(self, probs, words, lengths):
+        """
+        Fold over a sequence of probability distribution batches with a batch of
+        actual word sequences to produce a batch of predictions p(sequence).
+        """
+
         n_inputs = len(probs[0])
         cum_probs = np.zeros(n_inputs)
         arange = np.arange(n_inputs)
         for t, (probs_t, words_t) in enumerate(zip(probs, words)):
-            mask_t = t < lengths_rep
+            mask_t = t < lengths
             probs_t = mask_t * probs_t[arange, words_t]
-            cum_probs += np.log(probs_t)
-        cum_probs = cum_probs.reshape((batch_size, num_candidates))
+            cum_probs += np.log(probs_t + 1e-8)
 
-        scores = [cum_probs_i[:n_cands_i]
-                  for cum_probs_i, n_cands_i in zip(cum_probs, n_cands)]
-        return scores
+        return cum_probs
 
     def observe(self, words_batch, candidates_batch, lengths, n_cands,
                 true_referent_position=0):
-        graph_toks = [candidates_i[true_referent_position]
+        graph_toks = [[candidates_i[true_referent_position]]
                       for candidates_i in candidates_batch]
 
         sess = tf.get_default_session()
-        feed = {self.xent_gold_words[t]: words_t
+        feed = {self.gold_words[t]: words_t
                 for t, words_t in enumerate(words_batch)}
         feed.update({self.samples[t]: words_t
                      for t, words_t in enumerate(words_batch)})
         feed[self.graph_toks] = graph_toks
-        feed[self.xent_gold_length] = lengths
-        sess.run(self.train_op, feed)
+        feed[self.gold_length] = lengths
+
+        ret = sess.run([self.train_op, self.loss] + self.probs, feed)
+        loss = ret[1]
+
+        probs = ret[2:]
+        scores = self._probs_to_scores(probs, words_batch, lengths)
+        avg_prob = np.exp(scores).mean()
+
+        return loss, avg_prob
 
 
 class WindowedSequenceSpeakerModel(SequenceSpeakerModel):
@@ -234,4 +222,20 @@ class WindowedSequenceSpeakerModel(SequenceSpeakerModel):
             self.outputs = outputs
             self.probs = probs
             self.samples = samples
+
+
+            ######### Loss
+            gold_words = [tf.placeholder(tf.int32, shape=(None,),
+                                         name="gold_word_%i" % t)
+                          for t in range(self.max_timesteps)]
+            gold_length = tf.placeholder(tf.int32, shape=(None,),
+                                         name="gold_lengths")
+            self.gold_words = gold_words
+            self.gold_length = gold_length
+
+            loss_weights = [tf.to_float(t < gold_length)
+                            for t in range(self.max_timesteps)]
+            loss = tf.nn.seq2seq.sequence_loss(self.outputs, gold_words,
+                                               loss_weights)
+            self.loss = loss
 
