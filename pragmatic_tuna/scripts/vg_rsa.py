@@ -9,23 +9,25 @@ from pragmatic_tuna.models.ranking_listener import BoWRankingListener
 from pragmatic_tuna.models.vg_speaker import WindowedSequenceSpeakerModel
 
 
-def infer_trial(candidates, listener_scores, speaker_scores):
+def infer_trial(candidates, listener_scores, speaker_scores, infer_with_speaker=False):
     """
     Rerank batch of candidates based on listener + speaker scores.
     Return top-scoring candidates.
     """
-    results = [candidates_i[l_scores_i.argmax()]
-               for candidates_i, l_scores_i in zip(candidates, listener_scores)]
+    scores = speaker_scores if infer_with_speaker else listener_scores
+    results = [candidates_i[scores_i.argmax()]
+               for candidates_i, scores_i in zip(candidates, scores)]
     return results
 
 
-def run_trial(batch, listener_model, speaker_model, update=True):
+def run_trial(batch, listener_model, speaker_model, update=True, infer_with_speaker=False):
     utterances, candidates, lengths, n_cands = batch
 
     # Fetch model scores and rank for pragmatic listener inference.
     listener_scores = listener_model.score(*batch)
     speaker_scores = speaker_model.score(*batch)
-    results = infer_trial(candidates, listener_scores, speaker_scores)
+    results = infer_trial(candidates, listener_scores, speaker_scores,
+                          infer_with_speaker=infer_with_speaker)
 
     successes = [result_i == candidates_i[0]
                  for result_i, candidates_i in zip(results, candidates)]
@@ -74,16 +76,17 @@ def main(args):
                 batch = env.get_batch("train", batch_size=args.batch_size,
                                       negative_samples=args.negative_samples)
                 predictions, losses_i, avg_prob, pct_success = \
-                        run_trial(batch, listener_model, speaker_model)
+                        run_trial(batch, listener_model, speaker_model, update=False)
 
                 losses.append(losses_i)
                 pct_successes.append(pct_success)
 
                 # Try fast-mapping.
-                batch = env.get_batch("fast_mapping", batch_size=args.batch_size,
-                                      negative_samples=args.negative_samples)
+                fm_batch = env.get_batch("fast_mapping", batch_size=args.batch_size,
+                                         negative_samples=args.negative_samples)
                 _, _, _, pct_fm_success = \
-                        run_trial(batch, listener_model, speaker_model, update=False)
+                        run_trial(fm_batch, listener_model, speaker_model,
+                                  update=False, infer_with_speaker=True)
 
                 tqdm.write("%5f\t%5f\t%5g\t%.2f\t\t%3f"
                            % (losses_i[0], losses_i[1], avg_prob, pct_success * 100,
