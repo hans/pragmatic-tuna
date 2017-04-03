@@ -16,7 +16,7 @@ class VGEnv(gym.Env):
     UNK = UNK
     EOS = EOS
 
-    def __init__(self, corpus_path):
+    def __init__(self, corpus_path, max_negative_samples=5):
         if corpus_path.endswith(".pkl"):
             with open(corpus_path, "rb") as corpus_pkl:
                 self.corpora, self.vocab, self.graph_vocab = pickle.load(corpus_pkl)
@@ -35,6 +35,10 @@ class VGEnv(gym.Env):
         self.max_timesteps = max([len(trial["utterance"])
                                   for corpus in self.corpora
                                   for trial in self.corpora[corpus]])
+
+        # Assumes 1 positive candidate per example
+        self.max_negative_samples = max_negative_samples
+        self.max_candidates = max_negative_samples + 1
 
     def _process_corpus(self, corpus_path):
         with open(corpus_path, "r") as corpus_f:
@@ -84,15 +88,58 @@ class VGEnv(gym.Env):
 
         return corpora, vocab, graph_vocab
 
+    def _prepare_batch(self, words_batch, candidates_batch):
+        """
+        Pad a batch (not in-place).
+
+        Returns:
+            words: num_timesteps * batch_size padded indices
+            candidates: batch_size * num_candidates * 3
+            lengths: batch_size vector of original utterance lengths
+            num_candidates: batch_size vector of original num. candidates per
+                example
+        """
+
+        # Pad words.
+        lengths = np.empty(len(words_batch))
+        eos_id = self.vocab2idx[self.EOS]
+        words_batch_ret = []
+        for i, words_i in enumerate(words_batch):
+            lengths[i] = len(words_i)
+            ret_i = words_i[:]
+            if lengths[i] < self.max_timesteps:
+                ret_i.extend([eos_id] * (self.max_timesteps - lengths[i]))
+            words_batch_ret.append(ret_i)
+        words_batch_ret = np.asarray(words_batch_ret).T
+
+        # Pad candidates.
+        num_candidates = np.empty(len(candidates_batch))
+        candidates_batch_ret = []
+        for i, candidates_i in enumerate(candidates_batch):
+            num_candidates[i] = len(candidates_i)
+            ret_i = candidates_i[:]
+            if num_candidates[i] < self.max_candidates:
+                pad_length = self.max_candidates - num_candidates[i]
+                ret_i.extend([(0, 0, 0)] * (pad_length))
+            candidates_batch_ret.append(ret_i)
+
+        return words_batch_ret, candidates_batch_ret, lengths, num_candidates
+
+
     def get_batch(self, corpus, batch_size=64, negative_samples=5):
         """
         Return a training batch.
 
-        Returns:
-            utterances:
-            candidates: `batch_size` list of lists. In each sublist, the
-                positive candidate always comes first.
+        Returns: see `self._prepare_batch`
+            words: `max_timesteps * batch_size` vocab token ndarray
+            candidates: `batch_size * max_candidates` list of lists. In each
+                sublist, the positive candidate always comes first.
+            lengths:
+            num_candidates:
         """
+        # Assumes 1 positive candidate per example
+        assert negative_samples <= self.max_negative_samples
+
         corpus = self.corpora[corpus]
         assert len(corpus) >= batch_size
         idxs = np.random.choice(len(corpus), size=batch_size, replace=False)
@@ -116,7 +163,7 @@ class VGEnv(gym.Env):
             utterances.append(trial["utterance"])
             candidates.append(candidates_i)
 
-        return utterances, candidates
+        return self._prepare_batch(utterances, candidates)
 
     # TODO support fast-mapping fetch
     # TODO support dreaming: mix synthesized examples with past examples from training

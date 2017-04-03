@@ -20,10 +20,10 @@ def infer_trial(candidates, listener_scores, speaker_scores):
 
 
 def run_trial(batch, listener_model, speaker_model):
-    utterances, candidates = batch
+    utterances, candidates, lengths, n_cands = batch
 
     # Fetch model scores and rank for pragmatic listener inference.
-    listener_scores = listener_model.score(utterances, candidates)
+    listener_scores = listener_model.score(*batch)
     speaker_scores = None#speaker_scores = speaker_model.score_batch(utterances, candidates)
     results = infer_trial(candidates, listener_scores, speaker_scores)
 
@@ -31,12 +31,14 @@ def run_trial(batch, listener_model, speaker_model):
                  for result_i, candidates_i in zip(results, candidates)]
 
     # Observe.
-    loss = listener_model.observe(utterances, candidates)
+    # TODO: joint optimization?
+    l_loss = listener_model.observe(*batch)
+    #s_loss = speaker_model.observe(*batch)
 
     pct_success = np.mean(successes)
-    tqdm.write("%5f\t%.2f" % (loss, pct_success * 100))
+    tqdm.write("%5f\t%.2f" % (l_loss, pct_success * 100))
 
-    return results, loss, pct_success
+    return results, l_loss, pct_success
 
 
 def main(args):
@@ -74,7 +76,7 @@ def main(args):
                 if i == args.n_iters - 1:
                     # Debug: print utterances
                     correct, false = [], []
-                    b_utt, b_cands = batch
+                    b_utt, b_cands, _, _ = batch
                     for utterance, cands, prediction in zip(b_utt, b_cands, predictions):
                         utterance = " ".join([env.vocab[idx] for idx in utterance])
 

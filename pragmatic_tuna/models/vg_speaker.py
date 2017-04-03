@@ -31,19 +31,35 @@ class SpeakerModel(object):
     def build_xent_gradients(self):
         raise NotImplementedError
 
-    def sample(self, subgraph, argmax=False):
+    def sample(self, subgraphs, argmax=False):
+        """
+        Sample utterances using the given graph representations.
+
+        Args:
+            subgraphs: list of referent tuples
+        Returns:
+            utterances: `num_timesteps * batch_size` batch of utterances as
+                vocab IDs
+        """
         raise NotImplementedError
 
-    def score(self, utterance, subgraph):
+    def score(self, utterances, subgraphs, lengths, n_cands):
+        """
+        Score the given batch of utterances and potential referents.
+        """
         raise NotImplementedError
 
-    def score_batch(self, utterances_batch, subgraphs):
-        raise NotImplementedError
+    def observe(self, words_batch, candidates_batch, lengths, n_cands,
+                true_referent_position=0):
+        """
+        Observe a batch of referents with positive candidates and negatively
+        sampled false candidates.
 
-    def observe(self, utterance, pos_candidates, neg_candidates):
-        raise NotImplementedError
-
-    def observe_batch(self, utterances_batch, pos_cands_batch, neg_cands_batch):
+        Args:
+            words_batch:
+            candidates_batch:
+            true_referent_position:
+        """
         raise NotImplementedError
 
 
@@ -100,34 +116,18 @@ class SequenceSpeakerModel(SpeakerModel):
         probs = [probs_t[0, word_t] for probs_t, word_t in zip(probs, words)]
         return np.log(np.prod(probs))
 
-    def observe(self, obs, gold_lf):
-        if gold_lf is None:
-            return
-
-        return self.observe_batch([obs[1]], [gold_lf])
-
-    def observe_batch(self, words_lists, gold_lfs):
-        n = len(gold_lfs)
-        z = np.zeros(shape=(n, self.max_timesteps), dtype=np.int32)
-        real_lengths = np.zeros(shape=n, dtype=np.int32)
-        for i, gold_lf in enumerate(gold_lfs):
-            padded_lf = self.env.pad_graph_idxs(gold_lf)
-            for j in range(self.max_timesteps):
-                z[i][j] = padded_lf[j]
-
-        gold_words = [np.zeros(shape=(n,), dtype=np.int32) for _ in range(self.max_timesteps)]
-        for i, words in enumerate(words_lists):
-            real_lengths[i] = min(len(words) + 1, self.max_timesteps)
-            words = self.env.get_word_idxs(words)
-            for j in range(len(words)):
-                gold_words[j][i] = words[j]
+    def observe(self, words_batch, candidates_batch, lengths, n_cands,
+                true_referent_position=0):
+        graph_toks = [candidates_i[true_referent_position]
+                      for candidates_i in candidates_batch]
 
         sess = tf.get_default_session()
-        feed = {self.graph_toks: z, self.xent_gold_length: real_lengths}
-        feed.update({self.xent_gold_words[t]: word_t
-                    for t, word_t in enumerate(gold_words)})
-        feed.update({self.samples[t]: word_t
-                     for t, word_t in enumerate(gold_words)})
+        feed = {self.xent_gold_words[t]: words_t
+                for t, words_t in enumerate(words_batch)}
+        feed.update({self.samples[t]: words_t
+                     for t, words_t in enumerate(words_batch)})
+        feed[self.graph_toks] = graph_toks
+        feed[self.xent_gold_length] = lengths
         sess.run(self.train_op, feed)
 
 

@@ -32,7 +32,7 @@ class RankingListenerModel(object):
     def _build_graph(self):
         raise NotImplementedError
 
-    def score(self, words_batch, candidates_batch):
+    def score(self, words_batch, candidates_batch, lengths, num_candidates):
         """
         Rank possible candidate referents for the given batch of word inputs.
 
@@ -47,7 +47,8 @@ class RankingListenerModel(object):
         """
         raise NotImplementedError
 
-    def observe(self, words_batch, candidates_batch, true_referent_position=0):
+    def observe(self, words_batch, candidates_batch, lengths, num_candidates,
+                true_referent_position=0):
         """
         Observe a batch of references with positive candidates and negatively
         sampled false candidates.
@@ -62,39 +63,6 @@ class RankingListenerModel(object):
             None
         """
         raise NotImplementedError
-
-    def _prepare_batch(self, words_batch, candidates_batch):
-        """
-        Pad (not in-place).
-
-        Returns:
-            words: num_timesteps * batch_size padded indices
-            candidates: batch_size * num_candidates * 3
-        """
-        # Pad words.
-        lengths = np.empty(len(words_batch))
-        eos_id = self.env.vocab2idx[self.env.EOS]
-        words_batch_ret = []
-        for i, words_i in enumerate(words_batch):
-            lengths[i] = len(words_i)
-            ret_i = words_i[:]
-            if lengths[i] < self.max_timesteps:
-                ret_i.extend([eos_id] * (self.max_timesteps - lengths[i]))
-            words_batch_ret.append(ret_i)
-        words_batch_ret = np.asarray(words_batch_ret).T
-
-        # Pad candidates.
-        num_candidates = np.empty(len(candidates_batch))
-        candidates_batch_ret = []
-        for i, candidates_i in enumerate(candidates_batch):
-            num_candidates[i] = len(candidates_i)
-            ret_i = candidates_i[:]
-            if num_candidates[i] < self.max_candidates:
-                pad_length = self.max_candidates - num_candidates[i]
-                ret_i.extend([(0, 0, 0)] * (pad_length))
-            candidates_batch_ret.append(ret_i)
-
-        return words_batch_ret, candidates_batch_ret, lengths, num_candidates
 
 
 class BoWRankingListener(RankingListenerModel):
@@ -181,13 +149,10 @@ class BoWRankingListener(RankingListenerModel):
 
         self.train_op = None
 
-    def score(self, words_batch, candidates_batch):
-        words_batch, candidates_batch, lengths, num_candidates = \
-                self._prepare_batch(words_batch, candidates_batch)
-
+    def score(self, words_batch, candidates_batch, lengths_batch, num_candidates):
         feed = {self.words[t]: words_batch[t] for t in range(self.max_timesteps)}
         feed[self.candidates] = candidates_batch
-        feed[self.lengths] = lengths
+        feed[self.lengths] = lengths_batch
 
         sess = tf.get_default_session()
         scores = sess.run(self.scores, feed)
@@ -196,15 +161,13 @@ class BoWRankingListener(RankingListenerModel):
                   for scores_i, num_candidates_i in zip(scores, num_candidates)]
         return scores
 
-    def observe(self, words_batch, candidates_batch, true_referent_position=0):
-        words_batch, candidates_batch, lengths, num_candidates = \
-                self._prepare_batch(words_batch, candidates_batch)
-
+    def observe(self, words_batch, candidates_batch, lengths_batch, num_candidates,
+                true_referent_position=0):
         # TODO don't update on false candidates
         # TODO monitor avg embedding norm to make sure we're not going crazy
         feed = {self.words[t]: words_batch[t] for t in range(self.max_timesteps)}
         feed[self.candidates] = candidates_batch
-        feed[self.lengths] = lengths
+        feed[self.lengths] = lengths_batch
 
         sess = tf.get_default_session()
         _, loss = sess.run((self.train_op, self.loss), feed)
