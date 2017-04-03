@@ -16,10 +16,8 @@ GRAPH_EMBEDDING_INITIALIZER = orthogonal_initializer()
 class SpeakerModel(object):
 
     def __init__(self, env, scope="listener"):
-        assert not env.bag
         self.env = env
         self._scope = tf.variable_scope(scope)
-        self.feeds = []
         self.train_op = None
 
         self._build_graph()
@@ -33,16 +31,19 @@ class SpeakerModel(object):
     def build_xent_gradients(self):
         raise NotImplementedError
 
-    def sample(self, lf, argmax=False):
+    def sample(self, subgraph, argmax=False):
         raise NotImplementedError
 
-    def score(self, lf, words):
+    def score(self, utterance, subgraph):
         raise NotImplementedError
 
-    def observe(self, env_obs, gold_lf):
+    def score_batch(self, utterances_batch, subgraphs):
         raise NotImplementedError
 
-    def observe_batch(self, words, gold_lfs):
+    def observe(self, utterance, pos_candidates, neg_candidates):
+        raise NotImplementedError
+
+    def observe_batch(self, utterances_batch, pos_cands_batch, neg_cands_batch):
         raise NotImplementedError
 
 

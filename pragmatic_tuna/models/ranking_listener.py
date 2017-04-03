@@ -23,7 +23,8 @@ class RankingListenerModel(object):
         self.env = env
         self.max_timesteps = env.max_timesteps
 
-        self.max_candidates = self.max_negative_samples = max_negative_samples
+        self.max_negative_samples = max_negative_samples
+        self.max_candidates = self.max_negative_samples + 1
 
         with tf.variable_scope(scope):
             self._build_graph()
@@ -46,22 +47,20 @@ class RankingListenerModel(object):
         """
         raise NotImplementedError
 
-    def observe(self, words_batch, true_referent_batch, false_referents_batch):
+    def observe(self, words_batch, candidates_batch, true_referent_position=0):
         """
-        Observe a batch of references from words_batch -> true_referent_batch
-        with negatively sampled false_referents_batch.
+        Observe a batch of references with positive candidates and negatively
+        sampled false candidates.
 
         Args:
             words_batch: batch_size list of lists of vocab tokens
-            true_referent_batch: batch_size list of candidate tuples
-            false_referents_batch: batch_size list of lists of negative
-                candidate tuples (each sub-list corresponds to negatively
-                sampled candidates for a trial)
+            candidates_batch: batch_size list of lists of candidate tuples.
+                The true referent should lie at position
+                `true_referent_position` within each sublist.
+            true_referent_position:
         Returns:
             None
         """
-        # TODO: update docs for true_referent_batch (it's nested like
-        # false_referents just because symmetry is easier)
         raise NotImplementedError
 
     def _prepare_batch(self, words_batch, candidates_batch):
@@ -197,13 +196,9 @@ class BoWRankingListener(RankingListenerModel):
                   for scores_i, num_candidates_i in zip(scores, num_candidates)]
         return scores
 
-    def observe(self, words_batch, true_referents_batch, false_referents_batch):
-        words_batch, false_referents_batch, lengths, num_false_referents = \
-                self._prepare_batch(words_batch, false_referents_batch)
-
-        candidates_batch = [true_referent_i + false_referents_i
-                            for true_referent_i, false_referents_i
-                            in zip(true_referents_batch, false_referents_batch)]
+    def observe(self, words_batch, candidates_batch, true_referent_position=0):
+        words_batch, candidates_batch, lengths, num_candidates = \
+                self._prepare_batch(words_batch, candidates_batch)
 
         # TODO don't update on false candidates
         # TODO monitor avg embedding norm to make sure we're not going crazy

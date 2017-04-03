@@ -85,27 +85,41 @@ class VGEnv(gym.Env):
         return corpora, vocab, graph_vocab
 
     def get_batch(self, corpus, batch_size=64, negative_samples=5):
+        """
+        Return a training batch.
+
+        Returns:
+            utterances:
+            candidates: `batch_size` list of lists. In each sublist, the
+                positive candidate always comes first.
+        """
         corpus = self.corpora[corpus]
         assert len(corpus) >= batch_size
         idxs = np.random.choice(len(corpus), size=batch_size, replace=False)
 
-        utterances = []
-        positive_candidates, negative_candidates = [], []
+        utterances, candidates = [], []
         for idx in idxs:
             trial = corpus[idx]
-            utterances.append(trial["utterance"])
-            positive_candidates.append(trial["domain_positive"])
+
+            assert len(trial["domain_positive"]) == 1, len(trial["domain_positive"]) # At least for now
+            candidates_i = trial["domain_positive"][:]
 
             neg_samples = min(negative_samples, len(trial["domain_negative"]))
             if neg_samples > 0:
                 neg_idxs = np.random.choice(len(trial["domain_negative"]), size=neg_samples, replace=False)
-                negative_candidates.append([trial["domain_negative"][neg_idx] for neg_idx in neg_idxs])
+                candidates_i.extend([trial["domain_negative"][neg_idx] for neg_idx in neg_idxs])
             else:
                 # TODO how to handle this?
                 eos_id = self.graph_vocab2idx[EOS]
-                negative_candidates.append([(eos_id, eos_id, eos_id)])
+                candidates_i.append((eos_id, eos_id, eos_id))
 
-        return utterances, positive_candidates, negative_candidates
+            utterances.append(trial["utterance"])
+            candidates.append(candidates_i)
+
+        return utterances, candidates
+
+    # TODO support fast-mapping fetch
+    # TODO support dreaming: mix synthesized examples with past examples from training
 
 
 if __name__ == "__main__":
