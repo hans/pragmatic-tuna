@@ -122,7 +122,7 @@ class BoWRankingListener(RankingListenerModel):
         embedded = tf.reshape(embedded, (-1, self.hidden_dim))
 
         # Concat and compute a bit more.
-        concat = tf.concat((embedded, embedded_cands), 1)
+        concat = tf.concat(1, (embedded, embedded_cands))
         concat = layers.fully_connected(concat, self.hidden_dim)
         scores = tf.squeeze(layers.fully_connected(concat, 1, activation_fn=tf.tanh), [1])
 

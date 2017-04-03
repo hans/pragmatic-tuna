@@ -215,7 +215,7 @@ class WindowedSequenceSpeakerModel(SequenceSpeakerModel):
             prev_sample = null_embedding
             for t in range(self.max_timesteps):
                 with tf.variable_scope("recurrence", reuse=t > 0):
-                    input_t = tf.concat([prev_sample, graph_window], axis=1)
+                    input_t = tf.concat(1, [prev_sample, graph_window])
                     output_t = layers.fully_connected(input_t,
                                                       output_dim, tf.identity)
                     probs_t = tf.nn.softmax(output_t / self.temperature)
