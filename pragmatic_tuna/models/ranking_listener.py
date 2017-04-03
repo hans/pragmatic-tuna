@@ -101,7 +101,7 @@ class RankingListenerModel(object):
 class BoWRankingListener(RankingListenerModel):
 
     def __init__(self, env, embeddings=None, graph_embeddings=None,
-                 embedding_dim=128, hidden_dim=512, **kwargs):
+                 embedding_dim=64, hidden_dim=256, **kwargs):
         self.embeddings = embeddings
         self.graph_embeddings = graph_embeddings
         self.embedding_dim = embedding_dim
@@ -206,6 +206,7 @@ class BoWRankingListener(RankingListenerModel):
                             in zip(true_referents_batch, false_referents_batch)]
 
         # TODO don't update on false candidates
+        # TODO monitor avg embedding norm to make sure we're not going crazy
         feed = {self.words[t]: words_batch[t] for t in range(self.max_timesteps)}
         feed[self.candidates] = candidates_batch
         feed[self.lengths] = lengths
