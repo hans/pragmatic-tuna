@@ -77,7 +77,9 @@ def main(args):
                     # Debug: print utterances
                     correct, false = [], []
                     b_utt, b_cands, _, _ = batch
-                    for utterance, cands, prediction in zip(b_utt, b_cands, predictions):
+                    for utterance, cands, prediction in zip(b_utt.T, b_cands, predictions):
+                        utterance = list(utterance)
+                        utterance = utterance[:utterance.index(env.vocab2idx[env.EOS])]
                         utterance = " ".join([env.vocab[idx] for idx in utterance])
 
                         dest = correct if prediction == cands[0] else false
