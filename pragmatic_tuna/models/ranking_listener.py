@@ -32,7 +32,7 @@ class RankingListenerModel(object):
     def _build_graph(self):
         raise NotImplementedError
 
-    def rank(self, words_batch, candidates_batch):
+    def score(self, words_batch, candidates_batch):
         """
         Rank possible candidate referents for the given batch of word inputs.
 
@@ -181,7 +181,7 @@ class BoWRankingListener(RankingListenerModel):
 
         self.train_op = None
 
-    def rank(self, words_batch, candidates_batch):
+    def score(self, words_batch, candidates_batch):
         words_batch, candidates_batch, lengths, num_candidates = \
                 self._prepare_batch(words_batch, candidates_batch)
 

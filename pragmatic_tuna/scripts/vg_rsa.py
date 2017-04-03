@@ -23,7 +23,7 @@ def run_trial(batch, listener_model, speaker_model):
     utterances, candidates = batch
 
     # Fetch model scores and rank for pragmatic listener inference.
-    listener_scores = listener_model.rank(utterances, candidates)
+    listener_scores = listener_model.score(utterances, candidates)
     speaker_scores = None#speaker_scores = speaker_model.score_batch(utterances, candidates)
     results = infer_trial(candidates, listener_scores, speaker_scores)
 
