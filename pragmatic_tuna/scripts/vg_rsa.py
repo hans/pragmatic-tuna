@@ -24,7 +24,7 @@ def run_trial(batch, listener_model, speaker_model):
 
     # Fetch model scores and rank for pragmatic listener inference.
     listener_scores = listener_model.score(*batch)
-    speaker_scores = None#speaker_scores = speaker_model.score_batch(utterances, candidates)
+    speaker_scores = speaker_model.score(*batch)
     results = infer_trial(candidates, listener_scores, speaker_scores)
 
     successes = [result_i == candidates_i[0]
@@ -48,7 +48,7 @@ def main(args):
             embedding_dim=args.embedding_dim,
             max_negative_samples=args.negative_samples)
     speaker_model = WindowedSequenceSpeakerModel(
-            env, max_timesteps=3,
+            env, max_timesteps=env.max_timesteps,
             embedding_dim=args.embedding_dim,
             embeddings=listener_model.embeddings,
             graph_embeddings=listener_model.graph_embeddings)

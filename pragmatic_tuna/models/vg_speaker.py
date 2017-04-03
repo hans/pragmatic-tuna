@@ -103,18 +103,44 @@ class SequenceSpeakerModel(SpeakerModel):
 
         return " ".join(self.env.vocab[idx] for idx in sample)
 
-    def score(self, z, u):
+    def score(self, words, cands, lengths, n_cands):
+        # TODO a lot of stuff in this method could happen in a TF graph. If
+        # necessary..
         sess = tf.get_default_session()
 
-        z = self.env.pad_graph_idxs(z)
-        words = [self.env.word2idx[word] for word in u]
+        # Replicate word inputs so that we have a one-to-one
+        # candidate-utterance relationship.
+        num_timesteps, batch_size = words.shape
+        num_candidates = len(cands[0])
+        words = words.reshape((num_timesteps, batch_size, 1))
+        words = np.tile(words, (1, 1, num_candidates))
+        words = words.reshape(num_timesteps, -1)
+        # Also replicate the lengths
+        lengths_rep = lengths.reshape((batch_size, 1))
+        lengths_rep = np.tile(lengths_rep, (1, num_candidates))
+        lengths_rep = lengths_rep.reshape((-1,))
 
-        feed = {self.graph_toks: [z]}
-        feed.update({self.samples[t]: [word] for t, word in enumerate(words)})
+        feed = {self.samples[t]: words_t
+                for t, words_t in enumerate(words)}
+        feed[self.graph_toks] = cands
 
+        # probs: `num_timesteps * (batch_size * max_cands) * vocab_size`
         probs = sess.run(self.probs, feed)
-        probs = [probs_t[0, word_t] for probs_t, word_t in zip(probs, words)]
-        return np.log(np.prod(probs))
+
+        # Collect cumulative probabilities for each input sequence (each
+        # candidate in each example)
+        n_inputs = len(probs[0])
+        cum_probs = np.zeros(n_inputs)
+        arange = np.arange(n_inputs)
+        for t, (probs_t, words_t) in enumerate(zip(probs, words)):
+            mask_t = t < lengths_rep
+            probs_t = mask_t * probs_t[arange, words_t]
+            cum_probs += np.log(probs_t)
+        cum_probs = cum_probs.reshape((batch_size, num_candidates))
+
+        scores = [cum_probs_i[:n_cands_i]
+                  for cum_probs_i, n_cands_i in zip(cum_probs, n_cands)]
+        return scores
 
     def observe(self, words_batch, candidates_batch, lengths, n_cands,
                 true_referent_position=0):
@@ -131,85 +157,10 @@ class SequenceSpeakerModel(SpeakerModel):
         sess.run(self.train_op, feed)
 
 
-class ShallowSequenceSpeakerModel(SequenceSpeakerModel):
-
-    """
-    A shallow sequence speaker model which is a simple CLM (no word embeddings)
-    conditioned on some LF embeddings.
-    """
-
-    def __init__(self, env, scope="speaker", max_timesteps=2,
-                 graph_embeddings=None, embedding_dim=10):
-        self.env = env
-        self._scope_name = scope
-        self.max_timesteps = max_timesteps
-        self.embedding_dim = embedding_dim
-
-        self.train_op = None
-
-        self._build_embeddings(graph_embeddings)
-        self._build_graph()
-
-    def _build_embeddings(self, graph_embeddings):
-        with tf.variable_scope(self._scope_name):
-            graph_emb_shape = (len(self.env.graph_vocab), self.embedding_dim)
-            if graph_embeddings is None:
-                graph_embeddings = tf.get_variable("graph_embeddings", shape=graph_emb_shape,
-                                                   initializer=GRAPH_EMBEDDING_INITIALIZER())
-            assert tuple(graph_embeddings.get_shape().as_list()) == graph_emb_shape
-
-            self.graph_embeddings = graph_embeddings
-
-    def _build_graph(self):
-        with tf.variable_scope(self._scope_name):
-            self.graph_toks = tf.placeholder(tf.int32, shape=(None, self.max_timesteps),
-                                          name="graph_toks")
-            self.temperature = tf.constant(1.0, name="temperature")
-
-            graph_window = tf.nn.embedding_lookup(self.graph_embeddings, self.graph_toks)
-            graph_window = tf.reduce_mean(graph_window, 1)
-            graph_window = tf.stop_gradient(graph_window)
-
-            batch_size = tf.shape(self.graph_toks)[0]
-
-            # CLM à la Andreas.
-
-            # TODO: ugly trick to get the right dimension. is there a better way?
-            prev_words = tf.zeros((batch_size, len(self.env.vocab)))
-            last_word = tf.zeros((batch_size, len(self.env.vocab)))
-
-            # Now run a teeny utterance decoder.
-            outputs, probs, samples = [], [], []
-            output_dim = self.env.vocab_size
-            for t in range(self.max_timesteps):
-                with tf.variable_scope("recurrence", reuse=t > 0):
-                    input_t = tf.concat(1, [prev_words, last_word, graph_window])
-                    output_t = layers.fully_connected(input_t,
-                                                      output_dim, tf.identity)
-
-                    probs_t = tf.nn.softmax(output_t / self.temperature)
-
-                    # Sample an LF token and provide as feature to next timestep.
-                    sample_t = tf.squeeze(tf.multinomial(output_t, num_samples=1), [1],
-                                          name="sample_%i" % t)
-
-                    last_word = tf.one_hot(sample_t, len(self.env.vocab))
-                    prev_words += last_word
-
-                    outputs.append(output_t)
-                    probs.append(probs_t)
-                    samples.append(sample_t)
-
-            self.outputs = outputs
-            self.probs = probs
-            self.samples = samples
-
-
 class WindowedSequenceSpeakerModel(SequenceSpeakerModel):
 
     """
-    Windowed sequence speaker/decoder model that mirrors
-    `WindowedSequenceListenerModel`.
+    Windowed sequence speaker/decoder model.
     """
     # could probably be unified with WindowedSequenceListenerModel if there is
     # sufficient motivation.
@@ -243,17 +194,20 @@ class WindowedSequenceSpeakerModel(SequenceSpeakerModel):
 
     def _build_graph(self):
         with tf.variable_scope(self._scope_name):
-            self.graph_toks = tf.placeholder(tf.int32, shape=(None, self.max_timesteps),
-                                          name="graph_toks")
+            self.graph_toks = tf.placeholder(tf.int32,
+                                             shape=(None, None, 3),
+                                             name="graph_toks")
             self.temperature = tf.constant(1.0, name="temperature")
 
-            batch_size = tf.shape(self.graph_toks)[0]
-            graph_window_dim = self.max_timesteps * self.embedding_dim
-            graph_window = tf.nn.embedding_lookup(self.graph_embeddings, self.graph_toks)
-            graph_window = tf.reshape(graph_window, (batch_size, graph_window_dim))
+            graph_window_dim = 3 * self.embedding_dim
+            graph_toks = tf.reshape(self.graph_toks, (-1, 3))
+            graph_window = tf.nn.embedding_lookup(self.graph_embeddings, graph_toks)
+            graph_window = tf.reshape(graph_window, (-1, graph_window_dim))
 
+            # num_inputs = batch_size * max_candidates
+            num_inputs = tf.shape(graph_window)[0]
             null_embedding = tf.gather(self.embeddings,
-                                       tf.fill((batch_size,), self.env.word_unk_id))
+                                       tf.fill((num_inputs,), self.env.word_unk_id))
 
             # Now run a teeny utterance decoder.
             outputs, probs, samples = [], [], []
