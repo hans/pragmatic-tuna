@@ -1,3 +1,4 @@
+from collections import Counter
 import json
 
 try: import cPickle as pickle
@@ -45,7 +46,7 @@ class VGEnv(gym.Env):
             corpus_data = json.load(corpus_f)
 
         corpora = {}
-        vocab, graph_vocab = set(), set()
+        vocab_counts, graph_vocab = Counter(), set()
         for trial in corpus_data:
             if trial["type"] not in corpora:
                 corpora[trial["type"]] = []
@@ -57,7 +58,7 @@ class VGEnv(gym.Env):
                 continue
 
             for word in utterance:
-                vocab.add(word)
+                vocab_counts[word] += 1
 
             domain_positive, domain_negative = [], []
             for subgraph in trial["domain"]:
@@ -77,15 +78,19 @@ class VGEnv(gym.Env):
                 "domain_negative": domain_negative
             })
 
-        vocab = [UNK, EOS] + list(sorted(vocab))
+
+        vocab = [UNK, EOS] + list(sorted([word for word, freq in vocab_counts.items()
+                                          if freq > 1]))
         vocab2idx = {w: idx for idx, w in enumerate(vocab)}
         graph_vocab = [EOS] + list(sorted(graph_vocab))
         graph_vocab2idx = {w: idx for idx, w in enumerate(graph_vocab)}
 
         # Now reprocess trials, replacing strings with IDs.
+        unk_id = vocab2idx[UNK]
         for corpus_name, corpus in corpora.items():
             for trial in corpus:
-                trial["utterance"] = [vocab2idx[word] for word in trial["utterance"]]
+                trial["utterance"] = [vocab2idx.get(word, unk_id)
+                                      for word in trial["utterance"]]
                 trial["domain_positive"] = [tuple([graph_vocab2idx[x] for x in subgraph])
                                             for subgraph in trial["domain_positive"]]
                 trial["domain_negative"] = [tuple([graph_vocab2idx[x] for x in subgraph])
