@@ -201,12 +201,20 @@ class WindowedSequenceSpeakerModel(SequenceSpeakerModel):
             outputs, probs, samples = [], [], []
             output_dim = self.env.vocab_size
             prev_sample = null_embedding
+            prev2_sample = null_embedding
             for t in range(self.max_timesteps):
                 with tf.variable_scope("recurrence", reuse=t > 0):
-                    input_t = tf.concat(1, [prev_sample, graph_window])
+                    ######### Feedforward.
+
+                    input_t = tf.concat(1, [prev_sample, prev2_sample, graph_window])
+                    hidden_t = layers.fully_connected(input_t, 256)
                     output_t = layers.fully_connected(input_t,
                                                       output_dim, tf.identity)
                     probs_t = tf.nn.softmax(output_t / self.temperature)
+
+                    ######### Sampling / history update.
+
+                    prev2_sample = prev_sample
 
                     # Sample an LF token and provide as feature to next timestep.
                     sample_t = tf.squeeze(tf.multinomial(output_t, num_samples=1), [1],

@@ -36,7 +36,7 @@ def run_trial(batch, listener_model, speaker_model):
     s_loss, avg_prob = speaker_model.observe(*batch)
 
     pct_success = np.mean(successes)
-    tqdm.write("%5f\t%5f\t%4f\t%.2f" % (l_loss, s_loss, avg_prob, pct_success * 100))
+    tqdm.write("%5f\t%5f\t%5g\t%.2f" % (l_loss, s_loss, avg_prob, pct_success * 100))
 
     return results, l_loss, pct_success
 
@@ -57,8 +57,9 @@ def main(args):
     l_global_step = tf.Variable(0, name="global_step_listener")
     listener_model.train_op = opt.minimize(listener_model.loss,
                                            global_step=l_global_step)
+    s_opt = tf.train.MomentumOptimizer(args.learning_rate * 100., 0.9)
     s_global_step = tf.Variable(0, name="global_step_speaker")
-    speaker_model.train_op = opt.minimize(speaker_model.loss,
+    speaker_model.train_op = s_opt.minimize(speaker_model.loss,
                                           global_step=s_global_step)
 
     global_step = l_global_step + s_global_step
