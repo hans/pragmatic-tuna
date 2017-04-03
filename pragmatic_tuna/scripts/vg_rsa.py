@@ -6,6 +6,7 @@ from tqdm import trange, tqdm
 
 from pragmatic_tuna.environments.vg import VGEnv
 from pragmatic_tuna.models.ranking_listener import BoWRankingListener
+from pragmatic_tuna.models.vg_speaker import WindowedSequenceSpeakerModel
 
 
 def run_trial(batch, listener_model, speaker_model):
@@ -42,8 +43,14 @@ def run_trial(batch, listener_model, speaker_model):
 def main(args):
     env = VGEnv(args.corpus_path)
 
-    listener_model = BoWRankingListener(env, max_negative_samples=args.negative_samples)
-    speaker_model = None
+    listener_model = BoWRankingListener(env,
+            embedding_dim=args.embedding_dim,
+            max_negative_samples=args.negative_samples)
+    speaker_model = WindowedSequenceSpeakerModel(
+            env, max_timesteps=3,
+            embedding_dim=args.embedding_dim,
+            embeddings=listener_model.embeddings,
+            graph_embeddings=listener_model.graph_embeddings)
 
     global_step = tf.Variable(0, name="global_step")
     opt = tf.train.MomentumOptimizer(args.learning_rate, 0.9)
@@ -92,5 +99,7 @@ if __name__ == '__main__':
     p.add_argument("--batch_size", type=int, default=64)
     p.add_argument("--negative_samples", type=int, default=5)
     p.add_argument("--learning_rate", type=float, default=0.001)
+
+    p.add_argument("--embedding_dim", type=int, default=64)
 
     main(p.parse_args())
