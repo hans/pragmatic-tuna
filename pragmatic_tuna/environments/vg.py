@@ -31,7 +31,9 @@ class VGEnv(gym.Env):
         self.vocab2idx = {w: idx for idx, w in enumerate(self.vocab)}
         self.graph_vocab2idx = {w: idx for idx, w in enumerate(self.graph_vocab)}
         self.vocab_size = len(self.vocab2idx)
+
         self.word_unk_id = self.vocab2idx[UNK]
+        self.word_eos_id = self.vocab2idx[EOS]
 
         self.max_timesteps = max([len(trial["utterance"])
                                   for corpus in self.corpora

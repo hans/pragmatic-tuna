@@ -47,23 +47,132 @@ def run_trial(batch, listener_model, speaker_model, update=True, infer_with_spea
     return results, (l_loss, s_loss), avg_prob, pct_success
 
 
+def run_train_phase(env, listener_model, speaker_model, args):
+    losses, pct_successes = [], []
+    for i in trange(args.n_iters):
+        batch = env.get_batch("train", batch_size=args.batch_size,
+                              negative_samples=args.negative_samples)
+        predictions, losses_i, avg_prob, pct_success = \
+                run_trial(batch, listener_model, speaker_model, update=True)
+
+        losses.append(losses_i)
+        pct_successes.append(pct_success)
+
+        # Try fast-mapping.
+        fm_batch = env.get_batch("fast_mapping", batch_size=args.batch_size,
+                                 negative_samples=args.negative_samples)
+        _, _, _, pct_fm_success = \
+                run_trial(fm_batch, listener_model, speaker_model,
+                          update=False, infer_with_speaker=True)
+
+        tqdm.write("%5f\t%5f\t%5g\t%.2f\t\t%3f"
+                    % (losses_i[0], losses_i[1], avg_prob, pct_success * 100,
+                       pct_fm_success * 100))
+
+        if i == args.n_iters - 1:
+            # Debug: print utterances
+            correct, false = [], []
+            b_utt, b_cands, _, _ = batch
+            for utterance, cands, prediction in zip(b_utt.T, b_cands, predictions):
+                utterance = list(utterance)
+                try:
+                    utterance = utterance[:utterance.index(env.vocab2idx[env.EOS])]
+                except ValueError: pass
+
+                utterance = " ".join([env.vocab[idx] for idx in utterance])
+
+                dest = correct if prediction == cands[0] else false
+                dest.append("%30s\t%s" % (utterance, " ".join([env.graph_vocab[idx] for idx in prediction])))
+
+            print("=========== Correct:")
+            print("\n".join(correct))
+
+            print("\n========== False:")
+            print("\n".join(false))
+
+
+
 def sample_utterances(env, silent_batch, speaker_model):
+    """
+    Sample utterances from the speaker referring to the true referent for each
+    example in the given "silent" batch.
+
+    Returns:
+        utterances: `max_timesteps * batch_size` padded batch
+        lengths:
+    """
     # Get true referents for each batch element
     candidates_batch, num_candidates = silent_batch
     referents = [batch_i[:1] for batch_i in candidates_batch]
     utterances = speaker_model.sample(referents, argmax=True)
 
-    utterances = np.asarray(utterances)
-    utterances_t = utterances.T[:3]
-    for cand, utt in zip(referents, utterances):
-        cand = cand[0]
+    # Compute lengths
+    batch_size = len(candidates_batch)
+    max_length = env.max_timesteps
+    lengths = np.ones((batch_size,), dtype=np.int32) * max_length
+    eos_positions = np.array(np.where(utterances == env.word_eos_id)).T
+    for example, eos_idx in eos_positions:
+        lengths[example] = max(lengths[example], eos_idx)
+
+    # Mask to make sure these examples make sense
+    mask = np.tile(np.arange(max_length).reshape((-1, 1)), (1, batch_size))
+    mask = lengths.reshape((1, -1)) > mask
+    utterances *= mask
+
+    return utterances, lengths
+
+
+def synthesize_dream_batch(env, speaker_model, batch_size,
+                           dream_ratio=0.5, negative_samples=5):
+    """
+    Synthesize a "dreaming" training batch where some of the examples are
+    sampled from the speaker model itself.
+    """
+
+    dreamed_size = int(batch_size * dream_ratio)
+    real_size = batch_size - dreamed_size
+
+    # Pull a silent batch and draw utterances.
+    silent_batch = env.get_silent_batch(FAST_MAPPING_RELATION,
+            batch_size=dreamed_size,
+            negative_samples=negative_samples)
+    model_utterances, model_lengths = sample_utterances(env, silent_batch,
+                                                        speaker_model)
+
+    # DEV: debug print a few strings
+    utterances_t = np.asarray(model_utterances).T[:3]
+    s_candidates, _ = silent_batch
+    for cands, utt in zip(s_candidates, utterances_t):
+        cand = cands[0]
         cand_str = " ".join(env.graph_vocab[idx] for idx in cand)
         utt_str = " ".join(env.vocab[idx] for idx in utt)
         print("%40s\t%100s" % (cand_str, utt_str))
-
     print()
 
-    return utterances
+    silent_candidates, silent_num_candidates = silent_batch
+
+    real_batch = env.get_batch("train", batch_size=real_size,
+                               negative_samples=negative_samples)
+
+    utterances = np.concatenate((model_utterances, real_batch[0]), axis=1)
+    candidates = silent_candidates + real_batch[1]
+    lengths = np.concatenate((model_lengths, real_batch[2]))
+    num_candidates = np.concatenate((silent_num_candidates, real_batch[3]))
+
+    synthesized_batch = (utterances, candidates, lengths, num_candidates)
+    return synthesized_batch
+
+
+def run_dream_phase(env, listener_model, speaker_model, args):
+    for i in trange(5):
+        batch = synthesize_dream_batch(env, speaker_model, args.batch_size,
+                                       dream_ratio=0.5, # TODO
+                                       negative_samples=args.negative_samples)
+        predictions, losses_i, avg_prob, pct_success = \
+                run_trial(batch, listener_model, speaker_model, update=False) # DEV: no updates for now
+
+        tqdm.write("%5f\t%5f\t%5g\t%.2f"
+                   % (losses_i[0], losses_i[1], avg_prob, pct_success * 100))
 
 
 def main(args):
@@ -93,54 +202,11 @@ def main(args):
 
     with sv.managed_session() as sess:
         with sess.as_default():
-            losses, pct_successes = [], []
-            for i in trange(args.n_iters):
-                batch = env.get_batch("train", batch_size=args.batch_size,
-                                      negative_samples=args.negative_samples)
-                predictions, losses_i, avg_prob, pct_success = \
-                        run_trial(batch, listener_model, speaker_model, update=True)
+            print("============== TRAINING")
+            run_train_phase(env, listener_model, speaker_model, args)
 
-                losses.append(losses_i)
-                pct_successes.append(pct_success)
-
-                # Try fast-mapping.
-                fm_batch = env.get_batch("fast_mapping", batch_size=args.batch_size,
-                                         negative_samples=args.negative_samples)
-                _, _, _, pct_fm_success = \
-                        run_trial(fm_batch, listener_model, speaker_model,
-                                  update=False, infer_with_speaker=True)
-
-                tqdm.write("%5f\t%5f\t%5g\t%.2f\t\t%3f"
-                           % (losses_i[0], losses_i[1], avg_prob, pct_success * 100,
-                              pct_fm_success * 100))
-
-                if i == args.n_iters - 1:
-                    # Debug: print utterances
-                    correct, false = [], []
-                    b_utt, b_cands, _, _ = batch
-                    for utterance, cands, prediction in zip(b_utt.T, b_cands, predictions):
-                        utterance = list(utterance)
-                        try:
-                            utterance = utterance[:utterance.index(env.vocab2idx[env.EOS])]
-                        except ValueError: pass
-
-                        utterance = " ".join([env.vocab[idx] for idx in utterance])
-
-                        dest = correct if prediction == cands[0] else false
-                        dest.append("%30s\t%s" % (utterance, " ".join([env.graph_vocab[idx] for idx in prediction])))
-
-                    print("=========== Correct:")
-                    print("\n".join(correct))
-
-                    print("\n========== False:")
-                    print("\n".join(false))
-
-            # Now DREAM!
-            for i in trange(args.n_iters):
-                silent_batch = env.get_silent_batch(FAST_MAPPING_RELATION,
-                        batch_size=args.batch_size,
-                        negative_samples=0)
-                b_utterances = sample_utterances(env, silent_batch, speaker_model)
+            print("============== DREAMING")
+            run_dream_phase(env, listener_model, speaker_model, args)
 
             sv.request_stop()
 

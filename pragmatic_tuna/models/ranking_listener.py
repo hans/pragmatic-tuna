@@ -94,7 +94,7 @@ class BoWRankingListener(RankingListenerModel):
     def _build_graph(self):
         self._init_embeddings()
 
-        self.lengths = tf.placeholder(tf.int32, shape=(None,))
+        self.lengths = tf.placeholder(tf.int32, shape=(None,), name="lengths")
         self.words = [tf.placeholder(tf.int32, shape=(None,), name="words_%i" % i)
                       for i in range(self.max_timesteps)]
 
