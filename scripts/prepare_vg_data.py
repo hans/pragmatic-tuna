@@ -12,7 +12,7 @@ FAST_MAPPING_RELATIONS = ["behind.r.01"]
 
 
 class VisualGenomeFilter(object):
-    
+
     def __init__(self):
         self.train_candidates = set()
         self.fast_mapping_candidates = set()
@@ -57,9 +57,9 @@ class VisualGenomeFilter(object):
                         synsets = reln['synsets']
                         for synset in synsets:
                             if synset in TRAIN_RELATIONS:
-                                objects = {obj['object_id']: obj['synsets'][0] 
+                                objects = {obj['object_id']: obj['synsets'][0]
                                                 for obj in region['objects'] if len(obj['synsets']) > 0}
-                                
+
                                 if reln['subject_id'] in objects and reln['object_id'] in objects:
                                     self.known_objects.add(objects[reln['subject_id']])
                                     self.known_objects.add(objects[reln['object_id']])
@@ -101,7 +101,7 @@ class VisualGenomeFilter(object):
         return entry
 
     def _get_objects(self, region):
-        return {obj['object_id']: obj['synsets'][0] 
+        return {obj['object_id']: obj['synsets'][0]
                         for obj in region['objects'] if len(obj['synsets']) > 0}
 
     def _trial_listener(self, event, *args):
@@ -116,7 +116,7 @@ class VisualGenomeFilter(object):
             if image_id in self.train_set:
                 for region in image['regions']:
                     if len(region['relationships']) != 1:
-                        continue 
+                        continue
                     objects = self._get_objects(region)
                     for reln in region['relationships']:
                         synsets = reln['synsets']
@@ -142,7 +142,7 @@ class VisualGenomeFilter(object):
             elif image_id in self.fast_mapping_trials:
                 for region in image['regions']:
                     if len(region['relationships']) != 1:
-                        continue 
+                        continue
                     objects = self._get_objects(region)
                     for reln in region['relationships']:
                         synsets = reln['synsets']
@@ -154,6 +154,9 @@ class VisualGenomeFilter(object):
                                 has_target = True
                                 utterance = region['phrase']
                         elif len(synsets) > 0 and synsets[0] in TRAIN_RELATIONS:
+                            # NB: extra constraint in the fast mapping trials:
+                            # only include relations observed during training,
+                            # or the fast-mapping relation
                             if reln['object_id'] not in objects or reln['subject_id'] not in objects:
                                 continue
                             domain.append(self._convert_reln_to_domain_entry(reln, objects))
