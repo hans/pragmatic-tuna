@@ -51,7 +51,7 @@ def sample_utterances(env, silent_batch, speaker_model):
     # Get true referents for each batch element
     candidates_batch, num_candidates = silent_batch
     referents = [batch_i[:1] for batch_i in candidates_batch]
-    utterances = speaker_model.sample(referents)
+    utterances = speaker_model.sample(referents, argmax=True)
 
     utterances = np.asarray(utterances)
     utterances_t = utterances.T[:3]
