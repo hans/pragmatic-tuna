@@ -175,8 +175,30 @@ class VGEnv(gym.Env):
 
         return self._prepare_batch(utterances, candidates)
 
-    # TODO support fast-mapping fetch
-    # TODO support dreaming: mix synthesized examples with past examples from training
+    def get_silent_batch(self, relation, batch_size=64):
+        """
+        Return a batch for "dreaming" of grounded relations without paired
+        utterances.
+
+        Args:
+            relation: instances of relation to fetch
+        """
+        # TODO: we should have a separate corpus for this
+        # -- one where the constraint that only relevant relations appear is
+        # not enforced
+        corpus = self.corpora["fast_mapping"]
+
+        # TODO: exclude examples encountered during fast mapping
+        idxs = np.random.choice(len(corpus), size=batch_size, replace=False)
+        observations = []
+        for idx in idxs:
+            trial = corpus[idx]
+            referent = trial["domain_positive"][0]
+            assert referent["target"] is True
+
+            observations.append(trial)
+
+        return observations
 
 
 if __name__ == "__main__":
