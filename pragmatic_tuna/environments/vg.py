@@ -98,7 +98,60 @@ class VGEnv(gym.Env):
 
         return corpora, vocab, graph_vocab
 
-    def _prepare_batch(self, words_batch, candidates_batch):
+    def _extract_candidates(self, trial, negative_samples=5):
+        """
+        Extract candidate referents from a trial using negative sampling.
+        """
+        positive = trial["domain_positive"]
+        negative = trial["domain_negative"]
+
+        # For now: only work with single positive referent
+        assert len(positive) == 1, len(positive)
+        candidates = positive[:]
+
+        neg_samples = min(negative_samples, len(negative))
+        if neg_samples > 0:
+            neg_idxs = np.random.choice(len(negative), size=neg_samples,
+                                        replace=False)
+            candidates.extend([negative[neg_idx] for neg_idx in neg_idxs])
+        else:
+            # TODO how to handle this..?
+            eos_id = self.graph_vocab2idx[EOS]
+            candidates.append((eos_id, eos_id, eos_id))
+
+        return candidates
+
+    def _pad_words_batch(self, words_batch):
+        lengths = np.empty(len(words_batch))
+        eos_id = self.vocab2idx[self.EOS]
+        ret = []
+        for i, words_i in enumerate(words_batch):
+            lengths[i] = len(words_i)
+            ret_i = words_i[:]
+            if lengths[i] < self.max_timesteps:
+                ret_i.extend([eos_id] * (self.max_timesteps - lengths[i]))
+            ret.append(ret_i)
+
+        ret = np.asarray(ret).T
+        return ret, lengths
+
+    def _pad_candidates_batch(self, candidates_batch, max_candidates=None):
+        max_candidates = max_candidates or self.max_candidates
+
+        num_candidates = np.empty(len(candidates_batch))
+        candidates_batch_ret = []
+        for i, candidates_i in enumerate(candidates_batch):
+            num_candidates[i] = len(candidates_i)
+            ret_i = candidates_i[:]
+
+            if num_candidates[i] < max_candidates:
+                pad_length = max_candidates - num_candidates[i]
+                ret_i.extend([(0, 0, 0)] * (pad_length))
+            candidates_batch_ret.append(ret_i)
+
+        return candidates_batch_ret, num_candidates
+
+    def _pad_batch(self, words_batch, candidates_batch):
         """
         Pad a batch (not in-place).
 
@@ -111,27 +164,12 @@ class VGEnv(gym.Env):
         """
 
         # Pad words.
-        lengths = np.empty(len(words_batch))
-        eos_id = self.vocab2idx[self.EOS]
-        words_batch_ret = []
-        for i, words_i in enumerate(words_batch):
-            lengths[i] = len(words_i)
-            ret_i = words_i[:]
-            if lengths[i] < self.max_timesteps:
-                ret_i.extend([eos_id] * (self.max_timesteps - lengths[i]))
-            words_batch_ret.append(ret_i)
-        words_batch_ret = np.asarray(words_batch_ret).T
+        words_batch_ret, lengths = \
+                self._pad_words_batch(words_batch)
 
         # Pad candidates.
-        num_candidates = np.empty(len(candidates_batch))
-        candidates_batch_ret = []
-        for i, candidates_i in enumerate(candidates_batch):
-            num_candidates[i] = len(candidates_i)
-            ret_i = candidates_i[:]
-            if num_candidates[i] < self.max_candidates:
-                pad_length = self.max_candidates - num_candidates[i]
-                ret_i.extend([(0, 0, 0)] * (pad_length))
-            candidates_batch_ret.append(ret_i)
+        candidates_batch_ret, num_candidates = \
+                self._pad_candidates_batch(candidates_batch)
 
         return words_batch_ret, candidates_batch_ret, lengths, num_candidates
 
@@ -158,24 +196,12 @@ class VGEnv(gym.Env):
         for idx in idxs:
             trial = corpus[idx]
 
-            assert len(trial["domain_positive"]) == 1, len(trial["domain_positive"]) # At least for now
-            candidates_i = trial["domain_positive"][:]
-
-            neg_samples = min(negative_samples, len(trial["domain_negative"]))
-            if neg_samples > 0:
-                neg_idxs = np.random.choice(len(trial["domain_negative"]), size=neg_samples, replace=False)
-                candidates_i.extend([trial["domain_negative"][neg_idx] for neg_idx in neg_idxs])
-            else:
-                # TODO how to handle this?
-                eos_id = self.graph_vocab2idx[EOS]
-                candidates_i.append((eos_id, eos_id, eos_id))
-
             utterances.append(trial["utterance"])
-            candidates.append(candidates_i)
+            candidates.append(self._extract_candidates(trial, negative_samples=negative_samples))
 
-        return self._prepare_batch(utterances, candidates)
+        return self._pad_batch(utterances, candidates)
 
-    def get_silent_batch(self, relation, batch_size=64):
+    def get_silent_batch(self, relation, batch_size=64, negative_samples=5):
         """
         Return a batch for "dreaming" of grounded relations without paired
         utterances.
@@ -187,18 +213,19 @@ class VGEnv(gym.Env):
         # -- one where the constraint that only relevant relations appear is
         # not enforced
         corpus = self.corpora["fast_mapping"]
+        reln_id = self.graph_vocab2idx[relation]
 
         # TODO: exclude examples encountered during fast mapping
         idxs = np.random.choice(len(corpus), size=batch_size, replace=False)
-        observations = []
+        candidates = []
         for idx in idxs:
             trial = corpus[idx]
             referent = trial["domain_positive"][0]
-            assert referent["target"] is True
+            assert referent[0] == reln_id, " ".join(self.graph_vocab[g_idx] for g_idx in referent)
 
-            observations.append(trial)
+            candidates.append(self._extract_candidates(trial, negative_samples=negative_samples))
 
-        return observations
+        return self._pad_candidates_batch(candidates, max_candidates=negative_samples + 1)
 
 
 if __name__ == "__main__":

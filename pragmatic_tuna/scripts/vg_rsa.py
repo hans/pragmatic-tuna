@@ -9,6 +9,9 @@ from pragmatic_tuna.models.ranking_listener import BoWRankingListener
 from pragmatic_tuna.models.vg_speaker import WindowedSequenceSpeakerModel
 
 
+FAST_MAPPING_RELATION = "behind.r.01"
+
+
 def infer_trial(candidates, listener_scores, speaker_scores, infer_with_speaker=False):
     """
     Rerank batch of candidates based on listener + speaker scores.
@@ -44,6 +47,25 @@ def run_trial(batch, listener_model, speaker_model, update=True, infer_with_spea
     return results, (l_loss, s_loss), avg_prob, pct_success
 
 
+def sample_utterances(env, silent_batch, speaker_model):
+    # Get true referents for each batch element
+    candidates_batch, num_candidates = silent_batch
+    referents = [batch_i[:1] for batch_i in candidates_batch]
+    utterances = speaker_model.sample(referents)
+
+    utterances = np.asarray(utterances)
+    utterances_t = utterances.T[:3]
+    for cand, utt in zip(referents, utterances):
+        cand = cand[0]
+        cand_str = " ".join(env.graph_vocab[idx] for idx in cand)
+        utt_str = " ".join(env.vocab[idx] for idx in utt)
+        print("%40s\t%100s" % (cand_str, utt_str))
+
+    print()
+
+    return utterances
+
+
 def main(args):
     env = VGEnv(args.corpus_path)
 
@@ -76,7 +98,7 @@ def main(args):
                 batch = env.get_batch("train", batch_size=args.batch_size,
                                       negative_samples=args.negative_samples)
                 predictions, losses_i, avg_prob, pct_success = \
-                        run_trial(batch, listener_model, speaker_model, update=False)
+                        run_trial(batch, listener_model, speaker_model, update=True)
 
                 losses.append(losses_i)
                 pct_successes.append(pct_success)
@@ -112,6 +134,13 @@ def main(args):
 
                     print("\n========== False:")
                     print("\n".join(false))
+
+            # Now DREAM!
+            for i in trange(args.n_iters):
+                silent_batch = env.get_silent_batch(FAST_MAPPING_RELATION,
+                        batch_size=args.batch_size,
+                        negative_samples=0)
+                b_utterances = sample_utterances(env, silent_batch, speaker_model)
 
             sv.request_stop()
 

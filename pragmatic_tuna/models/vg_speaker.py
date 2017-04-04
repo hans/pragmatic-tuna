@@ -59,21 +59,14 @@ class SpeakerModel(object):
 
 class SequenceSpeakerModel(SpeakerModel):
 
-    def sample(self, z, argmax=False):
+    def sample(self, subgraphs, argmax=False):
         sess = tf.get_default_session()
-        feed = {self.graph_toks: [self.env.pad_graph_idxs(z)],
-                self.temperature: 0.0001 if argmax else 1.0}
+        feed = {self.graph_toks: subgraphs,
+                self.temperature: 1e-8 if argmax else 1.0}
 
         samples = sess.run(self.samples, feed)
-        sample = [x[0] for x in samples]
-        try:
-            stop_idx = sample.index(self.env.word_eos_id)
-            sample = sample[:stop_idx]
-        except ValueError:
-            # No stop token. No trimming necessary. Pass.
-            pass
-
-        return " ".join(self.env.vocab[idx] for idx in sample)
+        # TODO: reshape to fit subgraphs shape to be nice.
+        return samples
 
     def score(self, words, cands, lengths, n_cands):
         # TODO a lot of stuff in this method could happen in a TF graph. If
