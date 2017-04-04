@@ -29,7 +29,7 @@ class VGEnv(gym.Env):
                             pickle.HIGHEST_PROTOCOL)
 
         self.vocab2idx = {w: idx for idx, w in enumerate(self.vocab)}
-        self.graph_vocab2idx = {w: idx for idx, w in enumerate(self.vocab)}
+        self.graph_vocab2idx = {w: idx for idx, w in enumerate(self.graph_vocab)}
         self.vocab_size = len(self.vocab2idx)
         self.word_unk_id = self.vocab2idx[UNK]
 
