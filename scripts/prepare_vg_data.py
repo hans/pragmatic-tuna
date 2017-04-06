@@ -26,6 +26,7 @@ class VisualGenomeFilter(object):
         self.known_objects = set()
         self.fast_mapping_train_set = set()
         self.trials = []
+        self._cache = None
 
     # adds all images that contain a region with at least one of the relations in TRAIN_RELATION
     # to train_candidates, and images w/ a region with a relation in FAST_MAPPING_RELATIONS
@@ -237,23 +238,32 @@ class VisualGenomeFilter(object):
                         adv_trial = self._create_adverserial_trial(trial)
                         self.trials.append(adv_trial)
 
-    def _apply_object_stream_function_to_json_file(self, f, function):
-        f.seek(0)
-        object_streamer = ObjectStreamer()
-        object_streamer.add_catch_all_listener(function)
-        data = f.read(100000)
-        i = 0
-        while data != "":
-            i += 1
-            print(i, file=sys.stderr)
-            object_streamer.consume(data)
+    def _apply_object_stream_function_to_json_file(self, f, function, load_in_memory=False):
+        
+        if load_in_memory:
+            if self._cache is None:
+                self._cache = json.load(f)
+            for element in self._cache:
+                function("element", [element])
+        else:
+            f.seek(0)
+            object_streamer = ObjectStreamer()
+            object_streamer.add_catch_all_listener(function)
             data = f.read(100000)
+            i = 0
+            while data != "":
+                i += 1
+                print(i, file=sys.stderr)
+                object_streamer.consume(data)
+                data = f.read(100000)
 
     def main(self, args):
 
         f = open(args.corpus_path, 'r')
 
-        self._apply_object_stream_function_to_json_file(f, self._filter_candidates)
+        load_in_memory = args.load_in_memory
+
+        self._apply_object_stream_function_to_json_file(f, self._filter_candidates, load_in_memory)
 
         self.train_set = self.train_candidates.difference(self.fast_mapping_candidates)
 
@@ -273,12 +283,12 @@ class VisualGenomeFilter(object):
 
         self.fast_mapping_set = self.fast_mapping_candidates.intersection(self.train_candidates)
 
-        self._apply_object_stream_function_to_json_file(f, self._store_known_objects)
+        self._apply_object_stream_function_to_json_file(f, self._store_known_objects, load_in_memory)
 
         # filter dev/test set for pre-training so that all target objects are known
-        self._apply_object_stream_function_to_json_file(f, self._filter_pre_train_trials)
+        self._apply_object_stream_function_to_json_file(f, self._filter_pre_train_trials, load_in_memory)
 
-        self._apply_object_stream_function_to_json_file(f, self._filter_fast_mapping_trials)
+        self._apply_object_stream_function_to_json_file(f, self._filter_fast_mapping_trials, load_in_memory)
 
         # train/dev/test split for fast mapping
         fast_mapping_size = len(self.fast_mapping_train_set)
@@ -296,7 +306,7 @@ class VisualGenomeFilter(object):
                                                difference(self.fast_mapping_dev_set).\
                                                difference(self.fast_mapping_test_set)
 
-        self._apply_object_stream_function_to_json_file(f, self._trial_listener)
+        self._apply_object_stream_function_to_json_file(f, self._trial_listener, load_in_memory)
 
         json.dump(self.trials, sys.stdout, indent=4)
 
@@ -305,6 +315,7 @@ class VisualGenomeFilter(object):
 if __name__ == '__main__':
     p = ArgumentParser()
     p.add_argument("corpus_path")
+    p.add_argument("--load_in_memory", action="store_true", default=False)
 
     filt = VisualGenomeFilter()
 
