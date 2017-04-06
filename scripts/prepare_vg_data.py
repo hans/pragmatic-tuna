@@ -13,6 +13,9 @@ FAST_MAPPING_RELATIONS = ["behind"]
 DEV_SPLIT_SIZE = 0.1
 TEST_SPLIT_SIZE = 0.1
 
+FAST_MAPPING_DEV_SPLIT_SIZE = 0.33
+FAST_MAPPING_TEST_SPLIT_SIZE = 0.33
+
 
 class VisualGenomeFilter(object):
 
@@ -297,9 +300,9 @@ class VisualGenomeFilter(object):
         self.fast_mapping_test_set = set()
 
         for i, img in enumerate(self.fast_mapping_train_set):
-            if i < fast_mapping_size * DEV_SPLIT_SIZE:
+            if i < fast_mapping_size * FAST_MAPPING_DEV_SPLIT_SIZE:
                 self.fast_mapping_dev_set.add(img)
-            elif i < fast_mapping_size * (DEV_SPLIT_SIZE + TEST_SPLIT_SIZE):
+            elif i < fast_mapping_size * (FAST_MAPPING_DEV_SPLIT_SIZE + FAST_MAPPING_TEST_SPLIT_SIZE):
                 self.fast_mapping_test_set.add(img)
 
         self.fast_mapping_train_set = self.fast_mapping_train_set.\
