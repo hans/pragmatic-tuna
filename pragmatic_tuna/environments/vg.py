@@ -214,7 +214,7 @@ class VGEnv(gym.Env):
         # TODO: we should have a separate corpus for this
         # -- one where the constraint that only relevant relations appear is
         # not enforced
-        corpus = self.corpora["fast_mapping"]
+        corpus = self.corpora["fast_mapping_train"]
         reln_id = self.graph_vocab2idx[relation]
 
         # TODO: exclude examples encountered during fast mapping

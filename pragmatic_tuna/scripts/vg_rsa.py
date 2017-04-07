@@ -50,7 +50,7 @@ def run_trial(batch, listener_model, speaker_model, update=True, infer_with_spea
 def run_train_phase(env, listener_model, speaker_model, args):
     losses, pct_successes = [], []
     for i in trange(args.n_iters):
-        batch = env.get_batch("train", batch_size=args.batch_size,
+        batch = env.get_batch("pre_train_train", batch_size=args.batch_size,
                               negative_samples=args.negative_samples)
         predictions, losses_i, avg_prob, pct_success = \
                 run_trial(batch, listener_model, speaker_model, update=True)
@@ -59,7 +59,7 @@ def run_train_phase(env, listener_model, speaker_model, args):
         pct_successes.append(pct_success)
 
         # Try fast-mapping.
-        fm_batch = env.get_batch("fast_mapping", batch_size=args.batch_size,
+        fm_batch = env.get_batch("fast_mapping_train", batch_size=args.batch_size,
                                  negative_samples=args.negative_samples)
         _, _, _, pct_fm_success = \
                 run_trial(fm_batch, listener_model, speaker_model,
@@ -151,7 +151,7 @@ def synthesize_dream_batch(env, speaker_model, batch_size,
 
     silent_candidates, silent_num_candidates = silent_batch
 
-    real_batch = env.get_batch("train", batch_size=real_size,
+    real_batch = env.get_batch("pre_train_train", batch_size=real_size,
                                negative_samples=negative_samples)
 
     utterances = np.concatenate((model_utterances, real_batch[0]), axis=1)
