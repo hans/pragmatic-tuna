@@ -203,13 +203,13 @@ def main(args):
     elif args.optimizer == "adagrad":
         opt_f = lambda lr: tf.train.AdagradOptimizer(lr)
 
-    l_opt = opt_f(args.listener_learning_rate, 0.9)
+    l_opt = opt_f(args.listener_learning_rate)
     l_global_step = tf.Variable(0, name="global_step_listener")
     listener_model.train_op = l_opt.minimize(listener_model.loss,
                                              global_step=l_global_step)
 
     speaker_lr = args.listener_learning_rate * args.speaker_lr_factor
-    s_opt = tf.train.MomentumOptimizer(speaker_lr, 0.9)
+    s_opt = opt_f(speaker_lr)
     s_global_step = tf.Variable(0, name="global_step_speaker")
     speaker_model.train_op = s_opt.minimize(speaker_model.loss,
                                             global_step=s_global_step)
