@@ -197,14 +197,21 @@ def main(args):
             embeddings=listener_model.embeddings,
             graph_embeddings=listener_model.graph_embeddings)
 
-    opt = tf.train.MomentumOptimizer(args.learning_rate, 0.9)
+    if args.optimizer == "momentum":
+        opt_f = lambda lr: tf.train.MomentumOptimizer(lr, 0.9)
+    elif args.optimizer == "adagrad":
+        opt_f = lambda lr: tf.train.AdagradOptimizer(lr)
+
+    l_opt = opt_f(args.listener_learning_rate, 0.9)
     l_global_step = tf.Variable(0, name="global_step_listener")
-    listener_model.train_op = opt.minimize(listener_model.loss,
-                                           global_step=l_global_step)
-    s_opt = tf.train.MomentumOptimizer(args.learning_rate * 100., 0.9)
+    listener_model.train_op = l_opt.minimize(listener_model.loss,
+                                             global_step=l_global_step)
+
+    speaker_lr = args.listener_learning_rate * args.speaker_lr_factor
+    s_opt = tf.train.MomentumOptimizer(speaker_lr, 0.9)
     s_global_step = tf.Variable(0, name="global_step_speaker")
     speaker_model.train_op = s_opt.minimize(speaker_model.loss,
-                                          global_step=s_global_step)
+                                            global_step=s_global_step)
 
     global_step = l_global_step + s_global_step
     sv = tf.train.Supervisor(logdir=args.logdir, global_step=global_step,
@@ -229,10 +236,14 @@ if __name__ == '__main__':
 
     p.add_argument("--summary_interval", type=int, default=50)
 
+    p.add_argument("--optimizer", choices=["momentum", "adagrad"],
+                   default="momentum")
+
     p.add_argument("--n_iters", type=int, default=50)
     p.add_argument("--batch_size", type=int, default=64)
     p.add_argument("--negative_samples", type=int, default=5)
-    p.add_argument("--learning_rate", type=float, default=0.001)
+    p.add_argument("--listener_learning_rate", type=float, default=0.001)
+    p.add_argument("--speaker_lr_factor", type=float, default=100)
 
     p.add_argument("--embedding_dim", type=int, default=64)
 
