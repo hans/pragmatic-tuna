@@ -7,6 +7,7 @@ from tqdm import trange, tqdm
 from pragmatic_tuna.environments.vg import VGEnv
 from pragmatic_tuna.models.ranking_listener import BoWRankingListener
 from pragmatic_tuna.models.vg_speaker import WindowedSequenceSpeakerModel
+from pragmatic_tuna.util import make_summary
 
 
 FAST_MAPPING_RELATION = "behind.r.01"
@@ -47,7 +48,7 @@ def run_trial(batch, listener_model, speaker_model, update=True, infer_with_spea
     return results, (l_loss, s_loss), avg_prob, pct_success
 
 
-def run_train_phase(env, listener_model, speaker_model, args):
+def run_train_phase(sv, env, listener_model, speaker_model, args):
     losses, pct_successes = [], []
     for i in trange(args.n_iters):
         batch = env.get_batch("pre_train_train", batch_size=args.batch_size,
@@ -58,8 +59,8 @@ def run_train_phase(env, listener_model, speaker_model, args):
         losses.append(losses_i)
         pct_successes.append(pct_success)
 
-        # Try fast-mapping.
-        fm_batch = env.get_batch("fast_mapping_train", batch_size=args.batch_size,
+        # Try fast-mapping (adversarial batch!).
+        fm_batch = env.get_batch("adv_fast_mapping", batch_size=args.batch_size,
                                  negative_samples=args.negative_samples)
         _, _, _, pct_fm_success = \
                 run_trial(fm_batch, listener_model, speaker_model,
@@ -68,6 +69,15 @@ def run_train_phase(env, listener_model, speaker_model, args):
         tqdm.write("%5f\t%5f\t%5g\t%.2f\t\t%3f"
                     % (losses_i[0], losses_i[1], avg_prob, pct_success * 100,
                        pct_fm_success * 100))
+
+        if i % args.summary_interval == 0:
+            summary = make_summary({
+                "listener_loss": losses_i[0],
+                "speaker_loss": losses_i[1],
+                "listener_success": pct_success,
+                "speaker_fm_success": pct_fm_success,
+            })
+            sv.summary_computed(tf.get_default_session(), summary)
 
         if i == args.n_iters - 1:
             # Debug: print utterances
@@ -203,7 +213,7 @@ def main(args):
     with sv.managed_session() as sess:
         with sess.as_default():
             print("============== TRAINING")
-            run_train_phase(env, listener_model, speaker_model, args)
+            run_train_phase(sv, env, listener_model, speaker_model, args)
 
             print("============== DREAMING")
             run_dream_phase(env, listener_model, speaker_model, args)
@@ -216,6 +226,8 @@ if __name__ == '__main__':
 
     p.add_argument("--logdir", default="/tmp/vg")
     p.add_argument("--corpus_path")
+
+    p.add_argument("--summary_interval", type=int, default=50)
 
     p.add_argument("--n_iters", type=int, default=50)
     p.add_argument("--batch_size", type=int, default=64)

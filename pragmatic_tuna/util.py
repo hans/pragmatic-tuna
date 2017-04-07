@@ -31,3 +31,12 @@ def orthogonal_initializer(scale=1.1):
         q = q.reshape(shape)
         return tf.constant(scale * q[:shape[0], :shape[1]], dtype=dtype)
     return _orthogonal_initializer
+
+
+def make_summary(tags_values_dict):
+    items = []
+    for tag, value in tags_values_dict.items():
+        if isinstance(value, (np.ndarray, np.generic)):
+            value = np.asscalar(value)
+        items.append(tf.Summary.Value(tag=tag, simple_value=value))
+    return tf.Summary(value=items)
