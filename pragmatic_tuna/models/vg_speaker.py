@@ -128,14 +128,8 @@ class SequenceSpeakerModel(SpeakerModel):
         feed[self.graph_toks] = graph_toks
         feed[self.gold_length] = lengths
 
-        ret = sess.run([self.train_op, self.loss] + self.probs, feed)
-        loss = ret[1]
-
-        probs = ret[2:]
-        scores = self._probs_to_scores(probs, words_batch, lengths)
-        avg_prob = np.exp(scores).mean()
-
-        return loss, avg_prob
+        _, loss = sess.run((self.train_op, self.loss), feed)
+        return loss
 
 
 class WindowedSequenceSpeakerModel(SequenceSpeakerModel):

@@ -40,12 +40,12 @@ def run_trial(batch, listener_model, speaker_model, update=True, infer_with_spea
         # Observe.
         # TODO: joint optimization?
         l_loss = listener_model.observe(*batch)
-        s_loss, avg_prob = speaker_model.observe(*batch)
+        s_loss = speaker_model.observe(*batch)
     else:
-        l_loss = s_loss = avg_prob = 0.0
+        l_loss = s_loss = 0.0
 
     pct_success = np.mean(successes)
-    return results, (l_loss, s_loss), avg_prob, pct_success
+    return results, (l_loss, s_loss), pct_success
 
 
 def run_train_phase(sv, env, listener_model, speaker_model, args):
@@ -53,7 +53,7 @@ def run_train_phase(sv, env, listener_model, speaker_model, args):
     for i in trange(args.n_iters):
         batch = env.get_batch("pre_train_train", batch_size=args.batch_size,
                               negative_samples=args.negative_samples)
-        predictions, losses_i, avg_prob, pct_success = \
+        predictions, losses_i, pct_success = \
                 run_trial(batch, listener_model, speaker_model, update=True)
 
         losses.append(losses_i)
@@ -62,12 +62,12 @@ def run_train_phase(sv, env, listener_model, speaker_model, args):
         # Try fast-mapping (adversarial batch!).
         fm_batch = env.get_batch("adv_fast_mapping", batch_size=args.batch_size,
                                  negative_samples=args.negative_samples)
-        _, _, _, pct_fm_success = \
+        _, _, pct_fm_success = \
                 run_trial(fm_batch, listener_model, speaker_model,
                           update=False, infer_with_speaker=True)
 
-        tqdm.write("%5f\t%5f\t%5g\t%.2f\t\t%3f"
-                    % (losses_i[0], losses_i[1], avg_prob, pct_success * 100,
+        tqdm.write("%5f\t%5f\t%.2f\t\t%3f"
+                    % (losses_i[0], losses_i[1], pct_success * 100,
                        pct_fm_success * 100))
 
         if i % args.summary_interval == 0:
@@ -178,11 +178,11 @@ def run_dream_phase(env, listener_model, speaker_model, args):
         batch = synthesize_dream_batch(env, speaker_model, args.batch_size,
                                        dream_ratio=0.5, # TODO
                                        negative_samples=args.negative_samples)
-        predictions, losses_i, avg_prob, pct_success = \
+        predictions, losses_i, pct_success = \
                 run_trial(batch, listener_model, speaker_model, update=False) # DEV: no updates for now
 
-        tqdm.write("%5f\t%5f\t%5g\t%.2f"
-                   % (losses_i[0], losses_i[1], avg_prob, pct_success * 100))
+        tqdm.write("%5f\t%5f\t%.2f"
+                   % (losses_i[0], losses_i[1], pct_success * 100))
 
 
 def main(args):
