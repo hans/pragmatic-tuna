@@ -222,7 +222,10 @@ def main(args):
     sv = tf.train.Supervisor(logdir=args.logdir, global_step=global_step,
                              summary_op=None)
 
-    with sv.managed_session() as sess:
+    gpu_options = tf.GPUOptions(per_process_gpu_memory_fraction=0.3)
+    config = tf.ConfigProto(gpu_options=gpu_options)
+
+    with sv.managed_session(config=config) as sess:
         # Dump params.
         params_path = os.path.join(args.logdir, "params")
         with open(params_path, "w") as params_f:
