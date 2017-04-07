@@ -147,11 +147,13 @@ class WindowedSequenceSpeakerModel(SequenceSpeakerModel):
     # sufficient motivation.
 
     def __init__(self, env, scope="speaker", max_timesteps=4,
-                 embeddings=None, graph_embeddings=None, embedding_dim=10):
+                 embeddings=None, graph_embeddings=None, embedding_dim=10,
+                 dropout_keep_prob=0.8):
         self.env = env
         self._scope_name = scope
         self.max_timesteps = max_timesteps
         self.embedding_dim = embedding_dim
+        self.dropout_keep_prob = dropout_keep_prob
 
         self.train_op = None
 
@@ -201,6 +203,7 @@ class WindowedSequenceSpeakerModel(SequenceSpeakerModel):
 
                     input_t = tf.concat(1, [prev_sample, prev2_sample, graph_window])
                     hidden_t = layers.fully_connected(input_t, 256)
+                    hidden_t = tf.nn.dropout(hidden_t, self.dropout_keep_prob)
                     output_t = layers.fully_connected(input_t,
                                                       output_dim, tf.identity)
                     probs_t = tf.nn.softmax(output_t / self.temperature)

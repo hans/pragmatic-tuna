@@ -195,7 +195,8 @@ def main(args):
             env, max_timesteps=env.max_timesteps,
             embedding_dim=args.embedding_dim,
             embeddings=listener_model.embeddings,
-            graph_embeddings=listener_model.graph_embeddings)
+            graph_embeddings=listener_model.graph_embeddings,
+            dropout_keep_prob=args.dropout_keep_prob)
 
     if args.optimizer == "momentum":
         opt_f = lambda lr: tf.train.MomentumOptimizer(lr, 0.9)
@@ -246,5 +247,6 @@ if __name__ == '__main__':
     p.add_argument("--speaker_lr_factor", type=float, default=100)
 
     p.add_argument("--embedding_dim", type=int, default=64)
+    p.add_argument("--dropout_keep_prob", type=float, default=0.8)
 
     main(p.parse_args())
