@@ -1,4 +1,6 @@
 from argparse import ArgumentParser
+import os.path
+from pprint import pprint
 
 import numpy as np
 import tensorflow as tf
@@ -190,12 +192,14 @@ def main(args):
 
     listener_model = BoWRankingListener(env,
             embedding_dim=args.embedding_dim,
+            hidden_dim=args.listener_hidden_dim,
             max_negative_samples=args.negative_samples)
     speaker_model = WindowedSequenceSpeakerModel(
             env, max_timesteps=env.max_timesteps,
             embedding_dim=args.embedding_dim,
             embeddings=listener_model.embeddings,
             graph_embeddings=listener_model.graph_embeddings,
+            hidden_dim=args.speaker_hidden_dim,
             dropout_keep_prob=args.dropout_keep_prob)
 
     if args.optimizer == "momentum":
@@ -219,12 +223,17 @@ def main(args):
                              summary_op=None)
 
     with sv.managed_session() as sess:
+        # Dump params.
+        params_path = os.path.join(args.logdir, "params")
+        with open(params_path, "w") as params_f:
+            pprint(vars(args), params_f)
+
         with sess.as_default():
             print("============== TRAINING")
             run_train_phase(sv, env, listener_model, speaker_model, args)
 
-            print("============== DREAMING")
-            run_dream_phase(env, listener_model, speaker_model, args)
+            # print("============== DREAMING")
+            # run_dream_phase(env, listener_model, speaker_model, args)
 
             sv.request_stop()
 
@@ -247,6 +256,8 @@ if __name__ == '__main__':
     p.add_argument("--speaker_lr_factor", type=float, default=100)
 
     p.add_argument("--embedding_dim", type=int, default=64)
+    p.add_argument("--listener_hidden_dim", type=int, default=256)
+    p.add_argument("--speaker_hidden_dim", type=int, default=256)
     p.add_argument("--dropout_keep_prob", type=float, default=0.8)
 
     main(p.parse_args())
