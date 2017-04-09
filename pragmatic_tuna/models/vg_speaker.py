@@ -181,6 +181,7 @@ class WindowedSequenceSpeakerModel(SequenceSpeakerModel):
             graph_toks = tf.reshape(self.graph_toks, (-1, 3))
             graph_window = tf.nn.embedding_lookup(self.graph_embeddings, graph_toks)
             graph_window = tf.reshape(graph_window, (-1, graph_window_dim))
+            graph_window = tf.stop_gradient(graph_window)
 
             # num_inputs = batch_size * max_candidates
             num_inputs = tf.shape(graph_window)[0]
