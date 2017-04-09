@@ -12,7 +12,7 @@ from pragmatic_tuna.models.vg_speaker import WindowedSequenceSpeakerModel
 from pragmatic_tuna.util import make_summary
 
 
-FAST_MAPPING_RELATION = "behind.r.01"
+FAST_MAPPING_RELATION = "behind"
 
 
 def infer_trial(candidates, listener_scores, speaker_scores, infer_with_speaker=False):
