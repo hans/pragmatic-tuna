@@ -81,17 +81,24 @@ def run_train_phase(sv, env, listener_model, speaker_model, args):
             })
             sv.summary_computed(tf.get_default_session(), summary)
 
-        if i == args.n_iters - 1:
-            b_utt, b_cands, b_lengths, b_n_cands = batch
+        if i % args.eval_interval == 0 or i == args.n_iters - 1:
+            tqdm.write("====================== DEV EVAL AT %i" % i)
+
+            d_batch = env.get_batch("pre_train_dev", batch_size=args.batch_size,
+                                    negative_samples=args.negative_samples)
+            d_utt, d_cands, d_lengths, d_n_cands = d_batch
+
+            d_predictions, d_losses, d_pct_success = \
+                    run_trial(d_batch, listener_model, speaker_model, update=False)
 
             # Test: draw some samples for this new input
-            silent_batch = (b_cands, b_n_cands)
+            silent_batch = (d_cands, d_n_cands)
             s_utt, s_lengths = sample_utterances(env, silent_batch, speaker_model)
 
             # Debug: print utterances
             correct, false = [], []
-            for utterance, cands, prediction, sample in zip(b_utt.T, b_cands,
-                                                            predictions, s_utt.T):
+            for utterance, cands, prediction, sample in zip(d_utt.T, d_cands,
+                                                            d_predictions, s_utt.T):
                 utterance = list(utterance)
                 try:
                     utterance = utterance[:utterance.index(env.vocab2idx[env.EOS])]
@@ -261,6 +268,7 @@ if __name__ == '__main__':
     p.add_argument("--corpus_path")
 
     p.add_argument("--summary_interval", type=int, default=50)
+    p.add_argument("--eval_interval", type=int, default=500)
 
     p.add_argument("--optimizer", choices=["momentum", "adagrad"],
                    default="momentum")
