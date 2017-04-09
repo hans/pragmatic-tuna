@@ -82,19 +82,32 @@ def run_train_phase(sv, env, listener_model, speaker_model, args):
             sv.summary_computed(tf.get_default_session(), summary)
 
         if i == args.n_iters - 1:
+            b_utt, b_cands, b_lengths, b_n_cands = batch
+
+            # Test: draw some samples for this new input
+            silent_batch = (b_cands, b_n_cands)
+            s_utt, s_lengths = sample_utterances(env, silent_batch, speaker_model)
+
             # Debug: print utterances
             correct, false = [], []
-            b_utt, b_cands, _, _ = batch
-            for utterance, cands, prediction in zip(b_utt.T, b_cands, predictions):
+            for utterance, cands, prediction, sample in zip(b_utt.T, b_cands,
+                                                            predictions, s_utt.T):
                 utterance = list(utterance)
                 try:
                     utterance = utterance[:utterance.index(env.vocab2idx[env.EOS])]
                 except ValueError: pass
-
                 utterance = " ".join([env.vocab[idx] for idx in utterance])
 
+                sample = list(sample)
+                try:
+                    sample = sample[:sample.index(env.vocab2idx[env.EOS])]
+                except ValueError: pass
+                sample = " ".join([env.vocab[idx] for idx in sample])
+
                 dest = correct if prediction == cands[0] else false
-                dest.append("%30s\t%s" % (utterance, " ".join([env.graph_vocab[idx] for idx in prediction])))
+                dest.append("%40s\t%40s\t%s" %
+                            (utterance, sample,
+                             " ".join([env.graph_vocab[idx] for idx in prediction])))
 
             print("=========== Correct:")
             print("\n".join(correct))
