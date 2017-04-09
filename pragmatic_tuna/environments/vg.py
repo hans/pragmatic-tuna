@@ -128,8 +128,13 @@ class VGEnv(gym.Env):
         eos_id = self.vocab2idx[self.EOS]
         ret = []
         for i, words_i in enumerate(words_batch):
-            lengths[i] = len(words_i)
             ret_i = words_i[:]
+
+            # Train to output at most a single EOS token.
+            if len(ret_i) < self.max_timesteps:
+                ret_i.append(eos_id)
+
+            lengths[i] = len(ret_i)
             if lengths[i] < self.max_timesteps:
                 ret_i.extend([eos_id] * (self.max_timesteps - lengths[i]))
             ret.append(ret_i)
