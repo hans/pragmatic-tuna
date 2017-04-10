@@ -104,17 +104,8 @@ def do_eval(sv, env, listener_model, speaker_model, args, batch=None):
     correct, false = [], []
     for utterance, cands, prediction, sample in zip(d_utt.T, d_cands,
                                                     d_predictions, s_utt.T):
-        utterance = list(utterance)
-        try:
-            utterance = utterance[:utterance.index(env.vocab2idx[env.EOS])]
-        except ValueError: pass
-        utterance = " ".join([env.vocab[idx] for idx in utterance])
-
-        sample = list(sample)
-        try:
-            sample = sample[:sample.index(env.vocab2idx[env.EOS])]
-        except ValueError: pass
-        sample = " ".join([env.vocab[idx] for idx in sample])
+        utterance = " ".join(env.utterance_to_tokens(utterance))
+        sample = " ".join(env.utterance_to_tokens(sample))
 
         dest = correct if prediction == cands[0] else false
         dest.append("%40s\t%40s\t%s" %
@@ -146,7 +137,6 @@ def run_fm_phase(sv, env, listener_model, speaker_model, args,
         tqdm.write("%5f\t%5f\t%5f" % (losses_i[0], losses_i[1], pct_success * 100))
 
     do_eval(sv, env, listener_model, speaker_model, args, batch=batch)
-
 
 
 def sample_utterances(env, silent_batch, speaker_model):

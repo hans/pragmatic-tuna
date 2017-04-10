@@ -303,6 +303,17 @@ class VGEnv(gym.Env):
             return glove_util.learn_embeddings(corpus_path, self.graph_vocab2idx,
                                                self.embedding_dim)
 
+    def utterance_to_tokens(self, u):
+        """
+        Convert an utterance formatted as an ID sequence to a list of tokens.
+        """
+        u = list(u)
+        try:
+            u = u[:u.index(self.word_eos_id)]
+        except ValueError: pass
+
+        return [self.vocab[idx] for idx in u]
+
 
 if __name__ == "__main__":
     env = VGEnv("data/vg_processed_dev.pkl") # VGEnv("data/vg_processed.json")
