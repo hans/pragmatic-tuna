@@ -140,7 +140,7 @@ class VGEnv(gym.Env):
         return candidates
 
     def _pad_words_batch(self, words_batch):
-        lengths = np.empty(len(words_batch))
+        lengths = np.empty(len(words_batch), dtype=np.int32)
         eos_id = self.vocab2idx[self.EOS]
         ret = []
         for i, words_i in enumerate(words_batch):
@@ -161,7 +161,7 @@ class VGEnv(gym.Env):
     def _pad_candidates_batch(self, candidates_batch, max_candidates=None):
         max_candidates = max_candidates or self.max_candidates
 
-        num_candidates = np.empty(len(candidates_batch))
+        num_candidates = np.empty(len(candidates_batch), dtype=np.int32)
         candidates_batch_ret = []
         for i, candidates_i in enumerate(candidates_batch):
             num_candidates[i] = len(candidates_i)
