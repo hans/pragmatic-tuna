@@ -129,11 +129,12 @@ def run_fm_phase(sv, env, listener_model, speaker_model, args,
     """
     # Number of examples to use for learning.
     # TODO: make parameter
-    N = args.batch_size
+    N = 1#args.batch_size
 
     batch = env.get_batch(corpus, batch_size=N,
                           negative_samples=args.negative_samples)
-    for i in range(100): # TODO
+    # NB: 100 is suitable for N=64
+    for i in range(10):#100): # TODO
         predictions, losses_i, pct_success = \
                 run_trial(batch, listener_model, speaker_model,
                           update_speaker=True, update_listener=False,
