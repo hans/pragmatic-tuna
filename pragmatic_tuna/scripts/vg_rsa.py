@@ -87,10 +87,11 @@ def run_train_phase(sv, env, listener_model, speaker_model, args):
             do_eval(sv, env, listener_model, speaker_model)
 
 
-def do_eval(sv, env, listener_model, speaker_model, args, batch=None):
+def do_eval(sv, env, listener_model, speaker_model, args, batch=None,
+            corpus="pre_train_dev"):
     d_batch = batch
     if d_batch is None:
-        d_batch = env.get_batch("pre_train_dev", batch_size=args.batch_size,
+        d_batch = env.get_batch(corpus, batch_size=args.batch_size,
                                 negative_samples=args.negative_samples)
     d_utt, d_cands, d_lengths, d_n_cands = d_batch
 
@@ -202,8 +203,9 @@ def synthesize_dream_batch(env, speaker_model, batch_size,
     return synthesized_batch
 
 
-def run_dream_phase(env, listener_model, speaker_model, args):
-    for i in trange(100):
+def run_dream_phase(sv, env, listener_model, speaker_model, args):
+    n_iters = 100
+    for i in trange(n_iters):
         batch = synthesize_dream_batch(env, speaker_model, args.batch_size,
                                        dream_ratio=0.75, # TODO
                                        negative_samples=args.negative_samples)
@@ -226,6 +228,11 @@ def run_dream_phase(env, listener_model, speaker_model, args):
 
         tqdm.write("%5f\t%5f\tL:%.2f"
                    % (losses_i[0], losses_i[1], pct_success * 100))
+
+        if i % args.eval_interval == 0 or i == n_iters - 1:
+            print("======== FM DEV EVAL")
+            do_eval(sv, env, listener_model, speaker_model, args,
+                    corpus="fast_mapping_dev")
 
 
 def main(args):
@@ -283,7 +290,7 @@ def main(args):
             run_fm_phase(sv, env, listener_model, speaker_model, args)
 
             print("============== DREAMING")
-            run_dream_phase(env, listener_model, speaker_model, args)
+            run_dream_phase(sv, env, listener_model, speaker_model, args)
 
             sv.request_stop()
 
