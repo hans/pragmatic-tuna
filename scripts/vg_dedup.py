@@ -12,7 +12,7 @@ def main(args):
     
     for trial in data:
         domain = trial["domain"]
-        domain_sorted = sorted(domain, key=lambda x: x['target'], reverse=False)
+        domain_sorted = sorted(domain, key=lambda x: x['target'], reverse=True)
         entries = set()
         new_domain = []
         for subgraph in domain_sorted:
