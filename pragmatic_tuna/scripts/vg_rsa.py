@@ -86,7 +86,7 @@ def run_train_phase(sv, env, listener_model, speaker_model, args):
             do_eval(sv, env, listener_model, speaker_model)
 
 
-def do_eval(sv, env, listener_model, speaker_model, batch=None):
+def do_eval(sv, env, listener_model, speaker_model, args, batch=None):
     d_batch = batch
     if d_batch is None:
         d_batch = env.get_batch("pre_train_dev", batch_size=args.batch_size,
@@ -127,6 +127,25 @@ def do_eval(sv, env, listener_model, speaker_model, batch=None):
     tqdm.write("\n========== False:")
     tqdm.write("\n".join(false))
 
+
+def run_fm_phase(sv, env, listener_model, speaker_model, args,
+                 corpus="fast_mapping_train"):
+    """
+    Run the "fast mapping" (== zero-shot inference) phase.
+    """
+    # Number of examples to use for learning.
+    # TODO: make parameter
+    N = args.batch_size
+
+    batch = env.get_batch(corpus, batch_size=N,
+                          negative_samples=args.negative_samples)
+    for i in range(100): # TODO
+        predictions, losses_i, pct_success = \
+                run_trial(batch, listener_model, speaker_model, update=True,
+                          infer_with_speaker=True)
+        tqdm.write("%5f\t%5f\t%5f" % (losses_i[0], losses_i[1], pct_success * 100))
+
+    do_eval(sv, env, listener_model, speaker_model, args, batch=batch)
 
 
 
@@ -261,11 +280,14 @@ def main(args):
             pprint(vars(args), params_f)
 
         with sess.as_default():
-            print("============== TRAINING")
-            run_train_phase(sv, env, listener_model, speaker_model, args)
+            # print("============== TRAINING")
+            # run_train_phase(sv, env, listener_model, speaker_model, args)
 
-            # print("============== DREAMING")
-            # run_dream_phase(env, listener_model, speaker_model, args)
+            print("============== FAST MAPPING")
+            run_fm_phase(sv, env, listener_model, speaker_model, args)
+
+            print("============== DREAMING")
+            run_dream_phase(env, listener_model, speaker_model, args)
 
             sv.request_stop()
 
