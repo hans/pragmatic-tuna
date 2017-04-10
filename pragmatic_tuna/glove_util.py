@@ -9,8 +9,7 @@ import subprocess
 import numpy as np
 
 
-# DEV: extra .parent here because we are working from dev
-GLOVE_PATH = Path(Path(__file__).absolute().parent.parent.parent,
+GLOVE_PATH = Path(Path(__file__).absolute().parent.parent,
                   "tools", "glove", "build")
 assert GLOVE_PATH.exists(), GLOVE_PATH
 
