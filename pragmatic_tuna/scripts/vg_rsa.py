@@ -83,44 +83,50 @@ def run_train_phase(sv, env, listener_model, speaker_model, args):
 
         if i % args.eval_interval == 0 or i == args.n_iters - 1:
             tqdm.write("====================== DEV EVAL AT %i" % i)
+            do_eval(sv, env, listener_model, speaker_model)
 
-            d_batch = env.get_batch("pre_train_dev", batch_size=args.batch_size,
-                                    negative_samples=args.negative_samples)
-            d_utt, d_cands, d_lengths, d_n_cands = d_batch
 
-            d_predictions, d_losses, d_pct_success = \
-                    run_trial(d_batch, listener_model, speaker_model, update=False)
+def do_eval(sv, env, listener_model, speaker_model, batch=None):
+    d_batch = batch
+    if d_batch is None:
+        d_batch = env.get_batch("pre_train_dev", batch_size=args.batch_size,
+                                negative_samples=args.negative_samples)
+    d_utt, d_cands, d_lengths, d_n_cands = d_batch
 
-            # Test: draw some samples for this new input
-            silent_batch = (d_cands, d_n_cands)
-            s_utt, s_lengths = sample_utterances(env, silent_batch, speaker_model)
+    d_predictions, d_losses, d_pct_success = \
+            run_trial(d_batch, listener_model, speaker_model, update=False)
 
-            # Debug: print utterances
-            correct, false = [], []
-            for utterance, cands, prediction, sample in zip(d_utt.T, d_cands,
-                                                            d_predictions, s_utt.T):
-                utterance = list(utterance)
-                try:
-                    utterance = utterance[:utterance.index(env.vocab2idx[env.EOS])]
-                except ValueError: pass
-                utterance = " ".join([env.vocab[idx] for idx in utterance])
+    # Test: draw some samples for this new input
+    silent_batch = (d_cands, d_n_cands)
+    s_utt, s_lengths = sample_utterances(env, silent_batch, speaker_model)
 
-                sample = list(sample)
-                try:
-                    sample = sample[:sample.index(env.vocab2idx[env.EOS])]
-                except ValueError: pass
-                sample = " ".join([env.vocab[idx] for idx in sample])
+    # Debug: print utterances
+    correct, false = [], []
+    for utterance, cands, prediction, sample in zip(d_utt.T, d_cands,
+                                                    d_predictions, s_utt.T):
+        utterance = list(utterance)
+        try:
+            utterance = utterance[:utterance.index(env.vocab2idx[env.EOS])]
+        except ValueError: pass
+        utterance = " ".join([env.vocab[idx] for idx in utterance])
 
-                dest = correct if prediction == cands[0] else false
-                dest.append("%40s\t%40s\t%s" %
-                            (utterance, sample,
-                             " ".join([env.graph_vocab[idx] for idx in prediction])))
+        sample = list(sample)
+        try:
+            sample = sample[:sample.index(env.vocab2idx[env.EOS])]
+        except ValueError: pass
+        sample = " ".join([env.vocab[idx] for idx in sample])
 
-            print("=========== Correct:")
-            print("\n".join(correct))
+        dest = correct if prediction == cands[0] else false
+        dest.append("%40s\t%40s\t%s" %
+                    (utterance, sample,
+                        " ".join([env.graph_vocab[idx] for idx in prediction])))
 
-            print("\n========== False:")
-            print("\n".join(false))
+    tqdm.write("=========== Correct:")
+    tqdm.write("\n".join(correct))
+
+    tqdm.write("\n========== False:")
+    tqdm.write("\n".join(false))
+
 
 
 
