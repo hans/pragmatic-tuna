@@ -26,7 +26,8 @@ def infer_trial(candidates, listener_scores, speaker_scores, infer_with_speaker=
     return results
 
 
-def run_trial(batch, listener_model, speaker_model, update=True, infer_with_speaker=False):
+def run_trial(batch, listener_model, speaker_model, update_listener=True,
+              update_speaker=True, infer_with_speaker=False):
     utterances, candidates, lengths, n_cands = batch
 
     # Fetch model scores and rank for pragmatic listener inference.
@@ -38,13 +39,12 @@ def run_trial(batch, listener_model, speaker_model, update=True, infer_with_spea
     successes = [result_i == candidates_i[0]
                  for result_i, candidates_i in zip(results, candidates)]
 
-    if update:
-        # Observe.
-        # TODO: joint optimization?
+    # TODO: joint optimization?
+    l_loss = s_loss = 0.0
+    if update_listener:
         l_loss = listener_model.observe(*batch)
+    if update_speaker:
         s_loss = speaker_model.observe(*batch)
-    else:
-        l_loss = s_loss = 0.0
 
     pct_success = np.mean(successes)
     return results, (l_loss, s_loss), pct_success
@@ -56,7 +56,7 @@ def run_train_phase(sv, env, listener_model, speaker_model, args):
         batch = env.get_batch("pre_train_train", batch_size=args.batch_size,
                               negative_samples=args.negative_samples)
         predictions, losses_i, pct_success = \
-                run_trial(batch, listener_model, speaker_model, update=True)
+                run_trial(batch, listener_model, speaker_model)
 
         losses.append(losses_i)
         pct_successes.append(pct_success)
@@ -66,7 +66,8 @@ def run_train_phase(sv, env, listener_model, speaker_model, args):
                                  negative_samples=args.negative_samples)
         _, _, pct_fm_success = \
                 run_trial(fm_batch, listener_model, speaker_model,
-                          update=False, infer_with_speaker=True)
+                          update_listener=False, update_speaker=False,
+                          infer_with_speaker=True)
 
         tqdm.write("%5f\t%5f\t%.2f\t\t%3f"
                     % (losses_i[0], losses_i[1], pct_success * 100,
@@ -94,7 +95,8 @@ def do_eval(sv, env, listener_model, speaker_model, args, batch=None):
     d_utt, d_cands, d_lengths, d_n_cands = d_batch
 
     d_predictions, d_losses, d_pct_success = \
-            run_trial(d_batch, listener_model, speaker_model, update=False)
+            run_trial(d_batch, listener_model, speaker_model,
+                      update_listener=False, update_speaker=False)
 
     # Test: draw some samples for this new input
     silent_batch = (d_cands, d_n_cands)
@@ -132,9 +134,10 @@ def run_fm_phase(sv, env, listener_model, speaker_model, args,
                           negative_samples=args.negative_samples)
     for i in range(100): # TODO
         predictions, losses_i, pct_success = \
-                run_trial(batch, listener_model, speaker_model, update=True,
+                run_trial(batch, listener_model, speaker_model,
+                          update_speaker=True, update_listener=False,
                           infer_with_speaker=True)
-        tqdm.write("%5f\t%5f\t%5f" % (losses_i[0], losses_i[1], pct_success * 100))
+        tqdm.write("%5f\t%5f\tS:%.2f" % (losses_i[0], losses_i[1], pct_success * 100))
 
     do_eval(sv, env, listener_model, speaker_model, args, batch=batch)
 
@@ -219,9 +222,9 @@ def run_dream_phase(env, listener_model, speaker_model, args):
             print()
 
         predictions, losses_i, pct_success = \
-                run_trial(batch, listener_model, speaker_model, update=True)
+                run_trial(batch, listener_model, speaker_model)
 
-        tqdm.write("%5f\t%5f\t%.2f"
+        tqdm.write("%5f\t%5f\tL:%.2f"
                    % (losses_i[0], losses_i[1], pct_success * 100))
 
 
