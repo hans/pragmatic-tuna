@@ -1,11 +1,16 @@
 from collections import Counter
 import json
+from pathlib import Path, PurePath
+import subprocess
+import tempfile
 
 try: import cPickle as pickle
 except: import pickle
 
 import gym
 import numpy as np
+
+from pragmatic_tuna import glove_util
 
 
 UNK = "<unk>"
@@ -17,7 +22,8 @@ class VGEnv(gym.Env):
     UNK = UNK
     EOS = EOS
 
-    def __init__(self, corpus_path, max_negative_samples=5):
+    def __init__(self, corpus_path, graph_embeddings_path=None,
+                 embedding_dim=64, max_negative_samples=5):
         if corpus_path.endswith(".pkl"):
             with open(corpus_path, "rb") as corpus_pkl:
                 self.corpora, self.vocab, self.graph_vocab = pickle.load(corpus_pkl)
@@ -43,6 +49,12 @@ class VGEnv(gym.Env):
         self.max_negative_samples = max_negative_samples
         self.max_candidates = max_negative_samples + 1
 
+        self.embedding_dim = embedding_dim
+        if graph_embeddings_path is None:
+            graph_embeddings_path = \
+                    corpus_path[:corpus_path.rindex(".")] + ".graph_embeddings.npz"
+        self.graph_embeddings = self._load_graph_embeddings(graph_embeddings_path)
+
     def _process_corpus(self, corpus_path):
         with open(corpus_path, "r") as corpus_f:
             corpus_data = json.load(corpus_f)
@@ -66,7 +78,11 @@ class VGEnv(gym.Env):
             for subgraph in trial["domain"]:
                 obj1 = subgraph["object1"]
                 obj2 = subgraph["object2"]
+
                 reln = subgraph["reln"]
+                # Make sure this is a single token.
+                reln = reln.replace(" ", "_")
+
                 graph_vocab.add(obj1)
                 graph_vocab.add(obj2)
                 graph_vocab.add(reln)
@@ -84,7 +100,7 @@ class VGEnv(gym.Env):
         vocab = [UNK, EOS] + list(sorted([word for word, freq in vocab_counts.items()
                                           if freq > 1]))
         vocab2idx = {w: idx for idx, w in enumerate(vocab)}
-        graph_vocab = [EOS] + list(sorted(graph_vocab))
+        graph_vocab = [UNK, EOS] + list(sorted(graph_vocab))
         graph_vocab2idx = {w: idx for idx, w in enumerate(graph_vocab)}
 
         # Now reprocess trials, replacing strings with IDs.
@@ -234,8 +250,59 @@ class VGEnv(gym.Env):
 
         return self._pad_candidates_batch(candidates, max_candidates=negative_samples + 1)
 
+    def _load_graph_embeddings(self, graph_embeddings_path):
+        if Path(graph_embeddings_path).exists():
+            data = np.load(graph_embeddings_path)
+            saved_vocab = list(data["graph_vocab"])
+            if len(saved_vocab) != len(self.graph_vocab):
+                raise ValueError("vocab of saved graph embeddings has different"
+                                 " size than vocab loaded from corpus: %i != %i"
+                                 % (len(saved_vocab), len(self.graph_vocab)))
+            elif saved_vocab != self.graph_vocab:
+                raise ValueError("values in vocab of saved graph embeddings "
+                                 "differ from those loaded from corpus")
+
+            embs = data["graph_embeddings"]
+        else:
+            embs = self._compute_graph_embeddings()
+            np.savez(graph_embeddings_path,
+                     graph_vocab=self.graph_vocab,
+                     graph_embeddings=embs)
+
+        assert embs.shape[1] == self.embedding_dim, embs.shape[1]
+        return embs
+
+    def _compute_graph_embeddings(self):
+        """
+        Pre-train embedding representations for tokens in graph vocabulary.
+        """
+        # We generate a corpus of collocations, then call GloVe (C++ version)
+        # programmatically to create embeddings from this corpus.
+        #
+        # Every "utterance" in this corpus is of length 3 --- they are
+        # generated from the subgraph triples. We use a GloVe window of size
+        # 3, padding each utterance so that edge tokens don't mistakenly
+        # track co-occurrences with nearby triples.
+        with tempfile.TemporaryDirectory() as d:
+            # Generate corpus.
+            pad_str = " ".join([EOS] * 3)
+            # DEV: use a visible dir rather than a tempdir.
+            corpus_path = Path(d, "corpus")
+            with corpus_path.open("w") as corpus_f:
+                for corpus in self.corpora.values():
+                    for trial in corpus:
+                        subgraphs = trial["domain_positive"] + trial["domain_negative"]
+                        for subgraph in subgraphs:
+                            subgraph = tuple(self.graph_vocab[idx] for idx in subgraph)
+                            # Rearrange so that we have (obj, reln, obj) order
+                            subgraph = (subgraph[1], subgraph[0], subgraph[2])
+                            subgraph_str = "%s %s %s %s %s\n" \
+                                    % ((pad_str,) + subgraph + (pad_str,))
+                            corpus_f.write(subgraph_str)
+
+            return glove_util.learn_embeddings(corpus_path, self.graph_vocab2idx,
+                                               self.embedding_dim)
+
 
 if __name__ == "__main__":
-    env = VGEnv("data/vg_processed.pkl") # VGEnv("data/vg_processed.json")
-
-    print(env.get_batch("train", batch_size=2))
+    env = VGEnv("data/vg_processed_dev.pkl") # VGEnv("data/vg_processed.json")
