@@ -185,17 +185,6 @@ def synthesize_dream_batch(env, speaker_model, batch_size,
             negative_samples=negative_samples)
     model_utterances, model_lengths = sample_utterances(env, silent_batch,
                                                         speaker_model)
-
-    # DEV: debug print a few strings
-    utterances_t = np.asarray(model_utterances).T[:3]
-    s_candidates, _ = silent_batch
-    for cands, utt in zip(s_candidates, utterances_t):
-        cand = cands[0]
-        cand_str = " ".join(env.graph_vocab[idx] for idx in cand)
-        utt_str = " ".join(env.vocab[idx] for idx in utt)
-        print("%40s\t%100s" % (cand_str, utt_str))
-    print()
-
     silent_candidates, silent_num_candidates = silent_batch
 
     real_batch = env.get_batch("pre_train_train", batch_size=real_size,
@@ -211,12 +200,26 @@ def synthesize_dream_batch(env, speaker_model, batch_size,
 
 
 def run_dream_phase(env, listener_model, speaker_model, args):
-    for i in trange(5):
+    for i in trange(100):
         batch = synthesize_dream_batch(env, speaker_model, args.batch_size,
-                                       dream_ratio=0.5, # TODO
+                                       dream_ratio=0.75, # TODO
                                        negative_samples=args.negative_samples)
+
+        if i % 10 == 0:
+            # DEV: debug print a few strings
+            # Assumes that silent / sampled candidates come first from
+            # synthesize_dream_batch (they do)
+            utterances = np.asarray(batch[0]).T[:5]
+            candidates = batch[1]
+            for cands, utt in zip(candidates, utterances):
+                cand = cands[0]
+                cand_str = " ".join(env.graph_vocab[idx] for idx in cand)
+                utt_str = " ".join(env.utterance_to_tokens(utt))
+                print("%40s\t%100s" % (cand_str, utt_str))
+            print()
+
         predictions, losses_i, pct_success = \
-                run_trial(batch, listener_model, speaker_model, update=False) # DEV: no updates for now
+                run_trial(batch, listener_model, speaker_model, update=True)
 
         tqdm.write("%5f\t%5f\t%.2f"
                    % (losses_i[0], losses_i[1], pct_success * 100))
