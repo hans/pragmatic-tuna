@@ -208,17 +208,20 @@ def run_dream_phase(env, listener_model, speaker_model, args):
 
 
 def main(args):
-    env = VGEnv(args.corpus_path)
+    env = VGEnv(args.corpus_path, embedding_dim=args.embedding_dim)
+    graph_embeddings = tf.Variable(env.graph_embeddings, name="graph_embeddings",
+                                   dtype=tf.float32, trainable=False)
 
     listener_model = BoWRankingListener(env,
             embedding_dim=args.embedding_dim,
             hidden_dim=args.listener_hidden_dim,
+            graph_embeddings=graph_embeddings,
             max_negative_samples=args.negative_samples)
     speaker_model = WindowedSequenceSpeakerModel(
             env, max_timesteps=env.max_timesteps,
             embedding_dim=args.embedding_dim,
             embeddings=listener_model.embeddings,
-            graph_embeddings=listener_model.graph_embeddings,
+            graph_embeddings=graph_embeddings,
             hidden_dim=args.speaker_hidden_dim,
             dropout_keep_prob=args.dropout_keep_prob)
 
