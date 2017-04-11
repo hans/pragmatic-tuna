@@ -111,7 +111,7 @@ def do_eval(sv, env, listener_model, speaker_model, args, batch=None,
         sample = " ".join(env.utterance_to_tokens(sample))
 
         dest = correct if prediction == cands[0] else false
-        dest.append("%40s\t%40s\t%s" %
+        dest.append("%40s\t%60s\t%s" %
                     (utterance, sample,
                         " ".join([env.graph_vocab[idx] for idx in prediction])))
 
@@ -227,8 +227,15 @@ def run_dream_phase(sv, env, listener_model, speaker_model, args):
         predictions, losses_i, pct_success = \
                 run_trial(batch, listener_model, speaker_model)
 
-        tqdm.write("%5f\t%5f\tL:%.2f"
-                   % (losses_i[0], losses_i[1], pct_success * 100))
+        # Also eval with an adversarial batch, using listener for inference.
+        fm_batch = env.get_batch("adv_fast_mapping", batch_size=args.batch_size,
+                                 negative_samples=args.negative_samples)
+        _, _, pct_fm_success = \
+                run_trial(fm_batch, listener_model, speaker_model,
+                          update_listener=False, update_speaker=False)
+
+        tqdm.write("%5f\t%5f\tL:%.2f\tL_FM:%.2f"
+                   % (losses_i[0], losses_i[1], pct_success * 100, pct_fm_success * 100))
 
         if i % args.eval_interval == 0 or i == n_iters - 1:
             print("======== FM DEV EVAL")
