@@ -123,23 +123,35 @@ def do_eval(sv, env, listener_model, speaker_model, args, batch=None,
 
 
 def run_fm_phase(sv, env, listener_model, speaker_model, args,
-                 corpus="fast_mapping_train"):
+                 k=None, corpus="fast_mapping_train"):
     """
     Run the "fast mapping" (== zero-shot inference) phase.
-    """
-    # Number of examples to use for learning.
-    # TODO: make parameter
-    N = 1#args.batch_size
 
-    batch = env.get_batch(corpus, batch_size=N,
+    Arguments:
+        sv: Supervisor
+        env:
+        listener_model:
+        speaker_model:
+        args:
+        k: Number of labeled samples to use for learning
+        corpus: Corpus from which to draw fast-mapping trials
+    """
+    if k is None:
+        k = args.batch_size
+
+    batch = env.get_batch(corpus, batch_size=k,
                           negative_samples=args.negative_samples)
-    # NB: 100 is suitable for N=64
-    for i in range(10):#100): # TODO
-        predictions, losses_i, pct_success = \
+
+    speaker_loss = np.inf
+    while speaker_loss > 1.5: # TODO magic number
+        predictions, losses, pct_success = \
                 run_trial(batch, listener_model, speaker_model,
                           update_speaker=True, update_listener=False,
                           infer_with_speaker=True)
-        tqdm.write("%5f\t%5f\tS:%.2f" % (losses_i[0], losses_i[1], pct_success * 100))
+        listener_loss, speaker_loss = losses
+
+        tqdm.write("%5f\t%5f\tS:%.2f" %
+                   (listener_loss, speaker_loss, pct_success * 100))
 
     do_eval(sv, env, listener_model, speaker_model, args, batch=batch)
 
@@ -302,8 +314,10 @@ def main(args):
             # print("============== TRAINING")
             # run_train_phase(sv, env, listener_model, speaker_model, args)
 
-            print("============== FAST MAPPING")
-            run_fm_phase(sv, env, listener_model, speaker_model, args)
+            if args.fast_mapping_k > 0:
+                print("============== FAST MAPPING")
+                run_fm_phase(sv, env, listener_model, speaker_model, args,
+                            k=args.fast_mapping_k)
 
             print("============== DREAMING")
             run_dream_phase(sv, env, listener_model, speaker_model, args)
@@ -333,5 +347,7 @@ if __name__ == '__main__':
     p.add_argument("--listener_hidden_dim", type=int, default=256)
     p.add_argument("--speaker_hidden_dim", type=int, default=256)
     p.add_argument("--dropout_keep_prob", type=float, default=0.8)
+
+    p.add_argument("--fast_mapping_k", type=int, default=64)
 
     main(p.parse_args())
