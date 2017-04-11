@@ -234,8 +234,16 @@ def run_dream_phase(sv, env, listener_model, speaker_model, args):
                 run_trial(fm_batch, listener_model, speaker_model,
                           update_listener=False, update_speaker=False)
 
-        tqdm.write("%5f\t%5f\tL:%.2f\tL_FM:%.2f"
-                   % (losses_i[0], losses_i[1], pct_success * 100, pct_fm_success * 100))
+        # Finally, eval on pre-train dev.
+        pt_batch = env.get_batch("pre_train_dev", batch_size=args.batch_size,
+                                 negative_samples=args.negative_samples)
+        _, _, pct_pt_success = \
+                run_trial(pt_batch, listener_model, speaker_model,
+                          update_listener=False, update_speaker=False)
+
+        tqdm.write("%5f\t%5f\tL_D:%.2f\t\tL_ADVFM:%.2f\t\tL_PT:%.2f"
+                   % (losses_i[0], losses_i[1], pct_success * 100,
+                      pct_fm_success * 100, pct_pt_success * 100))
 
         if i % args.eval_interval == 0 or i == n_iters - 1:
             print("======== FM DEV EVAL")
