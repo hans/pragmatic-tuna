@@ -238,7 +238,8 @@ def run_dream_phase(sv, env, listener_model, speaker_model, args):
             print()
 
         predictions, losses_i, pct_success = \
-                run_trial(batch, listener_model, speaker_model)
+                run_trial(batch, listener_model, speaker_model,
+                          update_speaker=False)
 
         # Also eval with an adversarial batch, using listener for inference.
         fm_batch = env.get_batch("adv_fast_mapping_dev",
