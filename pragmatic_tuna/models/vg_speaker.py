@@ -128,14 +128,8 @@ class SequenceSpeakerModel(SpeakerModel):
         feed[self.graph_toks] = graph_toks
         feed[self.gold_length] = lengths
 
-        ret = sess.run([self.train_op, self.loss] + self.probs, feed)
-        loss = ret[1]
-
-        probs = ret[2:]
-        scores = self._probs_to_scores(probs, words_batch, lengths)
-        avg_prob = np.exp(scores).mean()
-
-        return loss, avg_prob
+        _, loss = sess.run((self.train_op, self.loss), feed)
+        return loss
 
 
 class WindowedSequenceSpeakerModel(SequenceSpeakerModel):
@@ -147,11 +141,14 @@ class WindowedSequenceSpeakerModel(SequenceSpeakerModel):
     # sufficient motivation.
 
     def __init__(self, env, scope="speaker", max_timesteps=4,
-                 embeddings=None, graph_embeddings=None, embedding_dim=10):
+                 embeddings=None, graph_embeddings=None, embedding_dim=10,
+                 hidden_dim=256, dropout_keep_prob=0.8):
         self.env = env
         self._scope_name = scope
         self.max_timesteps = max_timesteps
         self.embedding_dim = embedding_dim
+        self.hidden_dim = hidden_dim
+        self.dropout_keep_prob = dropout_keep_prob
 
         self.train_op = None
 
@@ -184,6 +181,7 @@ class WindowedSequenceSpeakerModel(SequenceSpeakerModel):
             graph_toks = tf.reshape(self.graph_toks, (-1, 3))
             graph_window = tf.nn.embedding_lookup(self.graph_embeddings, graph_toks)
             graph_window = tf.reshape(graph_window, (-1, graph_window_dim))
+            graph_window = tf.stop_gradient(graph_window)
 
             # num_inputs = batch_size * max_candidates
             num_inputs = tf.shape(graph_window)[0]
@@ -200,7 +198,8 @@ class WindowedSequenceSpeakerModel(SequenceSpeakerModel):
                     ######### Feedforward.
 
                     input_t = tf.concat(1, [prev_sample, prev2_sample, graph_window])
-                    hidden_t = layers.fully_connected(input_t, 256)
+                    hidden_t = layers.fully_connected(input_t, self.hidden_dim)
+                    hidden_t = tf.nn.dropout(hidden_t, self.dropout_keep_prob)
                     output_t = layers.fully_connected(input_t,
                                                       output_dim, tf.identity)
                     probs_t = tf.nn.softmax(output_t / self.temperature)
