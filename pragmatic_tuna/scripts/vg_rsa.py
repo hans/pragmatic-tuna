@@ -261,6 +261,9 @@ def run_dream_phase(sv, env, listener_model, speaker_model, args):
             print("======== FM DEV EVAL")
             do_eval(sv, env, listener_model, speaker_model, args,
                     corpus="fast_mapping_dev")
+            print("======== ADV FM EVAL")
+            do_eval(sv, env, listener_model, speaker_model, args,
+                    corpus="adv_fast_mapping")
 
 
 def main(args):
