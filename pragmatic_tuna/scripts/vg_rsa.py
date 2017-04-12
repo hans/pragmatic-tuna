@@ -301,6 +301,8 @@ def main(args):
         opt_f = lambda lr: tf.train.MomentumOptimizer(lr, 0.9)
     elif args.optimizer == "adagrad":
         opt_f = lambda lr: tf.train.AdagradOptimizer(lr)
+    elif args.optimizer == "sgd":
+        opt_f = lambda lr: tf.train.GradientDescentOptimizer(lr)
 
     l_opt = opt_f(args.listener_learning_rate)
     l_global_step = tf.Variable(0, name="global_step_listener")
@@ -357,7 +359,7 @@ if __name__ == '__main__':
     p.add_argument("--summary_interval", type=int, default=50)
     p.add_argument("--eval_interval", type=int, default=500)
 
-    p.add_argument("--optimizer", choices=["momentum", "adagrad"],
+    p.add_argument("--optimizer", choices=["momentum", "adagrad", "sgd"],
                    default="momentum")
 
     p.add_argument("--n_iters", type=int, default=50)
