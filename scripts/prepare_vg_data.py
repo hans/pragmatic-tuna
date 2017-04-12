@@ -2,10 +2,15 @@
 
 
 from argparse import ArgumentParser
-from jsonstreamer import ObjectStreamer
 import sys
 import json
 import copy
+
+try:
+    from jsonstreamer import ObjectStreamer
+except:
+    pass
+
 
 TRAIN_RELATIONS = ["on", "in"]
 FAST_MAPPING_RELATIONS = ["behind"]
@@ -137,14 +142,14 @@ class VisualGenomeFilter(object):
         return {obj['object_id']: obj['synsets'][0]
                         for obj in region['objects'] if len(obj['synsets']) > 0}
 
-    def _create_adverserial_trial(self, trial):
+    def _create_adverserial_trial(self, trial, t):
         for entry in trial['domain']:
             if entry['target']:
                 target = entry
                 break
         
         adv_trial = copy.deepcopy(trial)
-        adv_trial['type'] = 'adv_fast_mapping'
+        adv_trial['type'] = 'adv_fast_mapping_%s' % t
         domain = []
         domain.append(target)
         for reln in TRAIN_RELATIONS:
@@ -152,7 +157,16 @@ class VisualGenomeFilter(object):
             entry['reln'] = reln
             entry['target'] = False
             domain.append(entry)
-        adv_trial['domain'] = domain
+        
+        new_domain = list(domain)
+        #for entry in domain:
+        #    entry_rev = copy.deepcopy(entry)
+        #    entry_rev['object1'] = entry['object2']
+        #    entry_rev['object2'] = entry['object1']
+        #    entry_rev['target'] = False
+        #    new_domain.append(entry_rev)           
+
+        adv_trial['domain'] = new_domain
         return adv_trial
 
     def _trial_listener(self, event, *args):
@@ -237,9 +251,8 @@ class VisualGenomeFilter(object):
                     trial['utterance'] = utterance.lower()
                     trial['domain'] = domain
                     self.trials.append(trial)
-                    if t == "train":
-                        adv_trial = self._create_adverserial_trial(trial)
-                        self.trials.append(adv_trial)
+                    adv_trial = self._create_adverserial_trial(trial, t)
+                    self.trials.append(adv_trial)
 
     def _apply_object_stream_function_to_json_file(self, f, function, load_in_memory=False):
         
@@ -247,7 +260,7 @@ class VisualGenomeFilter(object):
             if self._cache is None:
                 self._cache = json.load(f)
             for element in self._cache:
-                function("element", [element])
+                function("element", element)
         else:
             f.seek(0)
             object_streamer = ObjectStreamer()
