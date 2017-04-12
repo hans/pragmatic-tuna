@@ -62,7 +62,8 @@ def run_train_phase(sv, env, listener_model, speaker_model, args):
         pct_successes.append(pct_success)
 
         # Try fast-mapping (adversarial batch!).
-        fm_batch = env.get_batch("adv_fast_mapping", batch_size=args.batch_size,
+        fm_batch = env.get_batch("adv_fast_mapping_dev",
+                                 batch_size=args.batch_size,
                                  negative_samples=args.negative_samples)
         _, _, pct_fm_success = \
                 run_trial(fm_batch, listener_model, speaker_model,
@@ -240,7 +241,8 @@ def run_dream_phase(sv, env, listener_model, speaker_model, args):
                 run_trial(batch, listener_model, speaker_model)
 
         # Also eval with an adversarial batch, using listener for inference.
-        fm_batch = env.get_batch("adv_fast_mapping", batch_size=args.batch_size,
+        fm_batch = env.get_batch("adv_fast_mapping_dev",
+                                 batch_size=args.batch_size,
                                  negative_samples=args.negative_samples)
         _, _, pct_fm_success = \
                 run_trial(fm_batch, listener_model, speaker_model,
@@ -263,7 +265,7 @@ def run_dream_phase(sv, env, listener_model, speaker_model, args):
                     corpus="fast_mapping_dev")
             print("======== ADV FM EVAL")
             do_eval(sv, env, listener_model, speaker_model, args,
-                    corpus="adv_fast_mapping")
+                    corpus="adv_fast_mapping_dev")
 
 
 def main(args):
