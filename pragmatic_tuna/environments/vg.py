@@ -71,8 +71,17 @@ class VGEnv(gym.Env):
             if len(utterance) > 10:
                 continue
 
-            for word in utterance:
-                vocab_counts[word] += 1
+            if trial["type"] not in ["adv_fast_mapping_dev",
+                                     "adv_fast_mapping_test"]:
+                # Don't double-count words in fast-mapping + adversarial
+                # fast-mapping (adversarial are directly duped from
+                # non-adversarial paired trials)
+                #
+                # DEV: but *do* double-count the words in adv_fm_train,
+                # because we were accidentally doing this earlier and need
+                # to keep doing this so that we can load old models :)
+                for word in utterance:
+                    vocab_counts[word] += 1
 
             domain_positive, domain_negative = [], []
             for subgraph in trial["domain"]:
