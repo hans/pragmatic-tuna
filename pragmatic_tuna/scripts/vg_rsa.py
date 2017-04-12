@@ -39,8 +39,11 @@ def run_trial(batch, listener_model, speaker_model, update_listener=True,
     results = infer_trial(candidates, listener_scores, speaker_scores,
                           infer_with_speaker=infer_with_speaker)
 
+    infer_scores = speaker_scores if infer_with_speaker else listener_scores
     successes = [result_i == candidates_i[0]
-                 for result_i, candidates_i in zip(results, candidates)]
+                     and scores_i.min() != scores_i.max()
+                 for result_i, candidates_i, scores_i
+                 in zip(results, candidates, infer_scores)]
 
     # TODO: joint optimization?
     l_loss = s_loss = 0.0
