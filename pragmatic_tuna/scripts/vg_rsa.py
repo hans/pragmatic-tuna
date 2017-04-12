@@ -177,7 +177,7 @@ def sample_utterances(env, silent_batch, speaker_model):
     # Get true referents for each batch element
     candidates_batch, num_candidates = silent_batch
     referents = [batch_i[:1] for batch_i in candidates_batch]
-    utterances = speaker_model.sample(referents, argmax=True)
+    utterances = np.asarray(speaker_model.sample(referents, argmax=True))
 
     # Compute lengths
     batch_size = len(candidates_batch)
@@ -186,6 +186,14 @@ def sample_utterances(env, silent_batch, speaker_model):
     eos_positions = np.array(np.where(utterances == env.word_eos_id)).T
     for example, eos_idx in eos_positions:
         lengths[example] = max(lengths[example], eos_idx)
+
+    # DEV: keep the lengths, but randomly replace all non-EOS tokens with other
+    # tokens
+    valid_tokens = [x for x in range(env.vocab_size)
+                    if x not in [env.word_eos_id, env.word_unk_id]]
+    utterances = np.random.choice(np.array(valid_tokens), replace=True,
+                                  size=utterances.shape)
+    # END DEV
 
     # Mask to make sure these examples make sense
     mask = np.tile(np.arange(max_length).reshape((-1, 1)), (1, batch_size))
