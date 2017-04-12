@@ -116,7 +116,7 @@ class SequenceSpeakerModel(SpeakerModel):
         return cum_probs
 
     def observe(self, words_batch, candidates_batch, lengths, n_cands,
-                true_referent_position=0):
+                true_referent_position=0, norm_op=None):
         graph_toks = [[candidates_i[true_referent_position]]
                       for candidates_i in candidates_batch]
 
@@ -128,8 +128,12 @@ class SequenceSpeakerModel(SpeakerModel):
         feed[self.graph_toks] = graph_toks
         feed[self.gold_length] = lengths
 
-        _, loss = sess.run((self.train_op, self.loss), feed)
-        return loss
+        norm_op_fetch = norm_op if norm_op is not None else self.loss
+        _, loss, gn = sess.run((self.train_op, self.loss,
+                                norm_op_fetch), feed)
+        if norm_op is None:
+            gn = None
+        return loss, gn
 
 
 class WindowedSequenceSpeakerModel(SequenceSpeakerModel):

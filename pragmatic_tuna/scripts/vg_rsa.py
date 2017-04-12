@@ -14,6 +14,9 @@ from pragmatic_tuna.util import make_summary
 
 FAST_MAPPING_RELATION = "behind"
 
+# DEV
+l_norm = s_norm = None
+
 
 def infer_trial(candidates, listener_scores, speaker_scores, infer_with_speaker=False):
     """
@@ -41,13 +44,16 @@ def run_trial(batch, listener_model, speaker_model, update_listener=True,
 
     # TODO: joint optimization?
     l_loss = s_loss = 0.0
+    l_gn = s_gn = 0.0
     if update_listener:
-        l_loss = listener_model.observe(*batch)
+        l_loss, l_gn = listener_model.observe(*batch, norm_op=l_norm)
     if update_speaker:
-        s_loss = speaker_model.observe(*batch)
+        s_loss, s_gn = speaker_model.observe(*batch, norm_op=s_norm)
 
     pct_success = np.mean(successes)
-    return results, (l_loss, s_loss), pct_success
+    losses = (l_loss, s_loss)
+    norms = (l_gn, s_gn)
+    return results, losses, norms, pct_success
 
 
 def run_train_phase(sv, env, listener_model, speaker_model, args):
@@ -55,7 +61,7 @@ def run_train_phase(sv, env, listener_model, speaker_model, args):
     for i in trange(args.n_iters):
         batch = env.get_batch("pre_train_train", batch_size=args.batch_size,
                               negative_samples=args.negative_samples)
-        predictions, losses_i, pct_success = \
+        predictions, losses_i, _, pct_success = \
                 run_trial(batch, listener_model, speaker_model)
 
         losses.append(losses_i)
@@ -65,7 +71,7 @@ def run_train_phase(sv, env, listener_model, speaker_model, args):
         fm_batch = env.get_batch("adv_fast_mapping_dev",
                                  batch_size=args.batch_size,
                                  negative_samples=args.negative_samples)
-        _, _, pct_fm_success = \
+        _, _, _, pct_fm_success = \
                 run_trial(fm_batch, listener_model, speaker_model,
                           update_listener=False, update_speaker=False,
                           infer_with_speaker=True)
@@ -96,7 +102,7 @@ def do_eval(sv, env, listener_model, speaker_model, args, batch=None,
                                 negative_samples=args.negative_samples)
     d_utt, d_cands, d_lengths, d_n_cands = d_batch
 
-    d_predictions, d_losses, d_pct_success = \
+    d_predictions, _, _, d_pct_success = \
             run_trial(d_batch, listener_model, speaker_model,
                       update_listener=False, update_speaker=False)
 
@@ -145,14 +151,16 @@ def run_fm_phase(sv, env, listener_model, speaker_model, args,
 
     speaker_loss = np.inf
     while speaker_loss > 1.5: # TODO magic number
-        predictions, losses, pct_success = \
+        predictions, losses, norms, pct_success = \
                 run_trial(batch, listener_model, speaker_model,
                           update_speaker=True, update_listener=False,
                           infer_with_speaker=True)
         listener_loss, speaker_loss = losses
+        listener_norm, speaker_norm = norms
 
-        tqdm.write("%5f\t%5f\tS:%.2f" %
-                   (listener_loss, speaker_loss, pct_success * 100))
+        tqdm.write("%5f\t%5f\tS:%.2f\t\t%5f\t%5f" %
+                   (listener_loss, speaker_loss, pct_success * 100,
+                    listener_norm, speaker_norm))
 
     do_eval(sv, env, listener_model, speaker_model, args, batch=batch)
 
@@ -237,7 +245,7 @@ def run_dream_phase(sv, env, listener_model, speaker_model, args):
                 print("%40s\t%100s" % (cand_str, utt_str))
             print()
 
-        predictions, losses_i, pct_success = \
+        predictions, losses_i, norms_i, pct_success = \
                 run_trial(batch, listener_model, speaker_model,
                           update_speaker=False)
 
@@ -245,20 +253,22 @@ def run_dream_phase(sv, env, listener_model, speaker_model, args):
         fm_batch = env.get_batch("adv_fast_mapping_dev",
                                  batch_size=args.batch_size,
                                  negative_samples=args.negative_samples)
-        _, _, pct_fm_success = \
+        _, _, _, pct_fm_success = \
                 run_trial(fm_batch, listener_model, speaker_model,
                           update_listener=False, update_speaker=False)
 
         # Finally, eval on pre-train dev.
         pt_batch = env.get_batch("pre_train_dev", batch_size=args.batch_size,
                                  negative_samples=args.negative_samples)
-        _, _, pct_pt_success = \
+        _, _, _, pct_pt_success = \
                 run_trial(pt_batch, listener_model, speaker_model,
                           update_listener=False, update_speaker=False)
 
-        tqdm.write("%5f\t%5f\tL_D:%.2f\t\tL_ADVFM:%.2f\t\tL_PT:%.2f"
+        tqdm.write("%5f\t%5f\tL_D:%.2f\t\tL_ADVFM:%.2f\t\tL_PT:%.2f\t\t"
+                   "%5f\t%5f"
                    % (losses_i[0], losses_i[1], pct_success * 100,
-                      pct_fm_success * 100, pct_pt_success * 100))
+                      pct_fm_success * 100, pct_pt_success * 100,
+                      norms_i[0], norms_i[1]))
 
         if i % args.eval_interval == 0 or i == n_iters - 1:
             print("======== FM DEV EVAL")
@@ -303,6 +313,13 @@ def main(args):
     speaker_model.train_op = s_opt.minimize(speaker_model.loss,
                                             global_step=s_global_step)
 
+    l_grads = tf.gradients(listener_model.loss, tf.trainable_variables())
+    s_grads = tf.gradients(speaker_model.loss, tf.trainable_variables())
+
+    global l_norm, s_norm
+    l_norm = tf.global_norm([grad for grad in l_grads if grad is not None])
+    s_norm = tf.global_norm([grad for grad in s_grads if grad is not None])
+
     global_step = l_global_step + s_global_step
     sv = tf.train.Supervisor(logdir=args.logdir, global_step=global_step,
                              summary_op=None)
@@ -323,7 +340,7 @@ def main(args):
             if args.fast_mapping_k > 0:
                 print("============== FAST MAPPING")
                 run_fm_phase(sv, env, listener_model, speaker_model, args,
-                            k=args.fast_mapping_k)
+                             k=args.fast_mapping_k)
 
             print("============== DREAMING")
             run_dream_phase(sv, env, listener_model, speaker_model, args)

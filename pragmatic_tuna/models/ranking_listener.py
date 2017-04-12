@@ -162,7 +162,7 @@ class BoWRankingListener(RankingListenerModel):
         return scores
 
     def observe(self, words_batch, candidates_batch, lengths_batch, num_candidates,
-                true_referent_position=0):
+                true_referent_position=0, norm_op=None):
         # TODO don't update on false candidates
         # TODO monitor avg embedding norm to make sure we're not going crazy
         feed = {self.words[t]: words_batch[t] for t in range(self.max_timesteps)}
@@ -170,5 +170,8 @@ class BoWRankingListener(RankingListenerModel):
         feed[self.lengths] = lengths_batch
 
         sess = tf.get_default_session()
-        _, loss = sess.run((self.train_op, self.loss), feed)
-        return loss
+        norm_op_fetch = norm_op if norm_op is not None else self.loss
+        _, loss, gn = sess.run((self.train_op, self.loss, norm_op_fetch), feed)
+        if norm_op is None:
+            gn = None
+        return loss, gn
