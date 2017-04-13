@@ -289,6 +289,17 @@ def run_dream_phase(sv, env, listener_model, speaker_model, args):
                         corpus=corpus)
 
 
+def rig_embedding_gradients(opt, loss, embedding_var, rig_idx, scale=100.):
+    grads = {v: grad for grad, v in opt.compute_gradients(loss)
+             if grad is not None}
+    emb_grads = grads[embedding_var]
+    scale_mask = tf.expand_dims(tf.to_float(tf.equal(emb_grads.indices, rig_idx)), 1)
+    scale = scale_mask * (scale - 1.0) + 1.0
+    grads[embedding_var] = tf.IndexedSlices(indices=emb_grads.indices,
+                                            values=emb_grads.values * scale)
+    return grads
+
+
 def main(args):
     env = VGEnv(args.corpus_path, embedding_dim=args.embedding_dim)
     graph_embeddings = tf.Variable(env.graph_embeddings, name="graph_embeddings",
@@ -316,30 +327,30 @@ def main(args):
 
     l_opt = opt_f(args.listener_learning_rate)
     l_global_step = tf.Variable(0, name="global_step_listener")
-    listener_model.train_op = l_opt.minimize(listener_model.loss,
-                                             global_step=l_global_step)
+
+    # DEV: scale gradient for "behind"
+    l_grads = rig_embedding_gradients(l_opt, listener_model.loss,
+                                      listener_model.embeddings, env.vocab2idx["behind"],
+                                      scale=100.)
+    listener_model.train_op = l_opt.apply_gradients([(grad, v) for v, grad in l_grads.items()])
+    # listener_model.train_op = l_opt.minimize(listener_model.loss,
+    #                                          global_step=l_global_step)
 
     speaker_lr = args.listener_learning_rate * args.speaker_lr_factor
     s_opt = opt_f(speaker_lr)
     s_global_step = tf.Variable(0, name="global_step_speaker")
 
-    # DEV: train only on embeddings; scale gradient for "behind"
-    emb_grads = s_opt.compute_gradients(speaker_model.loss,
-                                        var_list=[listener_model.embeddings])[0][0]
-    emb_scale = 1.0 + 99.0 * tf.to_float(emb_grads.indices == env.vocab2idx["behind"])
-    print(emb_scale.get_shape())
-    emb_grads = tf.IndexedSlices(indices=emb_grads.indices, values=emb_grads.values * emb_scale)
-    speaker_model.train_op = s_opt.apply_gradients([(emb_grads, listener_model.embeddings)])
-
+    # DEV: scale gradient for "behind"
+    s_grads = rig_embedding_gradients(s_opt, speaker_model.loss,
+                                      listener_model.embeddings, env.vocab2idx["behind"],
+                                      scale=100.)
+    speaker_model.train_op = s_opt.apply_gradients([(grad, v) for v, grad in s_grads.items()])
     # speaker_model.train_op = s_opt.minimize(speaker_model.loss,
     #                                         global_step=s_global_step)
 
-    l_grads = tf.gradients(listener_model.loss, tf.trainable_variables())
-    s_grads = tf.gradients(speaker_model.loss, tf.trainable_variables())
-
     global l_norm, s_norm
-    l_norm = tf.global_norm([grad for grad in l_grads if grad is not None])
-    s_norm = tf.global_norm([grad for grad in s_grads if grad is not None])
+    l_norm = tf.global_norm(list(l_grads.values()))
+    s_norm = tf.global_norm(list(s_grads.values()))
 
     global_step = l_global_step + s_global_step
     sv = tf.train.Supervisor(logdir=args.logdir, global_step=global_step,
