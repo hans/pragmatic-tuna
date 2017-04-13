@@ -232,7 +232,7 @@ def run_dream_phase(sv, env, listener_model, speaker_model, args):
     n_iters = 100
     for i in trange(n_iters):
         batch = synthesize_dream_batch(env, speaker_model, args.batch_size,
-                                       dream_ratio=0.75, # TODO
+                                       dream_ratio=0.5, # TODO
                                        negative_samples=args.negative_samples)
 
         if i % 10 == 0:
