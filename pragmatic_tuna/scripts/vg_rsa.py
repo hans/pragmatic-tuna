@@ -275,19 +275,18 @@ def run_dream_phase(sv, env, listener_model, speaker_model, args):
                 run_trial(pt_batch, listener_model, speaker_model,
                           update_listener=False, update_speaker=False)
 
-        tqdm.write("%5f\t%5f\tL_D:%.2f\t\tL_ADVFM:%.2f\t\tL_PT:%.2f\t\t"
+        tqdm.write("%5f\t%5f\tL_SYNTH:% 3.2f\tL_ADVFM:% 3.2f\tL_PT:% 3.2f\t"
                    "%5f\t%5f"
                    % (losses_i[0], losses_i[1], pct_success * 100,
                       pct_fm_success * 100, pct_pt_success * 100,
                       norms_i[0], norms_i[1]))
 
         if i % args.eval_interval == 0 or i == n_iters - 1:
-            print("======== FM DEV EVAL")
-            do_eval(sv, env, listener_model, speaker_model, args,
-                    corpus="fast_mapping_dev")
-            print("======== ADV FM EVAL")
-            do_eval(sv, env, listener_model, speaker_model, args,
-                    corpus="adv_fast_mapping_dev")
+            for corpus in ["fast_mapping_dev", "adv_fast_mapping_dev",
+                           "pre_train_dev"]:
+                print("======= eval: %s" % corpus)
+                do_eval(sv, env, listener_model, speaker_model, args,
+                        corpus=corpus)
 
 
 def main(args):
