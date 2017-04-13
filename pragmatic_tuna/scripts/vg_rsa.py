@@ -322,8 +322,16 @@ def main(args):
     speaker_lr = args.listener_learning_rate * args.speaker_lr_factor
     s_opt = opt_f(speaker_lr)
     s_global_step = tf.Variable(0, name="global_step_speaker")
-    speaker_model.train_op = s_opt.minimize(speaker_model.loss,
-                                            global_step=s_global_step)
+
+    # DEV: get gradient just for "behind" embedding.
+    emb_grads = s_opt.compute_gradients(speaker_model.loss,
+                                        var_list=[listener_model.embeddings])[0][0]
+    behind_grad = tf.gather(emb_grads, env.vocab2idx["behind"])
+    grad_to_apply = tf.IndexedSlices([behind_grad], [env.vocab2idx["behind"]])
+    speaker_model.train_op = s_opt.apply_gradients([(grad_to_apply, listener_model.embeddings)])
+
+    # speaker_model.train_op = s_opt.minimize(speaker_model.loss,
+    #                                         global_step=s_global_step)
 
     l_grads = tf.gradients(listener_model.loss, tf.trainable_variables())
     s_grads = tf.gradients(speaker_model.loss, tf.trainable_variables())
