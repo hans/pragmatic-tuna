@@ -323,12 +323,13 @@ def main(args):
     s_opt = opt_f(speaker_lr)
     s_global_step = tf.Variable(0, name="global_step_speaker")
 
-    # DEV: get gradient just for "behind" embedding.
+    # DEV: train only on embeddings; scale gradient for "behind"
     emb_grads = s_opt.compute_gradients(speaker_model.loss,
                                         var_list=[listener_model.embeddings])[0][0]
-    behind_grad = tf.gather(emb_grads, env.vocab2idx["behind"])
-    grad_to_apply = tf.IndexedSlices([behind_grad], [env.vocab2idx["behind"]])
-    speaker_model.train_op = s_opt.apply_gradients([(grad_to_apply, listener_model.embeddings)])
+    emb_scale = 1.0 + 99.0 * tf.to_float(emb_grads.indices == env.vocab2idx["behind"])
+    print(emb_scale.get_shape())
+    emb_grads = tf.IndexedSlices(indices=emb_grads.indices, values=emb_grads.values * emb_scale)
+    speaker_model.train_op = s_opt.apply_gradients([(emb_grads, listener_model.embeddings)])
 
     # speaker_model.train_op = s_opt.minimize(speaker_model.loss,
     #                                         global_step=s_global_step)
