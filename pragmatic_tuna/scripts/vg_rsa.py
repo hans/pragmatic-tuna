@@ -260,11 +260,16 @@ def run_dream_phase(sv, env, listener_model, speaker_model, fm_batch, args):
                                        negative_samples=args.negative_samples)
 
         # "Stabilizer" batch for the speaker.
-        n_fm = int(0.5 * len(fm_batch)) # TODO magic
-        stabilizer_batch = concat_batches(
-                sample_batch(fm_batch, n_fm),
-                env.get_batch("pre_train_train", batch_size=args.batch_size - n_fm,
-                              negative_samples=args.negative_samples))
+        if fm_batch is None:
+            stabilizer_batch = env.get_batch("pre_train_train", batch_size=args.batch_size,
+                                             negative_samples=args.negative_samples)
+        else:
+            n_fm = min(len(fm_batch[2]), int(0.5 * args.batch_size)) # TODO magic
+            stabilizer_batch = concat_batches(
+                    sample_batch(fm_batch, n_fm),
+                    env.get_batch("pre_train_train",
+                                  batch_size=args.batch_size - n_fm,
+                                  negative_samples=args.negative_samples))
 
         ###### UPDATES
 
@@ -404,6 +409,8 @@ def main(args):
                 print("============== FAST MAPPING")
                 fm_batch = run_fm_phase(sv, env, listener_model, speaker_model, args,
                                         k=args.fast_mapping_k)
+            else:
+                fm_batch = None
 
             print("============== DREAMING")
             run_dream_phase(sv, env, listener_model, speaker_model, fm_batch,
