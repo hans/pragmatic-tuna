@@ -206,6 +206,14 @@ def sample_utterances(env, silent_batch, speaker_model):
     return utterances, lengths
 
 
+def concat_batches(batch1, batch2):
+    return (np.concatenate((batch1[0], batch2[0]), axis=1), # utterances
+            batch1[1] + batch2[1], # candidates
+            np.concatenate((batch1[2], batch2[2])), # lengths
+            np.concatenate((batch1[3], batch2[3])), # n_candidates
+            )
+
+
 def synthesize_dream_batch(env, speaker_model, batch_size,
                            dream_ratio=0.5, negative_samples=5):
     """
@@ -222,18 +230,14 @@ def synthesize_dream_batch(env, speaker_model, batch_size,
             negative_samples=negative_samples)
     model_utterances, model_lengths = sample_utterances(env, silent_batch,
                                                         speaker_model)
-    silent_candidates, silent_num_candidates = silent_batch
+    dreamed_batch = (model_utterances, silent_batch[0],
+                     model_lengths, silent_batch[1])
 
     real_batch = env.get_batch("pre_train_train", batch_size=real_size,
                                negative_samples=negative_samples)
 
-    utterances = np.concatenate((model_utterances, real_batch[0]), axis=1)
-    candidates = silent_candidates + real_batch[1]
-    lengths = np.concatenate((model_lengths, real_batch[2]))
-    num_candidates = np.concatenate((silent_num_candidates, real_batch[3]))
-
-    synthesized_batch = (utterances, candidates, lengths, num_candidates)
-    return synthesized_batch
+    synthetic_batch = concat_batches(dreamed_batch, real_batch)
+    return synthetic_batch
 
 
 def run_dream_phase(sv, env, listener_model, speaker_model, args):
