@@ -191,13 +191,13 @@ def sample_utterances(env, silent_batch, speaker_model):
     for example, eos_idx in eos_positions:
         lengths[example] = max(lengths[example], eos_idx)
 
-    # # DEV: keep the lengths, but randomly replace all non-EOS tokens with other
-    # # tokens
-    # valid_tokens = [x for x in range(env.vocab_size)
-    #                 if x not in [env.word_eos_id, env.word_unk_id]]
-    # utterances = np.random.choice(np.array(valid_tokens), replace=True,
-    #                               size=utterances.shape)
-    # # END DEV
+    # DEV: keep the lengths, but randomly replace all non-EOS tokens with other
+    # tokens
+    valid_tokens = [x for x in range(env.vocab_size)
+                    if x not in [env.word_eos_id, env.word_unk_id]]
+    utterances = np.random.choice(np.array(valid_tokens), replace=True,
+                                  size=utterances.shape)
+    # END DEV
 
     # Mask to make sure these examples make sense
     mask = np.tile(np.arange(max_length).reshape((-1, 1)), (1, batch_size))
@@ -255,9 +255,11 @@ def run_dream_phase(sv, env, listener_model, speaker_model, fm_batch, args):
         ####### DATA PREP
 
         # Synthetic dream batch.
-        batch = synthesize_dream_batch(env, speaker_model, args.batch_size,
-                                       dream_ratio=0.5, # TODO
-                                       negative_samples=args.negative_samples)
+        # batch = synthesize_dream_batch(env, speaker_model, args.batch_size,
+        #                                dream_ratio=0.25, # TODO
+        #                                negative_samples=args.negative_samples)
+        batch = env.get_batch("pre_train_train", batch_size=args.batch_size,
+                              negative_samples=args.negative_samples)
 
         # "Stabilizer" batch for the speaker.
         if fm_batch is None:
