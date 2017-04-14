@@ -18,32 +18,39 @@ FAST_MAPPING_RELATION = "behind"
 l_norm = s_norm = None
 
 
-def infer_trial(candidates, listener_scores, speaker_scores, infer_with_speaker=False):
+def infer_trial(candidates, listener_scores, speaker_scores,
+                infer_with_speaker=False):
     """
     Rerank batch of candidates based on listener + speaker scores.
-    Return top-scoring candidates.
+
+    Returns:
+        scores: Final ranks used to arbitrate. batch_size list of candidate
+            score lists
+        result: Selections. batch_size list of candidate indices
     """
     scores = speaker_scores if infer_with_speaker else listener_scores
     results = [candidates_i[scores_i.argmax()]
                for candidates_i, scores_i in zip(candidates, scores)]
-    return results
+    return scores, results
 
 
 def run_trial(batch, listener_model, speaker_model, update_listener=True,
-              update_speaker=True, infer_with_speaker=False):
+              update_speaker=True, infer_with_speaker=False, verbose=False):
     utterances, candidates, lengths, n_cands = batch
 
     # Fetch model scores and rank for pragmatic listener inference.
     listener_scores = listener_model.score(*batch)
     speaker_scores = speaker_model.score(*batch)
-    results = infer_trial(candidates, listener_scores, speaker_scores,
-                          infer_with_speaker=infer_with_speaker)
+    scores, results = infer_trial(candidates, listener_scores, speaker_scores,
+                                  infer_with_speaker=infer_with_speaker)
 
-    infer_scores = speaker_scores if infer_with_speaker else listener_scores
+    if verbose:
+        print(scores)
+
     successes = [result_i == candidates_i[0]
                      and scores_i.min() != scores_i.max()
                  for result_i, candidates_i, scores_i
-                 in zip(results, candidates, infer_scores)]
+                 in zip(results, candidates, scores)]
 
     # TODO: joint optimization?
     l_loss = s_loss = 0.0
@@ -98,7 +105,7 @@ def run_train_phase(sv, env, listener_model, speaker_model, args):
 
 
 def do_eval(sv, env, listener_model, speaker_model, args, batch=None,
-            corpus="pre_train_dev"):
+            corpus="pre_train_dev", verbose=False):
     d_batch = batch
     if d_batch is None:
         d_batch = env.get_batch(corpus, batch_size=args.batch_size,
@@ -107,7 +114,8 @@ def do_eval(sv, env, listener_model, speaker_model, args, batch=None,
 
     d_predictions, _, _, d_pct_success = \
             run_trial(d_batch, listener_model, speaker_model,
-                      update_listener=False, update_speaker=False)
+                      update_listener=False, update_speaker=False,
+                      verbose=verbose)
 
     # Test: draw some samples for this new input
     silent_batch = (d_cands, d_n_cands)
@@ -250,17 +258,15 @@ def synthesize_dream_batch(env, speaker_model, batch_size,
 
 
 def run_dream_phase(sv, env, listener_model, speaker_model, fm_batch, args):
-    n_iters = 500
+    n_iters = 201
     verbose_interval = 10
     for i in trange(n_iters):
         ####### DATA PREP
 
         # Synthetic dream batch.
-        # batch = synthesize_dream_batch(env, speaker_model, args.batch_size,
-        #                                dream_ratio=0.25, # TODO
-        #                                negative_samples=args.negative_samples)
-        batch = env.get_batch("pre_train_train", batch_size=args.batch_size,
-                              negative_samples=args.negative_samples)
+        batch = synthesize_dream_batch(env, speaker_model, args.batch_size,
+                                       dream_ratio=0.25, # TODO
+                                       negative_samples=args.negative_samples)
 
         # "Stabilizer" batch for the speaker.
         if fm_batch is None:
