@@ -251,6 +251,7 @@ def synthesize_dream_batch(env, speaker_model, batch_size,
 
 def run_dream_phase(sv, env, listener_model, speaker_model, fm_batch, args):
     n_iters = 500
+    verbose_interval = 10
     for i in trange(n_iters):
         ####### DATA PREP
 
@@ -285,34 +286,8 @@ def run_dream_phase(sv, env, listener_model, speaker_model, fm_batch, args):
                 run_trial(stabilizer_batch, listener_model, speaker_model,
                           update_listener=False, update_speaker=True)
 
+
         ####### EVALUATION
-
-        # Eval with an adversarial batch, using listener for inference.
-        fm_batch = env.get_batch("adv_fast_mapping_dev",
-                                 batch_size=args.batch_size,
-                                 negative_samples=args.negative_samples)
-        _, _, _, pct_fm_success = \
-                run_trial(fm_batch, listener_model, speaker_model,
-                          update_listener=False, update_speaker=False)
-
-        # Finally, eval on pre-train dev.
-        pt_batch = env.get_batch("pre_train_dev", batch_size=args.batch_size,
-                                 negative_samples=args.negative_samples)
-        _, _, _, pct_pt_success = \
-                run_trial(pt_batch, listener_model, speaker_model,
-                          update_listener=False, update_speaker=False)
-
-        ########
-
-        # Pull listener losses/norms from first, speaker losses/norms from
-        # second
-        losses = (losses[0], losses2[1])
-        norms = (norms[0], norms2[1])
-        tqdm.write("%5f\t%5f\tL_SYNTH:% 3.2f\tL_ADVFM:% 3.2f\tL_PT:% 3.2f\t"
-                   "%5f\t%5f"
-                   % (losses[0], losses[1], pct_success * 100,
-                      pct_fm_success * 100, pct_pt_success * 100,
-                      norms[0], norms[1]))
 
         if i % args.eval_interval == 0 or i == n_iters - 1:
             for corpus in ["fast_mapping_dev", "adv_fast_mapping_dev",
@@ -320,6 +295,53 @@ def run_dream_phase(sv, env, listener_model, speaker_model, fm_batch, args):
                 print("======= eval: %s" % corpus)
                 do_eval(sv, env, listener_model, speaker_model, args,
                         corpus=corpus)
+
+        if i % verbose_interval == 0:
+            ####### MORE EVALUATION
+
+            # Eval with an adversarial batch, using listener for inference.
+            advfm_batch = env.get_batch("adv_fast_mapping_dev",
+                                        batch_size=args.batch_size,
+                                        negative_samples=args.negative_samples)
+            _, _, _, pct_advfm_success = \
+                    run_trial(advfm_batch, listener_model, speaker_model,
+                            update_listener=False, update_speaker=False)
+
+            # Eval with a non-adversarial FM batch.
+            fm_batch = env.get_batch("fast_mapping_dev",
+                                    batch_size=args.batch_size,
+                                    negative_samples=args.negative_samples)
+            _, _, _, pct_fm_success = \
+                    run_trial(fm_batch, listener_model, speaker_model,
+                            update_listener=False, update_speaker=False)
+
+            # Finally, eval on pre-train dev.
+            pt_batch = env.get_batch("pre_train_dev", batch_size=args.batch_size,
+                                    negative_samples=args.negative_samples)
+            _, _, _, pct_pt_success = \
+                    run_trial(pt_batch, listener_model, speaker_model,
+                            update_listener=False, update_speaker=False)
+
+        ######## LOGGING
+
+        # Pull listener losses/norms from first, speaker losses/norms from
+        # second
+        losses = (losses[0], losses2[1])
+        norms = (norms[0], norms2[1])
+
+        out_str = "%5f\t%5f\tL_SYNTH:% 3.2f"
+        vals = losses + (pct_success * 100,)
+        if i % verbose_interval == 0:
+            out_str += "\tL_FM:% 3.2f\tL_ADVFM:% 3.2f\tL_PT:% 3.2f"
+            vals += (pct_fm_success * 100, pct_advfm_success * 100,
+                     pct_pt_success * 100)
+        else:
+            out_str += "\t\t\t\t\t\t"
+        out_str += "\t%5f\t%5f"
+        vals += norms
+
+        tqdm.write(out_str % vals)
+
 
 
 def rig_embedding_gradients(opt, loss, embedding_var, rig_idx, scale=100.):
