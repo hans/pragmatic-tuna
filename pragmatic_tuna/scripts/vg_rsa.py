@@ -328,7 +328,7 @@ def rig_embedding_gradients(opt, loss, embedding_var, rig_idx, scale=100.):
     scale = scale_mask * (scale - 1.0) + 1.0
     grads[embedding_var] = tf.IndexedSlices(indices=emb_grads.indices,
                                             values=emb_grads.values * scale)
-    return grads
+    return [(grad, v) for v, grad in grads.items()]
 
 
 def main(args):
@@ -363,7 +363,7 @@ def main(args):
     l_grads = rig_embedding_gradients(l_opt, listener_model.loss,
                                       listener_model.embeddings, env.vocab2idx["behind"],
                                       scale=100.)
-    listener_model.train_op = l_opt.apply_gradients([(grad, v) for v, grad in l_grads.items()])
+    listener_model.train_op = l_opt.apply_gradients(l_grads)
     # listener_model.train_op = l_opt.minimize(listener_model.loss,
     #                                          global_step=l_global_step)
 
@@ -375,13 +375,13 @@ def main(args):
     s_grads = rig_embedding_gradients(s_opt, speaker_model.loss,
                                       listener_model.embeddings, env.vocab2idx["behind"],
                                       scale=100.)
-    speaker_model.train_op = s_opt.apply_gradients([(grad, v) for v, grad in s_grads.items()])
+    speaker_model.train_op = s_opt.apply_gradients(s_grads)
     # speaker_model.train_op = s_opt.minimize(speaker_model.loss,
     #                                         global_step=s_global_step)
 
     global l_norm, s_norm
-    l_norm = tf.global_norm(list(l_grads.values()))
-    s_norm = tf.global_norm(list(s_grads.values()))
+    l_norm = tf.global_norm([grad for grad, _ in l_grads])
+    s_norm = tf.global_norm([grad for grad, _ in s_grads])
 
     global_step = l_global_step + s_global_step
     sv = tf.train.Supervisor(logdir=args.logdir, global_step=global_step,
