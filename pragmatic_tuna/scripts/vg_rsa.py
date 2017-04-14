@@ -166,6 +166,7 @@ def run_fm_phase(sv, env, listener_model, speaker_model, args,
                     listener_norm, speaker_norm))
 
     do_eval(sv, env, listener_model, speaker_model, args, batch=batch)
+    return batch
 
 
 def sample_utterances(env, silent_batch, speaker_model):
@@ -206,6 +207,14 @@ def sample_utterances(env, silent_batch, speaker_model):
     return utterances, lengths
 
 
+def sample_batch(batch, n):
+    utterances, candidates, lengths, n_candidates = batch
+    idxs = np.random.choice(len(lengths), size=n, replace=False)
+    return (utterances[:, idxs],
+            [candidates[idx] for idx in idxs],
+            lengths[idxs], n_candidates[idxs])
+
+
 def concat_batches(batch1, batch2):
     return (np.concatenate((batch1[0], batch2[0]), axis=1), # utterances
             batch1[1] + batch2[1], # candidates
@@ -240,31 +249,38 @@ def synthesize_dream_batch(env, speaker_model, batch_size,
     return synthetic_batch
 
 
-def run_dream_phase(sv, env, listener_model, speaker_model, args):
+def run_dream_phase(sv, env, listener_model, speaker_model, fm_batch, args):
     n_iters = 100
     for i in trange(n_iters):
+        ####### DATA PREP
+
+        # Synthetic dream batch.
         batch = synthesize_dream_batch(env, speaker_model, args.batch_size,
                                        dream_ratio=0.5, # TODO
                                        negative_samples=args.negative_samples)
 
-        if i % 10 == 0:
-            # DEV: debug print a few strings
-            # Assumes that silent / sampled candidates come first from
-            # synthesize_dream_batch (they do)
-            utterances = np.asarray(batch[0]).T[:5]
-            candidates = batch[1]
-            for cands, utt in zip(candidates, utterances):
-                cand = cands[0]
-                cand_str = " ".join(env.graph_vocab[idx] for idx in cand)
-                utt_str = " ".join(env.utterance_to_tokens(utt))
-                print("%40s\t%100s" % (cand_str, utt_str))
-            print()
+        # "Stabilizer" batch for the speaker.
+        n_fm = int(0.5 * len(fm_batch)) # TODO magic
+        stabilizer_batch = concat_batches(
+                sample_batch(fm_batch, n_fm),
+                env.get_batch("pre_train_train", batch_size=args.batch_size - n_fm,
+                              negative_samples=args.negative_samples))
 
-        predictions, losses_i, norms_i, pct_success = \
+        ###### UPDATES
+
+        # Update listener with synthetic batch.
+        predictions, losses, norms, pct_success = \
                 run_trial(batch, listener_model, speaker_model,
-                          update_speaker=False)
+                          update_listener=True, update_speaker=False)
 
-        # Also eval with an adversarial batch, using listener for inference.
+        # Update speaker with mixture of FM batch, pre-train.
+        _, losses2, norms2, _ = \
+                run_trial(stabilizer_batch, listener_model, speaker_model,
+                          update_listener=False, update_speaker=True)
+
+        ####### EVALUATION
+
+        # Eval with an adversarial batch, using listener for inference.
         fm_batch = env.get_batch("adv_fast_mapping_dev",
                                  batch_size=args.batch_size,
                                  negative_samples=args.negative_samples)
@@ -279,11 +295,17 @@ def run_dream_phase(sv, env, listener_model, speaker_model, args):
                 run_trial(pt_batch, listener_model, speaker_model,
                           update_listener=False, update_speaker=False)
 
+        ########
+
+        # Pull listener losses/norms from first, speaker losses/norms from
+        # second
+        losses = (losses[0], losses2[1])
+        norms = (norms[0], norms2[1])
         tqdm.write("%5f\t%5f\tL_SYNTH:% 3.2f\tL_ADVFM:% 3.2f\tL_PT:% 3.2f\t"
                    "%5f\t%5f"
-                   % (losses_i[0], losses_i[1], pct_success * 100,
+                   % (losses[0], losses[1], pct_success * 100,
                       pct_fm_success * 100, pct_pt_success * 100,
-                      norms_i[0], norms_i[1]))
+                      norms[0], norms[1]))
 
         if i % args.eval_interval == 0 or i == n_iters - 1:
             for corpus in ["fast_mapping_dev", "adv_fast_mapping_dev",
@@ -369,17 +391,23 @@ def main(args):
         with open(params_path, "w") as params_f:
             pprint(vars(args), params_f)
 
+        # DEV: check scale of "behind"
+        embeddings = sess.run(listener_model.embeddings)
+        print(embeddings[env.vocab2idx["behind"]])
+        print(embeddings[env.vocab2idx["fence"]])
+
         with sess.as_default():
             # print("============== TRAINING")
             # run_train_phase(sv, env, listener_model, speaker_model, args)
 
             if args.fast_mapping_k > 0:
                 print("============== FAST MAPPING")
-                run_fm_phase(sv, env, listener_model, speaker_model, args,
-                             k=args.fast_mapping_k)
+                fm_batch = run_fm_phase(sv, env, listener_model, speaker_model, args,
+                                        k=args.fast_mapping_k)
 
             print("============== DREAMING")
-            run_dream_phase(sv, env, listener_model, speaker_model, args)
+            run_dream_phase(sv, env, listener_model, speaker_model, fm_batch,
+                            args)
 
             sv.request_stop()
 
