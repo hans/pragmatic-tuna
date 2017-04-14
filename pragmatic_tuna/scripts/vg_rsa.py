@@ -250,7 +250,7 @@ def synthesize_dream_batch(env, speaker_model, batch_size,
 
 
 def run_dream_phase(sv, env, listener_model, speaker_model, fm_batch, args):
-    n_iters = 100
+    n_iters = 500
     for i in trange(n_iters):
         ####### DATA PREP
 
