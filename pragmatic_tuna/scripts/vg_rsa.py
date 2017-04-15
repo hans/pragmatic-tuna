@@ -1,6 +1,7 @@
 from argparse import ArgumentParser
 import os.path
 from pprint import pprint
+import sys
 
 import numpy as np
 import tensorflow as tf
@@ -162,7 +163,8 @@ def run_fm_phase(sv, env, listener_model, speaker_model, args,
                           negative_samples=args.negative_samples)
 
     speaker_loss = np.inf
-    while speaker_loss > 1.5: # TODO magic number
+    i = 0
+    while speaker_loss > args.fast_mapping_threshold:
         predictions, losses, norms, pct_success = \
                 run_trial(batch, listener_model, speaker_model,
                           update_speaker=True, update_listener=False,
@@ -173,6 +175,12 @@ def run_fm_phase(sv, env, listener_model, speaker_model, args,
         tqdm.write("%5f\t%5f\tS:%.2f\t\t%5f\t%5f" %
                    (listener_loss, speaker_loss, pct_success * 100,
                     listener_norm, speaker_norm))
+
+        i += 1
+        if i == 2000:
+            print("HALT: Fast mapping did not converge after 2000 iterations.")
+            print("Dying.")
+            sys.exit(1)
 
     do_eval(sv, env, listener_model, speaker_model, args, batch=batch)
     return batch
@@ -233,7 +241,8 @@ def concat_batches(batch1, batch2):
 
 
 def synthesize_dream_batch(env, speaker_model, batch_size,
-                           dream_ratio=0.5, negative_samples=5):
+                           dream_ratio=0.5, negative_samples=5,
+                           p_silent_swap=0.75):
     """
     Synthesize a "dreaming" training batch where some of the examples are
     sampled from the speaker model itself.
@@ -244,7 +253,8 @@ def synthesize_dream_batch(env, speaker_model, batch_size,
 
     # Pull a silent batch and draw utterances.
     silent_batch = env.get_silent_batch(batch_size=dreamed_size,
-                                        negative_samples=negative_samples)
+                                        negative_samples=negative_samples,
+                                        p_swap=p_silent_swap)
     model_utterances, model_lengths = sample_utterances(env, silent_batch,
                                                         speaker_model)
     dreamed_batch = (model_utterances, silent_batch[0],
@@ -257,25 +267,24 @@ def synthesize_dream_batch(env, speaker_model, batch_size,
     return synthetic_batch
 
 
-REACHED_100 = False
-
 def run_dream_phase(sv, env, listener_model, speaker_model, fm_batch, args):
-    n_iters = 501
     verbose_interval = 10
-    for i in trange(n_iters):
+    for i in trange(args.n_dream_iters):
         ####### DATA PREP
 
         # Synthetic dream batch.
         batch = synthesize_dream_batch(env, speaker_model, args.batch_size,
-                                       dream_ratio=0.2 if REACHED_100 else 0.5, # TODO
-                                       negative_samples=args.negative_samples)
+                                       dream_ratio=args.dream_ratio,
+                                       negative_samples=args.negative_samples,
+                                       p_silent_swap=args.dream_p_swap)
 
         # "Stabilizer" batch for the speaker.
         if fm_batch is None:
             stabilizer_batch = env.get_batch("pre_train_train", batch_size=args.batch_size,
                                              negative_samples=args.negative_samples)
         else:
-            n_fm = min(len(fm_batch[2]), int(0.5 * args.batch_size)) # TODO magic
+            n_fm = min(len(fm_batch[2]),
+                       int(args.dream_stabilizer_factor * args.batch_size))
             stabilizer_batch = concat_batches(
                     sample_batch(fm_batch, n_fm),
                     env.get_batch("pre_train_train",
@@ -374,7 +383,8 @@ def rig_embedding_gradients(opt, loss, embedding_var, rig_idx, scale=100.):
 
 
 def main(args):
-    env = VGEnv(args.corpus_path, embedding_dim=args.embedding_dim)
+    env = VGEnv(args.corpus_path, embedding_dim=args.embedding_dim,
+                fm_neg_synth=args.fast_mapping_neg_synth)
     graph_embeddings = tf.Variable(env.graph_embeddings, name="graph_embeddings",
                                    dtype=tf.float32, trainable=False)
 
@@ -473,17 +483,37 @@ if __name__ == '__main__':
     p.add_argument("--optimizer", choices=["momentum", "adagrad", "sgd"],
                    default="momentum")
 
+    # Basic training details.
     p.add_argument("--n_iters", type=int, default=50)
     p.add_argument("--batch_size", type=int, default=64)
     p.add_argument("--negative_samples", type=int, default=5)
     p.add_argument("--listener_learning_rate", type=float, default=0.001)
     p.add_argument("--speaker_lr_factor", type=float, default=100)
 
+    # Model architecture.
     p.add_argument("--embedding_dim", type=int, default=64)
     p.add_argument("--listener_hidden_dim", type=int, default=256)
     p.add_argument("--speaker_hidden_dim", type=int, default=256)
     p.add_argument("--dropout_keep_prob", type=float, default=0.8)
 
+    # Fast mapping.
     p.add_argument("--fast_mapping_k", type=int, default=64)
+    p.add_argument("--fast_mapping_threshold", type=float, default=1.5,
+                   help=("Continue FM training until speaker loss drops "
+                         "below this value"))
+    p.add_argument("--fast_mapping_neg_synth", type=int, default=3,
+                   help=("Number of negative examples with the FM relation "
+                         "to synthesize for FM batches.")
+
+    # Dreaming.
+    p.add_argument("--n_dream_iters", type=int, default=501)
+    p.add_argument("--dream_ratio", type=float, default=0.5)
+    p.add_argument("--dream_stabilizer_factor", type=float, default=0.5,
+                   help=("% of stabilizer batch fed to speaker during "
+                         "dreaming which should be drawn from observed fast "
+                         "mapping data"))
+    p.add_argument("--dream_p_swap", type=float, default=0.75,
+                   help=("Probability of swapping positive referent with a "
+                         "negative one in silent batches"))
 
     main(p.parse_args())

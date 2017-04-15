@@ -24,7 +24,8 @@ class VGEnv(gym.Env):
     EOS = EOS
 
     def __init__(self, corpus_path, graph_embeddings_path=None,
-                 embedding_dim=64, max_negative_samples=5):
+                 embedding_dim=64, max_negative_samples=5,
+                 fm_neg_synth=3):
         if corpus_path.endswith(".pkl"):
             with open(corpus_path, "rb") as corpus_pkl:
                 self.corpora, self.vocab, self.graph_vocab = pickle.load(corpus_pkl)
@@ -49,6 +50,9 @@ class VGEnv(gym.Env):
         # Assumes 1 positive candidate per example
         self.max_negative_samples = max_negative_samples
         self.max_candidates = max_negative_samples + 1
+
+        # of negative fast-mapping candidates to synthesize
+        self.fm_neg_synth = fm_neg_synth
 
         self.embedding_dim = embedding_dim
         if graph_embeddings_path is None:
@@ -127,8 +131,9 @@ class VGEnv(gym.Env):
                 # DEV: Add some spurious negative referents with a "behind" relation.
                 if corpus_name in ["fast_mapping_train", "fast_mapping_dev"]:
                     n_negative = len(trial["domain_negative"])
-                    idxs = np.random.choice(n_negative, size=min(3, n_negative), replace=False)
-                    new_negative = [(graph_vocab2idx["behind"],
+                    n_samples = min(self.fm_neg_synth, n_negative)
+                    idxs = np.random.choice(n_negative, size=n_samples, replace=False)
+                    new_negative = [(graph_vocab2idx["behind"], # TODO DEV: fixed "behind" relation
                                      trial["domain_negative"][idx][1],
                                      trial["domain_negative"][idx][2])
                                     for idx in idxs]
