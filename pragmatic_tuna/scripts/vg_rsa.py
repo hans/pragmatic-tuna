@@ -257,15 +257,17 @@ def synthesize_dream_batch(env, speaker_model, batch_size,
     return synthetic_batch
 
 
+REACHED_100 = False
+
 def run_dream_phase(sv, env, listener_model, speaker_model, fm_batch, args):
-    n_iters = 201
+    n_iters = 501
     verbose_interval = 10
     for i in trange(n_iters):
         ####### DATA PREP
 
         # Synthetic dream batch.
         batch = synthesize_dream_batch(env, speaker_model, args.batch_size,
-                                       dream_ratio=0.75, # TODO
+                                       dream_ratio=0.2 if REACHED_100 else 0.5, # TODO
                                        negative_samples=args.negative_samples)
 
         # "Stabilizer" batch for the speaker.
@@ -316,6 +318,12 @@ def run_dream_phase(sv, env, listener_model, speaker_model, fm_batch, args):
             _, _, _, pct_advfm_success = \
                     run_trial(advfm_batch, listener_model, speaker_model,
                             update_listener=False, update_speaker=False)
+
+            global REACHED_100
+            old_reached = REACHED_100
+            REACHED_100 = REACHED_100 or (pct_advfm_success > 0.95)
+            if not old_reached and REACHED_100:
+                print("-=-=-=-=-=-=-=-=-=--=-=--=-=- REACHED 100%")
 
             # Eval with a non-adversarial FM batch.
             fm_batch = env.get_batch("fast_mapping_dev",
@@ -393,29 +401,29 @@ def main(args):
     l_opt = opt_f(args.listener_learning_rate)
     l_global_step = tf.Variable(0, name="global_step_listener")
 
-    # DEV: scale gradient for "behind"
-    l_grads = rig_embedding_gradients(l_opt, listener_model.loss,
-                                      listener_model.embeddings, env.vocab2idx["behind"],
-                                      scale=100.)
-    listener_model.train_op = l_opt.apply_gradients(l_grads)
-    # listener_model.train_op = l_opt.minimize(listener_model.loss,
-    #                                          global_step=l_global_step)
+    # # DEV: scale gradient for "behind"
+    # l_grads = rig_embedding_gradients(l_opt, listener_model.loss,
+    #                                   listener_model.embeddings, env.vocab2idx["behind"],
+    #                                   scale=100.)
+    # listener_model.train_op = l_opt.apply_gradients(l_grads)
+    listener_model.train_op = l_opt.minimize(listener_model.loss,
+                                             global_step=l_global_step)
 
     speaker_lr = args.listener_learning_rate * args.speaker_lr_factor
     s_opt = opt_f(speaker_lr)
     s_global_step = tf.Variable(0, name="global_step_speaker")
 
-    # DEV: scale gradient for "behind"
-    s_grads = rig_embedding_gradients(s_opt, speaker_model.loss,
-                                      listener_model.embeddings, env.vocab2idx["behind"],
-                                      scale=100.)
-    speaker_model.train_op = s_opt.apply_gradients(s_grads)
-    # speaker_model.train_op = s_opt.minimize(speaker_model.loss,
-    #                                         global_step=s_global_step)
+    # # DEV: scale gradient for "behind"
+    # s_grads = rig_embedding_gradients(s_opt, speaker_model.loss,
+    #                                   listener_model.embeddings, env.vocab2idx["behind"],
+    #                                   scale=100.)
+    # speaker_model.train_op = s_opt.apply_gradients(s_grads)
+    speaker_model.train_op = s_opt.minimize(speaker_model.loss,
+                                            global_step=s_global_step)
 
     global l_norm, s_norm
-    l_norm = tf.global_norm([grad for grad, _ in l_grads])
-    s_norm = tf.global_norm([grad for grad, _ in s_grads])
+    l_norm = tf.global_norm(tf.gradients(listener_model.loss, tf.trainable_variables()))#[grad for grad, _ in l_grads])
+    s_norm = tf.global_norm(tf.gradients(speaker_model.loss, tf.trainable_variables()))#[grad for grad, _ in s_grads])
 
     global_step = l_global_step + s_global_step
     sv = tf.train.Supervisor(logdir=args.logdir, global_step=global_step,

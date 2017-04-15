@@ -125,7 +125,7 @@ class VGEnv(gym.Env):
                                             for subgraph in trial["domain_negative"]]
 
                 # DEV: Add some spurious negative referents with a "behind" relation.
-                if corpus_name == "fast_mapping_train":
+                if corpus_name in ["fast_mapping_train", "fast_mapping_dev"]:
                     n_negative = len(trial["domain_negative"])
                     idxs = np.random.choice(n_negative, size=min(3, n_negative), replace=False)
                     new_negative = [(graph_vocab2idx["behind"],
