@@ -5,6 +5,7 @@ cd ~/scr/projects/pragmatic-tuna-dev
 export PYTHONPATH=.
 
 logdir=$VG_LOG_DIR/<expnum:>
+[[ ! -d $logdir ]] || (echo "logdir $logdir already exists"; exit)
 cp -rp $BASE_MODEL $logdir || exit
 
 python pragmatic_tuna/scripts/vg_rsa.py --corpus_path data/vg_processed.json \
