@@ -1,4 +1,5 @@
 from collections import Counter
+from copy import copy
 import json
 from pathlib import Path, PurePath
 import subprocess
@@ -233,27 +234,34 @@ class VGEnv(gym.Env):
 
         return self._pad_batch(utterances, candidates)
 
-    def get_silent_batch(self, relation, batch_size=64, negative_samples=5):
+    def get_silent_batch(self, batch_size=64, negative_samples=5, p_swap=0.75):
         """
         Return a batch for "dreaming" of grounded relations without paired
         utterances.
 
         Args:
-            relation: instances of relation to fetch
+            batch_size:
+            negative_samples:
+            p_swap: independent probability that, for each example, we swap one
+                of the negative referents to be the positive referent in the
+                returned batch
         """
-        # TODO: we should have a separate corpus for this
-        # -- one where the constraint that only relevant relations appear is
-        # not enforced
         corpus = self.corpora["fast_mapping_train"]
-        reln_id = self.graph_vocab2idx[relation]
 
-        # TODO: exclude examples encountered during fast mapping
         idxs = np.random.choice(len(corpus), size=batch_size, replace=False)
         candidates = []
         for idx in idxs:
             trial = corpus[idx]
-            referent = trial["domain_positive"][0]
-            assert referent[0] == reln_id, " ".join(self.graph_vocab[g_idx] for g_idx in referent)
+            if p_swap > 0 and np.random.random() < p_swap:
+                trial = copy(trial)
+                new_positive = np.random.choice(len(trial["domain_negative"]))
+                old_positive = trial["domain_positive"][0]
+
+                trial["domain_positive"] = [trial["domain_negative"][new_positive]]
+                trial["domain_negative"] = \
+                        trial["domain_negative"][:new_positive] + \
+                        [old_positive] + \
+                        trial["domain_negative"][new_positive + 1:]
 
             candidates.append(self._extract_candidates(trial, negative_samples=negative_samples))
 

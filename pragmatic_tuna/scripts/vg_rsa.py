@@ -129,9 +129,10 @@ def do_eval(sv, env, listener_model, speaker_model, args, batch=None,
         sample = " ".join(env.utterance_to_tokens(sample))
 
         dest = correct if prediction == cands[0] else false
-        dest.append("%40s\t%60s\t%s" %
+        dest.append("%40s\t%60s\t%40s\t%40s" %
                     (utterance, sample,
-                        " ".join([env.graph_vocab[idx] for idx in prediction])))
+                     " ".join([env.graph_vocab[idx] for idx in cands[0]]),
+                     " ".join([env.graph_vocab[idx] for idx in prediction])))
 
     tqdm.write("=========== Correct:")
     tqdm.write("\n".join(correct))
@@ -242,9 +243,8 @@ def synthesize_dream_batch(env, speaker_model, batch_size,
     real_size = batch_size - dreamed_size
 
     # Pull a silent batch and draw utterances.
-    silent_batch = env.get_silent_batch(FAST_MAPPING_RELATION,
-            batch_size=dreamed_size,
-            negative_samples=negative_samples)
+    silent_batch = env.get_silent_batch(batch_size=dreamed_size,
+                                        negative_samples=negative_samples)
     model_utterances, model_lengths = sample_utterances(env, silent_batch,
                                                         speaker_model)
     dreamed_batch = (model_utterances, silent_batch[0],
@@ -265,7 +265,7 @@ def run_dream_phase(sv, env, listener_model, speaker_model, fm_batch, args):
 
         # Synthetic dream batch.
         batch = synthesize_dream_batch(env, speaker_model, args.batch_size,
-                                       dream_ratio=0.25, # TODO
+                                       dream_ratio=0.75, # TODO
                                        negative_samples=args.negative_samples)
 
         # "Stabilizer" batch for the speaker.
@@ -296,6 +296,10 @@ def run_dream_phase(sv, env, listener_model, speaker_model, fm_batch, args):
         ####### EVALUATION
 
         if i % args.eval_interval == 0 or i == n_iters - 1:
+            print("========= eval: synth training batch")
+            do_eval(sv, env, listener_model, speaker_model, args,
+                    batch=batch)
+
             for corpus in ["fast_mapping_dev", "adv_fast_mapping_dev",
                            "pre_train_dev"]:
                 print("======= eval: %s" % corpus)
