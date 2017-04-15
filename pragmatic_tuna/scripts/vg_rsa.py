@@ -306,7 +306,7 @@ def run_dream_phase(sv, env, listener_model, speaker_model, fm_batch, args):
 
         ####### EVALUATION
 
-        if i % args.eval_interval == 0 or i == n_iters - 1:
+        if i % args.eval_interval == 0 or i == args.n_dream_iters - 1:
             print("========= eval: synth training batch")
             do_eval(sv, env, listener_model, speaker_model, args,
                     batch=batch)
