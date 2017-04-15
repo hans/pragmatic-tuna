@@ -328,12 +328,6 @@ def run_dream_phase(sv, env, listener_model, speaker_model, fm_batch, args):
                     run_trial(advfm_batch, listener_model, speaker_model,
                             update_listener=False, update_speaker=False)
 
-            global REACHED_100
-            old_reached = REACHED_100
-            REACHED_100 = REACHED_100 or (pct_advfm_success > 0.95)
-            if not old_reached and REACHED_100:
-                print("-=-=-=-=-=-=-=-=-=--=-=--=-=- REACHED 100%")
-
             # Eval with a non-adversarial FM batch.
             fm_batch = env.get_batch("fast_mapping_dev",
                                     batch_size=args.batch_size,
