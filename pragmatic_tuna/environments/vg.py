@@ -124,6 +124,16 @@ class VGEnv(gym.Env):
                 trial["domain_negative"] = [tuple([graph_vocab2idx[x] for x in subgraph])
                                             for subgraph in trial["domain_negative"]]
 
+                # DEV: Add some spurious negative referents with a "behind" relation.
+                if corpus_name == "fast_mapping_train":
+                    n_negative = len(trial["domain_negative"])
+                    idxs = np.random.choice(n_negative, size=min(3, n_negative), replace=False)
+                    new_negative = [(graph_vocab2idx["behind"],
+                                     trial["domain_negative"][idx][1],
+                                     trial["domain_negative"][idx][2])
+                                    for idx in idxs]
+                    trial["domain_negative"].extend(new_negative)
+
         return corpora, vocab, graph_vocab
 
     def _extract_candidates(self, trial, negative_samples=5):
