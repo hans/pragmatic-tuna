@@ -26,6 +26,9 @@ class VGEnv(gym.Env):
     def __init__(self, corpus_path, graph_embeddings_path=None,
                  embedding_dim=64, max_negative_samples=5,
                  fm_neg_synth=3):
+        # of negative fast-mapping candidates to synthesize
+        self.fm_neg_synth = fm_neg_synth
+
         if corpus_path.endswith(".pkl"):
             with open(corpus_path, "rb") as corpus_pkl:
                 self.corpora, self.vocab, self.graph_vocab = pickle.load(corpus_pkl)
@@ -50,9 +53,6 @@ class VGEnv(gym.Env):
         # Assumes 1 positive candidate per example
         self.max_negative_samples = max_negative_samples
         self.max_candidates = max_negative_samples + 1
-
-        # of negative fast-mapping candidates to synthesize
-        self.fm_neg_synth = fm_neg_synth
 
         self.embedding_dim = embedding_dim
         if graph_embeddings_path is None:
