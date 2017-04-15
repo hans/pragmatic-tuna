@@ -497,7 +497,7 @@ if __name__ == '__main__':
                          "below this value"))
     p.add_argument("--fast_mapping_neg_synth", type=int, default=3,
                    help=("Number of negative examples with the FM relation "
-                         "to synthesize for FM batches.")
+                         "to synthesize for FM batches."))
 
     # Dreaming.
     p.add_argument("--n_dream_iters", type=int, default=501)
