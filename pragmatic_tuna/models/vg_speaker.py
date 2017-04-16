@@ -217,8 +217,6 @@ class WindowedSequenceSpeakerModel(SequenceSpeakerModel):
                                           name="sample_%i" % t)
                     prev_sample = tf.nn.embedding_lookup(self.embeddings, sample_t)
 
-                    # TODO support stop token here?
-
                     outputs.append(output_t)
                     probs.append(probs_t)
                     samples.append(sample_t)
