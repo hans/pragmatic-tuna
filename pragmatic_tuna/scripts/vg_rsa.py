@@ -382,16 +382,22 @@ def main(args):
     graph_embeddings = tf.Variable(env.graph_embeddings, name="graph_embeddings",
                                    dtype=tf.float32, trainable=False)
 
+
     listener_model = BoWRankingListener(env,
             embedding_dim=args.embedding_dim,
             hidden_dim=args.listener_hidden_dim,
             graph_embeddings=graph_embeddings,
             max_negative_samples=args.negative_samples)
+
+    speaker_embeddings = tf.Variable(np.zeros((len(env.vocab), args.embedding_dim), dtype=np.float32),
+                                     name="speaker_embeddings")
+    embedding_copy_op = speaker_embeddings.assign(listener_model.embeddings)
+
     speaker_model = WindowedSequenceSpeakerModel(
             env, max_timesteps=env.max_timesteps,
             embedding_dim=args.embedding_dim,
-            embeddings=listener_model.embeddings,
-            graph_embeddings=graph_embeddings,
+            embeddings=speaker_embeddings,
+            graph_embeddings=listener_model.graph_embeddings,
             hidden_dim=args.speaker_hidden_dim,
             dropout_keep_prob=args.dropout_keep_prob)
 
@@ -422,6 +428,8 @@ def main(args):
     #                                   listener_model.embeddings, env.vocab2idx["behind"],
     #                                   scale=100.)
     # speaker_model.train_op = s_opt.apply_gradients(s_grads)
+    from pprint import pprint
+    pprint([v.name for grad, v in s_opt.compute_gradients(speaker_model.loss) if grad is not None])
     speaker_model.train_op = s_opt.minimize(speaker_model.loss,
                                             global_step=s_global_step)
 
@@ -430,8 +438,18 @@ def main(args):
     s_norm = tf.global_norm(tf.gradients(speaker_model.loss, tf.trainable_variables()))#[grad for grad, _ in s_grads])
 
     global_step = l_global_step + s_global_step
+
+    # Exclude new embeddings from Saver so that it doesn't try to restore
+    from tensorflow.python.ops import variables
+    saveable_variables = [v for v in variables._all_saveable_objects() if "speaker_embeddings" not in v.name]
+    saver = tf.train.Saver(saveable_variables)
+
+    def init_fn(sess):
+        print("################ HERE")
+        sess.run(tf.variables_initializer([speaker_embeddings]))
+        sess.run(embedding_copy_op)
     sv = tf.train.Supervisor(logdir=args.logdir, global_step=global_step,
-                             summary_op=None)
+            saver=saver, init_fn=init_fn, summary_op=None)
 
     gpu_options = tf.GPUOptions(per_process_gpu_memory_fraction=0.3)
     config = tf.ConfigProto(gpu_options=gpu_options)
