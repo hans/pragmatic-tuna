@@ -291,19 +291,6 @@ def run_dream_phase(sv, env, listener_model, speaker_model, fm_batch, args):
                                   batch_size=args.batch_size - n_fm,
                                   negative_samples=args.negative_samples))
 
-        ###### UPDATES
-
-        # Update listener with synthetic batch.
-        predictions, losses, norms, pct_success = \
-                run_trial(batch, listener_model, speaker_model,
-                          update_listener=True, update_speaker=False)
-
-        # Update speaker with mixture of FM batch, pre-train.
-        _, losses2, norms2, _ = \
-                run_trial(stabilizer_batch, listener_model, speaker_model,
-                          update_listener=False, update_speaker=True)
-
-
         ####### EVALUATION
 
         if i % args.eval_interval == 0 or i == args.n_dream_iters - 1:
@@ -318,10 +305,6 @@ def run_dream_phase(sv, env, listener_model, speaker_model, fm_batch, args):
                         corpus=corpus)
 
         if i % verbose_interval == 0:
-            sess = tf.get_default_session()
-            speaker_embs, listener_embs = sess.run((speaker_model.embeddings, listener_model.embeddings))
-            print(np.linalg.norm(speaker_embs), np.linalg.norm(listener_embs))
-            print(speaker_embs == listener_embs)
             ####### MORE EVALUATION
 
             # Eval with an adversarial batch, using listener for inference.
@@ -346,6 +329,19 @@ def run_dream_phase(sv, env, listener_model, speaker_model, fm_batch, args):
             _, _, _, pct_pt_success = \
                     run_trial(pt_batch, listener_model, speaker_model,
                             update_listener=False, update_speaker=False)
+
+        ###### UPDATES
+
+        # Update listener with synthetic batch.
+        predictions, losses, norms, pct_success = \
+                run_trial(batch, listener_model, speaker_model,
+                          update_listener=True, update_speaker=False)
+
+        # Update speaker with mixture of FM batch, pre-train.
+        _, losses2, norms2, _ = \
+                run_trial(stabilizer_batch, listener_model, speaker_model,
+                          update_listener=False, update_speaker=True)
+
 
         ######## LOGGING
 
