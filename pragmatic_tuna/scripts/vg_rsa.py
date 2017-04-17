@@ -68,41 +68,51 @@ def run_trial(batch, listener_model, speaker_model, update_listener=True,
 
 
 def run_train_phase(sv, env, listener_model, speaker_model, args):
-    losses, pct_successes = [], []
     for i in trange(args.n_iters):
         batch = env.get_batch("pre_train_train", batch_size=args.batch_size,
                               negative_samples=args.negative_samples)
-        predictions, losses_i, _, pct_success = \
+        predictions, losses, _, pct_success = \
                 run_trial(batch, listener_model, speaker_model)
 
-        losses.append(losses_i)
-        pct_successes.append(pct_success)
-
-        # Try fast-mapping (adversarial batch!).
-        fm_batch = env.get_batch("adv_fast_mapping_dev",
-                                 batch_size=args.batch_size,
-                                 negative_samples=args.negative_samples)
-        _, _, _, pct_fm_success = \
-                run_trial(fm_batch, listener_model, speaker_model,
-                          update_listener=False, update_speaker=False,
-                          infer_with_speaker=True)
-
-        tqdm.write("%5f\t%5f\t%.2f\t\t%3f"
-                    % (losses_i[0], losses_i[1], pct_success * 100,
-                       pct_fm_success * 100))
+        tqdm.write("%5f\t%5f\t%.2f" % (*losses, pct_success * 100))
 
         if i % args.summary_interval == 0:
+            eval_args = (env, listener_model, speaker_model, args)
+
             summary = make_summary({
                 "listener_loss": losses_i[0],
                 "speaker_loss": losses_i[1],
-                "listener_success": pct_success,
-                "speaker_fm_success": pct_fm_success,
+                "listener_train_success": pct_success,
+                "speaker_advfm_success": eval_success("adv_fast_mapping_dev",
+                    *eval_args, n_batches=5, infer_with_speaker=True),
+                "listener_dev_success": eval_success("pre_train_dev",
+                    *eval_args, n_batches=5),
             })
             sv.summary_computed(tf.get_default_session(), summary)
 
         if i % args.eval_interval == 0 or i == args.n_iters - 1:
             tqdm.write("====================== DEV EVAL AT %i" % i)
-            do_eval(sv, env, listener_model, speaker_model)
+            do_eval(sv, env, listener_model, speaker_model, args)
+
+
+def eval_success(corpus, env, l_model, s_model, args, n_batches=1,
+                 infer_with_speaker=False):
+    """
+    Quick evaluation: fetch a few batches and compute average success.
+    """
+    pct_successes = []
+
+    for _ in range(n_batches):
+        batch = env.get_batch(corpus, batch_size=args.batch_size,
+                            negative_samples=args.negative_samples)
+        _, _, _, pct_success = \
+                run_trial(batch, l_model, s_model,
+                        update_listener=False, update_speaker=False,
+                        infer_with_speaker=infer_with_speaker)
+
+        pct_successes.append(pct_success)
+
+    return np.mean(pct_successes)
 
 
 def do_eval(sv, env, listener_model, speaker_model, args, batch=None,
@@ -450,14 +460,9 @@ def main(args):
         with open(params_path, "w") as params_f:
             pprint(vars(args), params_f)
 
-        # DEV: check scale of "behind"
-        embeddings = sess.run(listener_model.embeddings)
-        print(embeddings[env.vocab2idx["behind"]])
-        print(embeddings[env.vocab2idx["fence"]])
-
         with sess.as_default():
-            # print("============== TRAINING")
-            # run_train_phase(sv, env, listener_model, speaker_model, args)
+            print("============== TRAINING")
+            run_train_phase(sv, env, listener_model, speaker_model, args)
 
             if args.fast_mapping_k > 0:
                 print("============== FAST MAPPING")
