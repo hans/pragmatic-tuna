@@ -28,6 +28,7 @@ class VGEnv(gym.Env):
                  fm_neg_synth=3):
         # of negative fast-mapping candidates to synthesize
         self.fm_neg_synth = fm_neg_synth
+        self.fm_neg_synth_corpora = ["fast_mapping_train", "fast_mapping_dev"]
 
         if corpus_path.endswith(".pkl"):
             with open(corpus_path, "rb") as corpus_pkl:
@@ -95,16 +96,9 @@ class VGEnv(gym.Env):
             # Don't double-count words in fast-mapping + adversarial
             # fast-mapping (adversarial are directly duped from
             # non-adversarial paired trials)
-            #
-            # DEV: but *do* double-count the words in adv_fm_train,
-            # because we were accidentally doing this earlier and need
-            # to keep doing this so that we can load old models :)
-            #
-            # DEV2: but *don't* double-count adv_fm_train words which come
-            # from pre_train_train, because we didn't do this when pre-training
-            # the model..
-            skip = trial["type"] in ["adv_fast_mapping_dev", "adv_fast_mapping_test"]
-            skip = skip or (trial["type"] == "adv_fast_mapping_train" and domain_positive[0][0] != "behind")
+            skip = trial["type"] in ["adv_fast_mapping_train",
+                                     "adv_fast_mapping_dev",
+                                     "adv_fast_mapping_test"]
             if not skip:
                 for word in utterance:
                     vocab_counts[word] += 1
@@ -133,8 +127,8 @@ class VGEnv(gym.Env):
                 trial["domain_negative"] = [tuple([graph_vocab2idx[x] for x in subgraph])
                                             for subgraph in trial["domain_negative"]]
 
-                # DEV: Add some spurious negative referents with a "behind" relation.
-                if corpus_name in ["fast_mapping_train", "fast_mapping_dev"]:
+                # Add some spurious negative referents with a "behind" relation.
+                if corpus_name in self.fm_neg_synth_corpora:
                     n_negative = len(trial["domain_negative"])
                     n_samples = min(self.fm_neg_synth, n_negative)
                     idxs = np.random.choice(n_negative, size=n_samples, replace=False)
@@ -142,6 +136,8 @@ class VGEnv(gym.Env):
                                      trial["domain_negative"][idx][1],
                                      trial["domain_negative"][idx][2])
                                     for idx in idxs]
+
+                    trial["real_negative"] = trial["domain_negative"][:]
                     trial["domain_negative"].extend(new_negative)
 
         return corpora, vocab, graph_vocab
@@ -323,7 +319,6 @@ class VGEnv(gym.Env):
         with tempfile.TemporaryDirectory() as d:
             # Generate corpus.
             pad_str = " ".join([EOS] * 3)
-            # DEV: use a visible dir rather than a tempdir.
             corpus_path = Path(d, "corpus")
             with corpus_path.open("w") as corpus_f:
                 for corpus_name, corpus in self.corpora.items():
@@ -334,7 +329,16 @@ class VGEnv(gym.Env):
                         continue
 
                     for trial in corpus:
-                        subgraphs = trial["domain_positive"] + trial["domain_negative"]
+                        # During corpus processing, we synthesized some
+                        # spurious negative candidates in the fast-mapping
+                        # train, dev sets. Ignore these when producing the
+                        # co-occurrence corpus.
+                        if "real_negative" in trial:
+                            domain_negative = trial["real_negative"][:]
+                        else:
+                            domain_negative = trial["domain_negative"][:]
+
+                        subgraphs = trial["domain_positive"] + domain_negative
                         for subgraph in subgraphs:
                             subgraph = tuple(self.graph_vocab[idx] for idx in subgraph)
                             # Rearrange so that we have (obj, reln, obj) order
