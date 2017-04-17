@@ -318,6 +318,10 @@ def run_dream_phase(sv, env, listener_model, speaker_model, fm_batch, args):
                         corpus=corpus)
 
         if i % verbose_interval == 0:
+            sess = tf.get_default_session()
+            speaker_embs, listener_embs = sess.run((speaker_model.embeddings, listener_model.embeddings))
+            print(np.linalg.norm(speaker_embs), np.linalg.norm(listener_embs))
+            print(speaker_embs == listener_embs)
             ####### MORE EVALUATION
 
             # Eval with an adversarial batch, using listener for inference.
