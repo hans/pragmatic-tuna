@@ -145,7 +145,7 @@ class VisualGenomeFilter(object):
         return {obj['object_id']: obj['synsets'][0]
                         for obj in region['objects'] if len(obj['synsets']) > 0}
 
-    def _create_adverserial_trial(self, trial, t):
+    def _create_adverserial_trial(self, trial, t, other_relations=TRAIN_RELATIONS):
         for entry in trial['domain']:
             if entry['target']:
                 target = entry
@@ -155,7 +155,7 @@ class VisualGenomeFilter(object):
         adv_trial['type'] = 'adv_fast_mapping_%s' % t
         domain = []
         domain.append(target)
-        for reln in TRAIN_RELATIONS:
+        for reln in other_relations:
             entry = copy.deepcopy(target)
             entry['reln'] = reln
             entry['target'] = False
@@ -271,8 +271,9 @@ class VisualGenomeFilter(object):
                 train_trials = self.corpora[train_trials_corpus_name]
                 k = min(corpus_len, len(train_trials))
                 adv_trials = random.sample(train_trials, k)
+                other_relations = set(FAST_MAPPING_RELATIONS + TRAIN_RELATIONS).difference(set([reln]))
                 for trial in adv_trials:
-                    adv_trial = self._create_adverserial_trial(trial, split)
+                    adv_trial = self._create_adverserial_trial(trial, split,other_relations=other_relations)
                     self.trials.append(adv_trial)
                     self.corpora[adv_trial['type']].append(adv_trial)
 
