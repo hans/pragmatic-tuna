@@ -410,8 +410,9 @@ def main(args):
     #                                   listener_model.embeddings, env.vocab2idx["behind"],
     #                                   scale=100.)
     # listener_model.train_op = l_opt.apply_gradients(l_grads)
-    listener_model.train_op = l_opt.minimize(listener_model.loss,
-                                             global_step=l_global_step)
+    l_grads = l_opt.compute_gradients(listener_model.loss)
+    listener_model.train_op = l_opt.apply_gradients(l_grads,
+                                                    global_step=l_global_step)
 
     speaker_lr = args.listener_learning_rate * args.speaker_lr_factor
     s_opt = opt_f(speaker_lr)
@@ -422,20 +423,21 @@ def main(args):
     #                                   listener_model.embeddings, env.vocab2idx["behind"],
     #                                   scale=100.)
     # speaker_model.train_op = s_opt.apply_gradients(s_grads)
+    s_grads = s_opt.compute_gradients(speaker_model.loss)
+    speaker_model.train_op = s_opt.apply_gradients(s_grads,
+                                                   global_step=s_global_step)
+
     from pprint import pprint
     print("Listener gradients:")
-    pprint([v.name for grad, v in l_opt.compute_gradients(listener_model.loss) if grad is not None])
+    pprint([v.name for grad, v in l_grads if grad is not None])
     print("\nSpeaker gradients:")
-    pprint([v.name for grad, v in s_opt.compute_gradients(speaker_model.loss) if grad is not None])
-    speaker_model.train_op = s_opt.minimize(speaker_model.loss,
-                                            global_step=s_global_step)
+    pprint([v.name for grad, v in s_grads if grad is not None])
 
     global l_norm, s_norm
-    l_norm = tf.global_norm(tf.gradients(listener_model.loss, tf.trainable_variables()))#[grad for grad, _ in l_grads])
-    s_norm = tf.global_norm(tf.gradients(speaker_model.loss, tf.trainable_variables()))#[grad for grad, _ in s_grads])
+    l_norm = tf.global_norm([grad for grad, _ in l_grads])
+    s_norm = tf.global_norm([grad for grad, _ in s_grads])
 
     global_step = l_global_step + s_global_step
-
     sv = tf.train.Supervisor(logdir=args.logdir, global_step=global_step,
                              summary_op=None)
 
