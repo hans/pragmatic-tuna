@@ -2,9 +2,11 @@
 
 
 from argparse import ArgumentParser
+from collections import defaultdict
 import sys
 import json
 import copy
+import random
 
 try:
     from jsonstreamer import ObjectStreamer
@@ -34,6 +36,7 @@ class VisualGenomeFilter(object):
         self.known_objects = set()
         self.fast_mapping_train_set = set()
         self.trials = []
+        self.corpora = defaultdict(list)
         self._cache = None
 
     # adds all images that contain a region with at least one of the relations in TRAIN_RELATION
@@ -68,9 +71,9 @@ class VisualGenomeFilter(object):
                     for reln in region['relationships']:
                         predicate = reln['predicate'].lower()
                         if predicate in TRAIN_RELATIONS:
-                            objects = {obj['object_id']: obj['synsets'][0] 
+                            objects = {obj['object_id']: obj['synsets'][0]
                                             for obj in region['objects'] if len(obj['synsets']) > 0}
-                            
+
                             if reln['subject_id'] in objects and reln['object_id'] in objects:
                                 self.known_objects.add(objects[reln['subject_id']])
                                 self.known_objects.add(objects[reln['object_id']])
@@ -142,29 +145,29 @@ class VisualGenomeFilter(object):
         return {obj['object_id']: obj['synsets'][0]
                         for obj in region['objects'] if len(obj['synsets']) > 0}
 
-    def _create_adverserial_trial(self, trial, t):
+    def _create_adverserial_trial(self, trial, t, other_relations=TRAIN_RELATIONS):
         for entry in trial['domain']:
             if entry['target']:
                 target = entry
                 break
-        
+
         adv_trial = copy.deepcopy(trial)
         adv_trial['type'] = 'adv_fast_mapping_%s' % t
         domain = []
         domain.append(target)
-        for reln in TRAIN_RELATIONS:
+        for reln in other_relations:
             entry = copy.deepcopy(target)
             entry['reln'] = reln
             entry['target'] = False
             domain.append(entry)
-        
+
         new_domain = list(domain)
         #for entry in domain:
         #    entry_rev = copy.deepcopy(entry)
         #    entry_rev['object1'] = entry['object2']
         #    entry_rev['object2'] = entry['object1']
         #    entry_rev['target'] = False
-        #    new_domain.append(entry_rev)           
+        #    new_domain.append(entry_rev)
 
         adv_trial['domain'] = new_domain
         return adv_trial
@@ -175,8 +178,9 @@ class VisualGenomeFilter(object):
             image_id = int(image['image_id'])
             has_target = False
             utterance = None
+            target_reln = None
             domain = []
-            
+
             t = None
             if image_id in self.train_set:
                 pre_train = True
@@ -196,7 +200,7 @@ class VisualGenomeFilter(object):
             elif image_id in self.fast_mapping_test_set:
                 pre_train = False
                 t = "test"
-            
+
             #add training trial
             if t is not None and pre_train:
                 for region in image['regions']:
@@ -212,6 +216,7 @@ class VisualGenomeFilter(object):
                             if not has_target:
                                 has_target = True
                                 utterance = region['phrase']
+                                target_reln = predicate
                         else:
                             if reln['object_id'] not in objects or reln['subject_id'] not in objects:
                                 continue
@@ -222,6 +227,7 @@ class VisualGenomeFilter(object):
                     trial['utterance'] = utterance.lower()
                     trial['domain'] = domain
                     self.trials.append(trial)
+                    self.corpora[trial['type'] + "_" + target_reln].append(trial)
 
             # add fast mapping trial
             elif t is not None:
@@ -251,11 +257,29 @@ class VisualGenomeFilter(object):
                     trial['utterance'] = utterance.lower()
                     trial['domain'] = domain
                     self.trials.append(trial)
+                    self.corpora[trial['type']].append(trial)
                     adv_trial = self._create_adverserial_trial(trial, t)
                     self.trials.append(adv_trial)
+                    self.corpora[adv_trial['type']].append(adv_trial)
+
+    def _add_pre_train_adv_trials(self):
+        for split in ["train", "dev", "test"]:
+            adv_corpus_name = "adv_fast_mapping_%s" % split
+            corpus_len = len(self.corpora[adv_corpus_name])
+            for reln in TRAIN_RELATIONS:
+                train_trials_corpus_name = "pre_train_%s_%s" % (split, reln)
+                train_trials = self.corpora[train_trials_corpus_name]
+                k = min(corpus_len, len(train_trials))
+                adv_trials = random.sample(train_trials, k)
+                other_relations = set(FAST_MAPPING_RELATIONS + TRAIN_RELATIONS).difference(set([reln]))
+                for trial in adv_trials:
+                    adv_trial = self._create_adverserial_trial(trial, split,other_relations=other_relations)
+                    self.trials.append(adv_trial)
+                    self.corpora[adv_trial['type']].append(adv_trial)
+
 
     def _apply_object_stream_function_to_json_file(self, f, function, load_in_memory=False):
-        
+
         if load_in_memory:
             if self._cache is None:
                 self._cache = json.load(f)
@@ -294,7 +318,7 @@ class VisualGenomeFilter(object):
                 self.dev_candidates.add(img)
             elif i < train_size * (DEV_SPLIT_SIZE + TEST_SPLIT_SIZE):
                 self.test_candidates.add(img)
-        
+
         self.train_set = self.train_set.difference(self.dev_candidates).difference(self.test_candidates)
 
         self.fast_mapping_set = self.fast_mapping_candidates.intersection(self.train_candidates)
@@ -323,6 +347,8 @@ class VisualGenomeFilter(object):
                                                difference(self.fast_mapping_test_set)
 
         self._apply_object_stream_function_to_json_file(f, self._trial_listener, load_in_memory)
+
+        self._add_pre_train_adv_trials()
 
         json.dump(self.trials, sys.stdout, indent=4)
 
