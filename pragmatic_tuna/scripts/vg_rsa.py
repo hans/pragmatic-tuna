@@ -382,22 +382,16 @@ def main(args):
     graph_embeddings = tf.Variable(env.graph_embeddings, name="graph_embeddings",
                                    dtype=tf.float32, trainable=False)
 
-
     listener_model = BoWRankingListener(env,
             embedding_dim=args.embedding_dim,
             hidden_dim=args.listener_hidden_dim,
             graph_embeddings=graph_embeddings,
             max_negative_samples=args.negative_samples)
-
-    speaker_embeddings = tf.Variable(np.zeros((len(env.vocab), args.embedding_dim), dtype=np.float32),
-                                     name="speaker_embeddings")
-    embedding_copy_op = speaker_embeddings.assign(listener_model.embeddings)
-
     speaker_model = WindowedSequenceSpeakerModel(
             env, max_timesteps=env.max_timesteps,
             embedding_dim=args.embedding_dim,
-            embeddings=speaker_embeddings,
-            graph_embeddings=listener_model.graph_embeddings,
+            embeddings=listener_model.embeddings,
+            graph_embeddings=graph_embeddings,
             hidden_dim=args.speaker_hidden_dim,
             dropout_keep_prob=args.dropout_keep_prob)
 
@@ -442,17 +436,8 @@ def main(args):
 
     global_step = l_global_step + s_global_step
 
-    # Exclude new embeddings from Saver so that it doesn't try to restore
-    from tensorflow.python.ops import variables
-    saveable_variables = [v for v in variables._all_saveable_objects() if "speaker_embeddings" not in v.name]
-    saver = tf.train.Saver(saveable_variables)
-
-    def init_fn(sess):
-        print("################ HERE")
-        sess.run(tf.variables_initializer([speaker_embeddings]))
-        sess.run(embedding_copy_op)
     sv = tf.train.Supervisor(logdir=args.logdir, global_step=global_step,
-            saver=saver, init_fn=init_fn, summary_op=None)
+                             summary_op=None)
 
     gpu_options = tf.GPUOptions(per_process_gpu_memory_fraction=0.3)
     config = tf.ConfigProto(gpu_options=gpu_options)
