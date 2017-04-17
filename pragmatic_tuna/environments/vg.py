@@ -76,18 +76,6 @@ class VGEnv(gym.Env):
             if len(utterance) > 10:
                 continue
 
-            if trial["type"] not in ["adv_fast_mapping_dev",
-                                     "adv_fast_mapping_test"]:
-                # Don't double-count words in fast-mapping + adversarial
-                # fast-mapping (adversarial are directly duped from
-                # non-adversarial paired trials)
-                #
-                # DEV: but *do* double-count the words in adv_fm_train,
-                # because we were accidentally doing this earlier and need
-                # to keep doing this so that we can load old models :)
-                for word in utterance:
-                    vocab_counts[word] += 1
-
             domain_positive, domain_negative = [], []
             for subgraph in trial["domain"]:
                 obj1 = subgraph["object1"]
@@ -103,6 +91,23 @@ class VGEnv(gym.Env):
 
                 domain = domain_positive if subgraph["target"] else domain_negative
                 domain.append((reln, obj1, obj2))
+
+            # Don't double-count words in fast-mapping + adversarial
+            # fast-mapping (adversarial are directly duped from
+            # non-adversarial paired trials)
+            #
+            # DEV: but *do* double-count the words in adv_fm_train,
+            # because we were accidentally doing this earlier and need
+            # to keep doing this so that we can load old models :)
+            #
+            # DEV2: but *don't* double-count adv_fm_train words which come
+            # from pre_train_train, because we didn't do this when pre-training
+            # the model..
+            skip = trial["type"] in ["adv_fast_mapping_dev", "adv_fast_mapping_test"]
+            skip = skip or (trial["type"] == "adv_fast_mapping_train" and domain_positive[0][0] != "behind")
+            if not skip:
+                for word in utterance:
+                    vocab_counts[word] += 1
 
             corpora[trial["type"]].append({
                 "utterance": utterance,
