@@ -317,28 +317,16 @@ def run_dream_phase(sv, env, listener_model, speaker_model, fm_batch, args):
         if i % verbose_interval == 0:
             ####### MORE EVALUATION
 
+            eval_args = (env, listener_model, speaker_model, args)
+
             # Eval with an adversarial batch, using listener for inference.
-            advfm_batch = env.get_batch("adv_fast_mapping_dev",
-                                        batch_size=args.batch_size,
-                                        negative_samples=args.negative_samples)
-            _, _, _, pct_advfm_success = \
-                    run_trial(advfm_batch, listener_model, speaker_model,
-                            update_listener=False, update_speaker=False)
+            pct_advfm_success = eval_success("adv_fast_mapping_dev", *eval_args)
 
             # Eval with a non-adversarial FM batch.
-            fm_batch = env.get_batch("fast_mapping_dev",
-                                    batch_size=args.batch_size,
-                                    negative_samples=args.negative_samples)
-            _, _, _, pct_fm_success = \
-                    run_trial(fm_batch, listener_model, speaker_model,
-                            update_listener=False, update_speaker=False)
+            pct_fm_success = eval_success("fast_mapping_dev", *eval_args)
 
             # Finally, eval on pre-train dev.
-            pt_batch = env.get_batch("pre_train_dev", batch_size=args.batch_size,
-                                    negative_samples=args.negative_samples)
-            _, _, _, pct_pt_success = \
-                    run_trial(pt_batch, listener_model, speaker_model,
-                            update_listener=False, update_speaker=False)
+            pct_pt_success = eval_success("pre_train_dev", *eval_args)
 
         ###### UPDATES
 
