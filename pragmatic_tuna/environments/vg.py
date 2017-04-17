@@ -321,7 +321,13 @@ class VGEnv(gym.Env):
             # DEV: use a visible dir rather than a tempdir.
             corpus_path = Path(d, "corpus")
             with corpus_path.open("w") as corpus_f:
-                for corpus in self.corpora.values():
+                for corpus_name, corpus in self.corpora.items():
+                    if "adv_" in corpus_name:
+                        # Skip adversarial corpora, which are duplicated from
+                        # real fast-mapping data and contain lots of bogus
+                        # relations.
+                        continue
+
                     for trial in corpus:
                         subgraphs = trial["domain_positive"] + trial["domain_negative"]
                         for subgraph in subgraphs:
