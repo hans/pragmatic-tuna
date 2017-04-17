@@ -429,6 +429,9 @@ def main(args):
     #                                   scale=100.)
     # speaker_model.train_op = s_opt.apply_gradients(s_grads)
     from pprint import pprint
+    print("Listener gradients:")
+    pprint([v.name for grad, v in l_opt.compute_gradients(listener_model.loss) if grad is not None])
+    print("\nSpeaker gradients:")
     pprint([v.name for grad, v in s_opt.compute_gradients(speaker_model.loss) if grad is not None])
     speaker_model.train_op = s_opt.minimize(speaker_model.loss,
                                             global_step=s_global_step)
