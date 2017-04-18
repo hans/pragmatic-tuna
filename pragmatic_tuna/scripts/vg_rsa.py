@@ -80,8 +80,8 @@ def run_train_phase(sv, env, listener_model, speaker_model, args):
             eval_args = (env, listener_model, speaker_model, args)
 
             summary = make_summary({
-                "listener_loss": losses_i[0],
-                "speaker_loss": losses_i[1],
+                "listener_loss": losses[0],
+                "speaker_loss": losses[1],
                 "listener_train_success": pct_success,
                 "speaker_advfm_success": eval_success("adv_fast_mapping_dev",
                     *eval_args, n_batches=5, infer_with_speaker=True),
