@@ -278,7 +278,7 @@ def synthesize_dream_batch(env, speaker_model, batch_size,
 
 
 def run_dream_phase(sv, env, listener_model, speaker_model, fm_batch, args):
-    verbose_interval = 10
+    verbose_interval = 50
     for i in trange(args.n_dream_iters):
         ####### DATA PREP
 
@@ -320,13 +320,16 @@ def run_dream_phase(sv, env, listener_model, speaker_model, fm_batch, args):
             eval_args = (env, listener_model, speaker_model, args)
 
             # Eval with an adversarial batch, using listener for inference.
-            pct_advfm_success = eval_success("adv_fast_mapping_dev", *eval_args)
+            pct_advfm_success = eval_success("adv_fast_mapping_dev",
+                                             *eval_args, n_batches=5)
 
             # Eval with a non-adversarial FM batch.
-            pct_fm_success = eval_success("fast_mapping_dev", *eval_args)
+            pct_fm_success = eval_success("fast_mapping_dev",
+                                          *eval_args, n_batches=5)
 
             # Finally, eval on pre-train dev.
-            pct_pt_success = eval_success("pre_train_dev", *eval_args)
+            pct_pt_success = eval_success("pre_train_dev",
+                                          *eval_args, n_batches=5)
 
         ###### UPDATES
 
@@ -449,8 +452,8 @@ def main(args):
             pprint(vars(args), params_f)
 
         with sess.as_default():
-            print("============== TRAINING")
-            run_train_phase(sv, env, listener_model, speaker_model, args)
+            # print("============== TRAINING")
+            # run_train_phase(sv, env, listener_model, speaker_model, args)
 
             if args.fast_mapping_k > 0:
                 print("============== FAST MAPPING")
