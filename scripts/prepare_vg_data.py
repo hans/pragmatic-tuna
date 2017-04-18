@@ -51,7 +51,8 @@ class VisualGenomeFilter(object):
                     continue
                 for reln in region['relationships']:
                     predicate = reln['predicate'].lower()
-                    if predicate in TRAIN_RELATIONS:
+                    #TODO: remove hard-coded "behind here"
+                    if predicate in TRAIN_RELATIONS and "behind" not in region["phrase"].lower():
                         self.train_candidates.add(image_id)
                         break
                     if predicate in FAST_MAPPING_RELATIONS:
@@ -70,7 +71,7 @@ class VisualGenomeFilter(object):
                         continue
                     for reln in region['relationships']:
                         predicate = reln['predicate'].lower()
-                        if predicate in TRAIN_RELATIONS:
+                        if predicate in TRAIN_RELATIONS and "behind" not in region["phrase"].lower():
                             objects = {obj['object_id']: obj['synsets'][0]
                                             for obj in region['objects'] if len(obj['synsets']) > 0}
 
@@ -117,7 +118,7 @@ class VisualGenomeFilter(object):
                         continue
                     for reln in region['relationships']:
                         predicate = reln['predicate'].lower()
-                        if predicate in TRAIN_RELATIONS:
+                        if predicate in TRAIN_RELATIONS and "behind" not in region["phrase"].lower():
                             objects = self._get_objects(region)
                             if reln['subject_id'] not in objects or objects[reln['subject_id']] not in self.known_objects:
                                 include = False
@@ -209,7 +210,7 @@ class VisualGenomeFilter(object):
                     objects = self._get_objects(region)
                     for reln in region['relationships']:
                         predicate = reln['predicate'].lower()
-                        if predicate in TRAIN_RELATIONS:
+                        if predicate in TRAIN_RELATIONS and "behind" not in region["phrase"].lower():
                             if reln['object_id'] not in objects or reln['subject_id'] not in objects:
                                 continue
                             domain.append(self._convert_reln_to_domain_entry(reln, objects, not has_target))
@@ -219,6 +220,9 @@ class VisualGenomeFilter(object):
                                 target_reln = predicate
                         else:
                             if reln['object_id'] not in objects or reln['subject_id'] not in objects:
+                                continue
+                            #TODO: make hard-coded "behind" relation configurable
+                            if "behind" in predicate:
                                 continue
                             domain.append(self._convert_reln_to_domain_entry(reln, objects))
                 if has_target:
@@ -362,3 +366,4 @@ if __name__ == '__main__':
     filt = VisualGenomeFilter()
 
     filt.main(p.parse_args())
+
