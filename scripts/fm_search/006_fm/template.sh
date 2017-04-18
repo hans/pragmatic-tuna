@@ -1,7 +1,7 @@
 #!/usr/kerberos/bin/zsh
 
 source ~/anaconda/bin/activate jon-common
-cd ~/scr/projects/pragmatic-tuna-dev
+cd ~/scr/projects/pragmatic-tuna
 export PYTHONPATH=.
 
 logdir=$VG_LOG_DIR/<expnum:>
