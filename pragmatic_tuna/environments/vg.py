@@ -316,7 +316,7 @@ class VGEnv(gym.Env):
                         continue
 
                     for trial in corpus:
-                        subgraphs = trial["domain_positive"] + domain_negative
+                        subgraphs = trial["domain_positive"] + trial["domain_negative"]
                         for subgraph in subgraphs:
                             subgraph = tuple(self.graph_vocab[idx] for idx in subgraph)
                             # Rearrange so that we have (obj, reln, obj) order
