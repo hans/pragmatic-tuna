@@ -1,6 +1,6 @@
 #!/usr/bin/zsh
 
-SWEEP_DIR=/jagupard13/scr1/jgauthie/vg_dream/005_fm
+SWEEP_DIR=/jagupard15/scr1/jgauthie/vg_dream/006_fm
 
 echo "K\tADVFM\tFM\tPT\tID"
 for x in `find $SWEEP_DIR -type d`; do
