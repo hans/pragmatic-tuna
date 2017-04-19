@@ -364,8 +364,7 @@ def run_dream_phase(sv, env, listener_model, speaker_model, fm_batch, args):
 
 
 def main(args):
-    env = VGEnv(args.corpus_path, embedding_dim=args.embedding_dim,
-                fm_neg_synth=args.fast_mapping_neg_synth)
+    env = VGEnv(args.corpus_path, embedding_dim=args.embedding_dim)
     graph_embeddings = tf.Variable(env.graph_embeddings, name="graph_embeddings",
                                    dtype=tf.float32, trainable=False)
 
@@ -475,9 +474,6 @@ if __name__ == '__main__':
     p.add_argument("--fast_mapping_threshold", type=float, default=1.5,
                    help=("Continue FM training until speaker loss drops "
                          "below this value"))
-    p.add_argument("--fast_mapping_neg_synth", type=int, default=3,
-                   help=("Number of negative examples with the FM relation "
-                         "to synthesize for FM batches."))
 
     # Dreaming.
     p.add_argument("--n_dream_iters", type=int, default=501)

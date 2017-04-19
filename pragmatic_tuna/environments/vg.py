@@ -24,12 +24,7 @@ class VGEnv(gym.Env):
     EOS = EOS
 
     def __init__(self, corpus_path, graph_embeddings_path=None,
-                 embedding_dim=64, max_negative_samples=5,
-                 fm_neg_synth=3):
-        # of negative fast-mapping candidates to synthesize
-        self.fm_neg_synth = fm_neg_synth
-        self.fm_neg_synth_corpora = ["fast_mapping_train", "fast_mapping_dev"]
-
+                 embedding_dim=64, max_negative_samples=5):
         if corpus_path.endswith(".pkl"):
             with open(corpus_path, "rb") as corpus_pkl:
                 self.corpora, self.vocab, self.graph_vocab = pickle.load(corpus_pkl)
