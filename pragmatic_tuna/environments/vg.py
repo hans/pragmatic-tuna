@@ -244,7 +244,7 @@ class VGEnv(gym.Env):
                 of the negative referents to be the positive referent in the
                 returned batch
         """
-        corpus = self.corpora["fast_mapping_train"]
+        corpus = self.corpora["dreaming_train"]
 
         idxs = np.random.choice(len(corpus), size=batch_size, replace=False)
         candidates = []

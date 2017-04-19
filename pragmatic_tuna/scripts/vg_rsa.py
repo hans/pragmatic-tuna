@@ -306,7 +306,7 @@ def run_dream_phase(sv, env, listener_model, speaker_model, fm_batch, args):
             do_eval(sv, env, listener_model, speaker_model, args,
                     batch=batch)
 
-            for corpus in ["fast_mapping_dev", "adv_fast_mapping_dev",
+            for corpus in ["dreaming_dev", "adv_fast_mapping_dev",
                            "pre_train_dev"]:
                 print("======= eval: %s" % corpus)
                 do_eval(sv, env, listener_model, speaker_model, args,
@@ -322,7 +322,7 @@ def run_dream_phase(sv, env, listener_model, speaker_model, fm_batch, args):
                                              *eval_args, n_batches=5)
 
             # Eval with a non-adversarial FM batch.
-            pct_fm_success = eval_success("fast_mapping_dev",
+            pct_fm_success = eval_success("dreaming_dev",
                                           *eval_args, n_batches=5)
 
             # Finally, eval on pre-train dev.
