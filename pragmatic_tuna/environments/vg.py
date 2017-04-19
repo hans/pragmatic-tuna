@@ -127,19 +127,6 @@ class VGEnv(gym.Env):
                 trial["domain_negative"] = [tuple([graph_vocab2idx[x] for x in subgraph])
                                             for subgraph in trial["domain_negative"]]
 
-                # Add some spurious negative referents with a "behind" relation.
-                if corpus_name in self.fm_neg_synth_corpora:
-                    n_negative = len(trial["domain_negative"])
-                    n_samples = min(self.fm_neg_synth, n_negative)
-                    idxs = np.random.choice(n_negative, size=n_samples, replace=False)
-                    new_negative = [(graph_vocab2idx["behind"], # TODO DEV: fixed "behind" relation
-                                     trial["domain_negative"][idx][1],
-                                     trial["domain_negative"][idx][2])
-                                    for idx in idxs]
-
-                    trial["real_negative"] = trial["domain_negative"][:]
-                    trial["domain_negative"].extend(new_negative)
-
         return corpora, vocab, graph_vocab
 
     def _extract_candidates(self, trial, negative_samples=5):
@@ -329,15 +316,6 @@ class VGEnv(gym.Env):
                         continue
 
                     for trial in corpus:
-                        # During corpus processing, we synthesized some
-                        # spurious negative candidates in the fast-mapping
-                        # train, dev sets. Ignore these when producing the
-                        # co-occurrence corpus.
-                        if "real_negative" in trial:
-                            domain_negative = trial["real_negative"][:]
-                        else:
-                            domain_negative = trial["domain_negative"][:]
-
                         subgraphs = trial["domain_positive"] + domain_negative
                         for subgraph in subgraphs:
                             subgraph = tuple(self.graph_vocab[idx] for idx in subgraph)

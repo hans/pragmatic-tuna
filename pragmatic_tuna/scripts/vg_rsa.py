@@ -13,8 +13,6 @@ from pragmatic_tuna.models.vg_speaker import WindowedSequenceSpeakerModel
 from pragmatic_tuna.util import make_summary
 
 
-FAST_MAPPING_RELATION = "behind"
-
 # DEV
 l_norm = s_norm = None
 
