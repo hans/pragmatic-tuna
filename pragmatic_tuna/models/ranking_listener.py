@@ -163,8 +163,7 @@ class BoWRankingListener(RankingListenerModel):
 
     def observe(self, words_batch, candidates_batch, lengths_batch, num_candidates,
                 true_referent_position=0, norm_op=None):
-        # TODO don't update on false candidates
-        # TODO monitor avg embedding norm to make sure we're not going crazy
+        # TODO don't update on padded candidates
         feed = {self.words[t]: words_batch[t] for t in range(self.max_timesteps)}
         feed[self.candidates] = candidates_batch
         feed[self.lengths] = lengths_batch
