@@ -365,18 +365,6 @@ def run_dream_phase(sv, env, listener_model, speaker_model, fm_batch, args):
         tqdm.write(out_str % vals)
 
 
-
-def rig_embedding_gradients(opt, loss, embedding_var, rig_idx, scale=100.):
-    grads = {v: grad for grad, v in opt.compute_gradients(loss)
-             if grad is not None}
-    emb_grads = grads[embedding_var]
-    scale_mask = tf.expand_dims(tf.to_float(tf.equal(emb_grads.indices, rig_idx)), 1)
-    scale = scale_mask * (scale - 1.0) + 1.0
-    grads[embedding_var] = tf.IndexedSlices(indices=emb_grads.indices,
-                                            values=emb_grads.values * scale)
-    return [(grad, v) for v, grad in grads.items()]
-
-
 def main(args):
     env = VGEnv(args.corpus_path, embedding_dim=args.embedding_dim,
                 fm_neg_synth=args.fast_mapping_neg_synth)
@@ -406,11 +394,6 @@ def main(args):
     l_opt = opt_f(args.listener_learning_rate)
     l_global_step = tf.Variable(0, name="global_step_listener")
 
-    # # DEV: scale gradient for "behind"
-    # l_grads = rig_embedding_gradients(l_opt, listener_model.loss,
-    #                                   listener_model.embeddings, env.vocab2idx["behind"],
-    #                                   scale=100.)
-    # listener_model.train_op = l_opt.apply_gradients(l_grads)
     l_grads = l_opt.compute_gradients(listener_model.loss)
     listener_model.train_op = l_opt.apply_gradients(l_grads,
                                                     global_step=l_global_step)
@@ -419,11 +402,6 @@ def main(args):
     s_opt = opt_f(speaker_lr)
     s_global_step = tf.Variable(0, name="global_step_speaker")
 
-    # # DEV: scale gradient for "behind"
-    # s_grads = rig_embedding_gradients(s_opt, speaker_model.loss,
-    #                                   listener_model.embeddings, env.vocab2idx["behind"],
-    #                                   scale=100.)
-    # speaker_model.train_op = s_opt.apply_gradients(s_grads)
     s_grads = s_opt.compute_gradients(speaker_model.loss)
     speaker_model.train_op = s_opt.apply_gradients(s_grads,
                                                    global_step=s_global_step)
