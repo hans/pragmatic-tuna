@@ -108,13 +108,15 @@ class BoWRankingListener(RankingListenerModel):
                         * tf.nn.embedding_lookup(self.embeddings, words_t)
                     for t, words_t in enumerate(self.words)]
         embedded = tf.reduce_sum(embedded, axis=0) / lengths_temp
-        embedded = layers.fully_connected(embedded, self.hidden_dim)
+        embedded = layers.fully_connected(embedded, self.hidden_dim,
+                                          scope="utt_transform")
 
         # Embed candidates.
         embedded_cands = tf.nn.embedding_lookup(self.graph_embeddings, self.candidates)
         # Flatten candidates to 2d matrix.
         embedded_cands = tf.reshape(embedded_cands, (-1, 3 * self.embedding_dim))
-        embedded_cands = layers.fully_connected(embedded_cands, self.hidden_dim)
+        embedded_cands = layers.fully_connected(embedded_cands, self.hidden_dim,
+                                                scope="cand_transform")
 
         # Tile utterance representations.
         embedded = tf.reshape(embedded, (-1, 1, self.hidden_dim))
@@ -123,8 +125,9 @@ class BoWRankingListener(RankingListenerModel):
 
         # Concat and compute a bit more.
         concat = tf.concat(1, (embedded, embedded_cands))
-        concat = layers.fully_connected(concat, self.hidden_dim)
-        scores = tf.squeeze(layers.fully_connected(concat, 1, activation_fn=tf.tanh), [1])
+        concat = layers.fully_connected(concat, self.hidden_dim, scope="hidden")
+        scores = tf.squeeze(layers.fully_connected(concat, 1, activation_fn=tf.tanh,
+                                                   scope="scores"), [1])
 
         # Take dot product to yield scores.
         self.scores = tf.reshape(scores, (-1, num_candidates))

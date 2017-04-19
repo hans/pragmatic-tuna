@@ -202,10 +202,12 @@ class WindowedSequenceSpeakerModel(SequenceSpeakerModel):
                     ######### Feedforward.
 
                     input_t = tf.concat(1, [prev_sample, prev2_sample, graph_window])
-                    hidden_t = layers.fully_connected(input_t, self.hidden_dim)
+                    hidden_t = layers.fully_connected(input_t, self.hidden_dim,
+                                                      scope="hidden")
                     hidden_t = tf.nn.dropout(hidden_t, self.dropout_keep_prob)
                     output_t = layers.fully_connected(input_t,
-                                                      output_dim, tf.identity)
+                                                      output_dim, tf.identity,
+                                                      scope="output")
                     probs_t = tf.nn.softmax(output_t / self.temperature)
 
                     ######### Sampling / history update.
