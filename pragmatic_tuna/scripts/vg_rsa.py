@@ -427,19 +427,19 @@ def main(args):
             pprint(vars(args), params_f)
 
         with sess.as_default():
-            print("============== TRAINING")
-            run_train_phase(sv, env, listener_model, speaker_model, args)
+            # print("============== TRAINING")
+            # run_train_phase(sv, env, listener_model, speaker_model, args)
 
-            # if args.fast_mapping_k > 0:
-            #     print("============== FAST MAPPING")
-            #     fm_batch = run_fm_phase(sv, env, listener_model, speaker_model, args,
-            #                             k=args.fast_mapping_k)
-            # else:
-            #     fm_batch = None
+            if args.fast_mapping_k > 0:
+                print("============== FAST MAPPING")
+                fm_batch = run_fm_phase(sv, env, listener_model, speaker_model, args,
+                                        k=args.fast_mapping_k)
+            else:
+                fm_batch = None
 
-            # print("============== DREAMING")
-            # run_dream_phase(sv, env, listener_model, speaker_model, fm_batch,
-            #                 args)
+            print("============== DREAMING")
+            run_dream_phase(sv, env, listener_model, speaker_model, fm_batch,
+                            args)
 
             sv.request_stop()
 
