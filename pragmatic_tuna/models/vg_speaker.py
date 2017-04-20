@@ -205,7 +205,7 @@ class WindowedSequenceSpeakerModel(SequenceSpeakerModel):
                     hidden_t = layers.fully_connected(input_t, self.hidden_dim,
                                                       scope="hidden")
                     hidden_t = tf.nn.dropout(hidden_t, self.dropout_keep_prob)
-                    output_t = layers.fully_connected(input_t,
+                    output_t = layers.fully_connected(hidden_t,
                                                       output_dim, tf.identity,
                                                       scope="output")
                     probs_t = tf.nn.softmax(output_t / self.temperature)
