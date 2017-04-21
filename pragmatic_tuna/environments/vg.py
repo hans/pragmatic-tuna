@@ -46,6 +46,12 @@ class VGEnv(gym.Env):
                                   for corpus in self.corpora
                                   for trial in self.corpora[corpus]])
 
+        self.advfm_corpora = {split: [name for name in self.corpora
+                                      if name.startswith("adv_fast_mapping_" + split)]
+                              for split in ["train", "dev", "test"]}
+        self.advfm_corpora_flat = [name for name in self.corpora
+                                   if name.startswith("adv_fast_mapping")]
+
         # Assumes 1 positive candidate per example
         self.max_negative_samples = max_negative_samples
         self.max_candidates = max_negative_samples + 1
@@ -91,9 +97,7 @@ class VGEnv(gym.Env):
             # Don't double-count words in fast-mapping + adversarial
             # fast-mapping (adversarial are directly duped from
             # non-adversarial paired trials)
-            skip = trial["type"] in ["adv_fast_mapping_train",
-                                     "adv_fast_mapping_dev",
-                                     "adv_fast_mapping_test"]
+            skip = "adv_fast_mapping" in trial["type"]
             if not skip:
                 for word in utterance:
                     vocab_counts[word] += 1
@@ -304,7 +308,7 @@ class VGEnv(gym.Env):
             corpus_path = Path(d, "corpus")
             with corpus_path.open("w") as corpus_f:
                 for corpus_name, corpus in self.corpora.items():
-                    if "adv_" in corpus_name:
+                    if corpus_name in self.advfm_corpora_flat:
                         # Skip adversarial corpora, which are duplicated from
                         # real fast-mapping data and contain lots of bogus
                         # relations.
@@ -336,4 +340,4 @@ class VGEnv(gym.Env):
 
 
 if __name__ == "__main__":
-    env = VGEnv("data/vg_processed_dev.pkl") # VGEnv("data/vg_processed.json")
+    env = VGEnv("data/vg_processed_2_2.split_adv.dedup.json") # VGEnv("data/vg_processed.json")

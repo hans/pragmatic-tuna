@@ -77,15 +77,19 @@ def run_train_phase(sv, env, listener_model, speaker_model, args):
         if i % args.summary_interval == 0:
             eval_args = (env, listener_model, speaker_model, args)
 
-            summary = make_summary({
+            summary_points = {
                 "listener_loss": losses[0],
                 "speaker_loss": losses[1],
                 "listener_train_success": pct_success,
-                "speaker_advfm_success": eval_success("adv_fast_mapping_dev",
-                    *eval_args, n_batches=5, infer_with_speaker=True),
                 "listener_dev_success": eval_success("pre_train_dev",
                     *eval_args, n_batches=5),
-            })
+            }
+            summary_points.update({
+                ("speaker_advfm_%s_success") % (corpus[corpus.rindex("_")+1:]):
+                    eval_success(corpus, *eval_args, n_batches=2,
+                        infer_with_speaker=True)
+                for corpus in env.advfm_corpora["dev"]})
+            summary = make_summary(summary_points)
             sv.summary_computed(tf.get_default_session(), summary)
 
         if i % args.eval_interval == 0 or i == args.n_iters - 1:
@@ -306,8 +310,9 @@ def run_dream_phase(sv, env, listener_model, speaker_model, fm_batch, args):
             do_eval(sv, env, listener_model, speaker_model, args,
                     batch=batch)
 
-            for corpus in ["dreaming_dev", "adv_fast_mapping_dev",
-                           "pre_train_dev"]:
+            dev_corpora = ["dreaming_dev", "pre_train_dev"]
+            dev_corpora += env.advfm_corpora["dev"]
+            for corpus in dev_corpora:
                 print("======= eval: %s" % corpus)
                 do_eval(sv, env, listener_model, speaker_model, args,
                         corpus=corpus)
@@ -318,8 +323,8 @@ def run_dream_phase(sv, env, listener_model, speaker_model, fm_batch, args):
             eval_args = (env, listener_model, speaker_model, args)
 
             # Eval with an adversarial batch, using listener for inference.
-            pct_advfm_success = eval_success("adv_fast_mapping_dev",
-                                             *eval_args, n_batches=5)
+            advfm_successes = {corpus: eval_success(corpus, *eval_args, n_batches=2)
+                               for corpus in env.advfm_corpora["dev"]}
 
             # Eval with a non-adversarial FM batch.
             pct_fm_success = eval_success("dreaming_dev",
@@ -349,18 +354,25 @@ def run_dream_phase(sv, env, listener_model, speaker_model, fm_batch, args):
         losses = (losses[0], losses2[1])
         norms = (norms[0], norms2[1])
 
-        out_str = "%5f\t%5f\tL_SYNTH:% 3.2f"
-        vals = losses + (pct_success * 100,)
         if i % verbose_interval == 0:
-            out_str += "\tL_FM:% 3.2f\tL_ADVFM:% 3.2f\tL_PT:% 3.2f"
-            vals += (pct_fm_success * 100, pct_advfm_success * 100,
-                     pct_pt_success * 100)
+            out_str = "%5f\t%5f\tL_SYNTH:% 3.2f\tL_FM:% 3.2f\tL_PT:% 3.2f"
+            vals = losses + (pct_success * 100, pct_fm_success * 100,
+                             pct_pt_success * 100)
         else:
-            out_str += "\t\t\t\t\t\t"
+            out_str = "%5f\t%5f\tL_SYNTH:% 3.2f\t\t\t\t\t\t"
+            vals = losses + (pct_success * 100,)
         out_str += "\t%5f\t%5f"
         vals += norms
 
         tqdm.write(out_str % vals)
+
+        if i % verbose_interval == 0:
+            out_fields = []
+            for adv_corpus in env.advfm_corpora["dev"]:
+                name = adv_corpus[adv_corpus.rindex("_")+1:]
+                score = advfm_successes[adv_corpus] * 100
+                out_fields.append("%s\t% 3.2f" % (name, score))
+            tqdm.write("\t" + "\t".join(out_fields))
 
 
 def main(args):
@@ -427,19 +439,19 @@ def main(args):
             pprint(vars(args), params_f)
 
         with sess.as_default():
-            print("============== TRAINING")
-            run_train_phase(sv, env, listener_model, speaker_model, args)
+            # print("============== TRAINING")
+            # run_train_phase(sv, env, listener_model, speaker_model, args)
 
-            # if args.fast_mapping_k > 0:
-            #     print("============== FAST MAPPING")
-            #     fm_batch = run_fm_phase(sv, env, listener_model, speaker_model, args,
-            #                             k=args.fast_mapping_k)
-            # else:
-            #     fm_batch = None
+            if args.fast_mapping_k > 0:
+                print("============== FAST MAPPING")
+                fm_batch = run_fm_phase(sv, env, listener_model, speaker_model, args,
+                                        k=args.fast_mapping_k)
+            else:
+                fm_batch = None
 
-            # print("============== DREAMING")
-            # run_dream_phase(sv, env, listener_model, speaker_model, fm_batch,
-            #                 args)
+            print("============== DREAMING")
+            run_dream_phase(sv, env, listener_model, speaker_model, fm_batch,
+                            args)
 
             sv.request_stop()
 
