@@ -439,19 +439,21 @@ def main(args):
             pprint(vars(args), params_f)
 
         with sess.as_default():
-            # print("============== TRAINING")
-            # run_train_phase(sv, env, listener_model, speaker_model, args)
+            if args.mode == "pretrain":
+                print("============== TRAINING")
+                run_train_phase(sv, env, listener_model, speaker_model, args)
 
-            if args.fast_mapping_k > 0:
-                print("============== FAST MAPPING")
-                fm_batch = run_fm_phase(sv, env, listener_model, speaker_model, args,
-                                        k=args.fast_mapping_k)
-            else:
-                fm_batch = None
+            if args.mode == "dream":
+                if args.fast_mapping_k > 0:
+                    print("============== FAST MAPPING")
+                    fm_batch = run_fm_phase(sv, env, listener_model, speaker_model, args,
+                                            k=args.fast_mapping_k)
+                else:
+                    fm_batch = None
 
-            print("============== DREAMING")
-            run_dream_phase(sv, env, listener_model, speaker_model, fm_batch,
-                            args)
+                print("============== DREAMING")
+                run_dream_phase(sv, env, listener_model, speaker_model, fm_batch,
+                                args)
 
             sv.request_stop()
 
@@ -464,6 +466,9 @@ if __name__ == '__main__':
 
     p.add_argument("--summary_interval", type=int, default=50)
     p.add_argument("--eval_interval", type=int, default=500)
+
+    p.add_argument("--mode", choices=["pretrain", "dream"],
+                   default="dream")
 
     p.add_argument("--optimizer", choices=["momentum", "adagrad", "sgd"],
                    default="momentum")
