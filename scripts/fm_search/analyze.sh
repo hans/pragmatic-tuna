@@ -2,11 +2,12 @@
 
 alias -g .strip="| sed 's/^[ \t]\+//; s/[ \t]\+$//'"
 alias -g .avg='| awk "{sum += \$1; n+= 1} END {print sum / n}"'
-SWEEP_DIR=/jagupard13/scr1/jgauthie/vg_dream/D013
+SWEEP_DIR=/jagupard13/scr1/jgauthie/vg_dream/D014
 
-echo "K\tADVFM_AVG\tADVFM_in\tADVFM_on\tADVFM_near\tADVFM_behind\tADVFM_under\tFM\tPT\tID"
+echo "K\tSYNTH\tADVFM_AVG\tADVFM_in\tADVFM_on\tADVFM_near\tADVFM_behind\tADVFM_under\tFM\tPT\tID"
 for x in `find $SWEEP_DIR -type d`; do
     k=`awk -F ':' '/fast_mapping_k/ {gsub(",","",$2); print $2}' < $x/params`
+    synth_avg=`grep L_FM $x/stdout | tail -n3 | awk '{sum += $4; n += 1} END {print sum / n}'`
     fm_avg=`grep L_FM $x/stdout | tail -n3 | awk '{sum += $6; n += 1} END {print sum / n}'`
     dev_avg=`grep L_FM $x/stdout | tail -n3 | awk '{sum += $8; n += 1} END {print sum / n}'`
 
@@ -21,5 +22,5 @@ for x in `find $SWEEP_DIR -type d`; do
     advfm_avg=`echo "$in_avg\t$on_avg\t$near_avg\t$behind_avg\t$under_avg" | awk '{print ($1+$2+$3+$4+$5)/5;}'`
 
     name=`basename $x`
-    echo "$k\t$advfm_avg\t$in_avg\t$on_avg\t$near_avg\t$behind_avg\t$under_avg\t$fm_avg\t$dev_avg\t$name"
+    echo "$k\t$synth_avg\t$advfm_avg\t$in_avg\t$on_avg\t$near_avg\t$behind_avg\t$under_avg\t$fm_avg\t$dev_avg\t$name"
 done | grep -v nan | sort -n
