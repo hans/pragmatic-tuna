@@ -429,6 +429,7 @@ def main(args):
             embeddings=listener_model.embeddings,
             graph_embeddings=graph_embeddings,
             hidden_dim=args.speaker_hidden_dim,
+            hidden_layers=args.speaker_hidden_layers,
             dropout_keep_prob=args.dropout_keep_prob)
 
     if args.optimizer == "momentum":
@@ -521,6 +522,7 @@ if __name__ == '__main__':
     # Model architecture.
     p.add_argument("--embedding_dim", type=int, default=64)
     p.add_argument("--listener_hidden_dim", type=int, default=256)
+    p.add_argument("--speaker_hidden_layers", type=int, default=1)
     p.add_argument("--speaker_hidden_dim", type=int, default=256)
     p.add_argument("--dropout_keep_prob", type=float, default=0.8)
 
