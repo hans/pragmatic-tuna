@@ -249,8 +249,8 @@ def sample_utterances(env, silent_batch, speaker_model):
     max_length = env.max_timesteps
     lengths = np.ones((batch_size,), dtype=np.int32) * max_length
     eos_positions = np.array(np.where(utterances == env.word_eos_id)).T
-    for example, eos_idx in eos_positions:
-        lengths[example] = max(lengths[example], eos_idx)
+    for eos_idx, example in eos_positions:
+        lengths[example] = min(lengths[example], eos_idx)
 
     # # DEV: keep the lengths, but randomly replace all non-EOS tokens with other
     # # tokens
