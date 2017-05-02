@@ -91,7 +91,8 @@ def run_train_phase(sv, env, listener_model, speaker_model, args):
 
         if i % args.eval_interval == 0 or i == args.n_iters - 1:
             tqdm.write("====================== DEV EVAL AT %i" % i)
-            do_eval(sv, env, listener_model, speaker_model, args)
+            do_eval(env, listener_model, speaker_model, args,
+                    verbose=True)
 
 
 def do_eval(env, listener_model, speaker_model, args, batch=None,
@@ -227,7 +228,7 @@ def run_fm_phase(sv, env, listener_model, speaker_model, args,
             print("Dying.")
             sys.exit(1)
 
-    do_eval(sv, env, listener_model, speaker_model, args, batch=batch)
+    do_eval(env, listener_model, speaker_model, args, batch=batch)
     return batch
 
 
