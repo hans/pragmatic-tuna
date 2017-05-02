@@ -1,4 +1,5 @@
 from argparse import ArgumentParser
+import itertools
 import os.path
 from pprint import pprint
 import sys
@@ -508,6 +509,20 @@ def main(args):
 
 
 if __name__ == '__main__':
+    file_p = ArgumentParser()
+    file_p.add_argument("--args_file")
+    file_args, argv = file_p.parse_known_args()
+
+    if file_args.args_file is not None:
+        with open(file_args.args_file, "r") as args_f:
+            prior_args = eval(args_f.read())
+
+        # Prepend these to argv
+        prepend_argv = list(itertools.chain(*[("--%s" % arg, str(value))
+                                              for arg, value in prior_args.items()]))
+        print(prepend_argv)
+        argv = prepend_argv + argv
+
     p = ArgumentParser()
 
     p.add_argument("--logdir", default="/tmp/vg")
@@ -553,4 +568,5 @@ if __name__ == '__main__':
                    help=("Probability of swapping positive referent with a "
                          "negative one in silent batches"))
 
-    main(p.parse_args())
+    args = p.parse_args(argv)
+    main(args)
