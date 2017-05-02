@@ -127,7 +127,7 @@ def do_eval(env, listener_model, speaker_model, args, batch=None,
     kwargs.update(kwargs_)
 
     if batch is not None:
-        batches = []
+        batches = [batch]
     else:
         # Fetch `n` batches
         if n_batches == 0:
@@ -136,17 +136,17 @@ def do_eval(env, listener_model, speaker_model, args, batch=None,
         else:
             batches = [env.get_batch(corpus, batch_size=args.batch_size,
                                      negative_samples=args.negative_samples)
-                      for _ in range(n_batches)]
+                       for _ in range(n_batches)]
 
-    predictions, pct_success = [], []
+    batch_sizes, predictions, pct_success = [], [], []
     for batch in batches:
         b_pred, _, _, b_pct = run_trial(batch, listener_model, speaker_model,
                                         **kwargs)
+        batch_sizes.append(len(batch[1]))
         predictions.append(b_pred)
         pct_success.append(b_pct)
 
     # Average % successes
-    batch_sizes = [len(batch[1]) for batch in batches]
     mean_success = sum([pct_i * size_i for pct_i, size_i
                         in zip(pct_success, batch_sizes)])
     mean_success /= sum(batch_sizes)
@@ -393,8 +393,13 @@ def run_dream_phase(sv, env, listener_model, speaker_model, fm_batch, args):
         losses = (losses[0], losses2[1])
         norms = (norms[0], norms2[1])
 
-        if i % verbose_interval == 0:
+        is_verbose = i % verbose_interval == 0
+        is_full_eval = i % full_eval_interval == 0
+
+        if is_verbose or is_full_eval:
             out_str = "%5f\t%5f\tL_SYNTH:% 3.2f\tL_FM:% 3.2f\tL_PT:% 3.2f"
+            if is_full_eval:
+                out_str = "%%%%" + out_str
             vals = losses + (pct_success * 100, pct_fm_success * 100,
                              pct_pt_success * 100)
         else:
@@ -405,13 +410,17 @@ def run_dream_phase(sv, env, listener_model, speaker_model, fm_batch, args):
 
         tqdm.write(out_str % vals)
 
-        if i % verbose_interval == 0:
+        if is_verbose:
             out_fields = []
             for adv_corpus in env.advfm_corpora["dev"]:
                 name = adv_corpus[adv_corpus.rindex("_")+1:]
                 score = advfm_successes[adv_corpus] * 100
                 out_fields.append("%s\t% 3.2f" % (name, score))
-            tqdm.write("\t" + "\t".join(out_fields))
+
+            out_str = "\t" + "\t".join(out_fields)
+            if is_full_eval:
+                out_str = "%%%%" + out_str
+            tqdm.write(out_str)
 
 
 def main(args):
