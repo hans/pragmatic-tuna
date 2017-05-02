@@ -366,6 +366,13 @@ def run_dream_phase(sv, env, listener_model, speaker_model, fm_batch, args):
                                                n_batches=0 if full_eval else 2)
                                for corpus in env.advfm_corpora["dev"]}
 
+            # Compute ADVFM(new) - ADFM(old)
+            old_advfm = ["adv_fast_mapping_dev_in", "adv_fast_mapping_dev_on"]
+            new_advfm = set(env.advfm_corpora["dev"]) - set(old_advfm)
+            advfm_success_diff = \
+                    np.mean([advfm_successes[name] for name in new_advfm]) \
+                    - np.mean([advfm_successes[name] for name in old_advfm])
+
             # Eval with a non-adversarial FM batch.
             pct_fm_success = do_eval(*eval_args, corpus="dreaming_dev",
                                      n_batches=0 if full_eval else 5)
@@ -413,10 +420,12 @@ def run_dream_phase(sv, env, listener_model, speaker_model, fm_batch, args):
 
         if is_verbose:
             out_fields = []
-            for adv_corpus in env.advfm_corpora["dev"]:
+            for adv_corpus in sorted(env.advfm_corpora["dev"]):
                 name = adv_corpus[adv_corpus.rindex("_")+1:]
                 score = advfm_successes[adv_corpus] * 100
                 out_fields.append("%s\t% 3.2f" % (name, score))
+
+            out_fields.append("NEW-OLD\t% 3.2f" % (advfm_success_diff * 100))
 
             out_str = "\t" + "\t".join(out_fields)
             if is_full_eval:
