@@ -34,7 +34,7 @@ def infer_trial(candidates, listener_scores, speaker_scores,
 
 
 def run_trial(batch, listener_model, speaker_model, update_listener=True,
-              update_speaker=True, infer_with_speaker=False, verbose=False):
+              update_speaker=True, infer_with_speaker=False):
     utterances, candidates, lengths, n_cands = batch
 
     # Fetch model scores and rank for pragmatic listener inference.
@@ -42,9 +42,6 @@ def run_trial(batch, listener_model, speaker_model, update_listener=True,
     speaker_scores = speaker_model.score(*batch)
     scores, results = infer_trial(candidates, listener_scores, speaker_scores,
                                   infer_with_speaker=infer_with_speaker)
-
-    if verbose:
-        print(scores)
 
     successes = [result_i == candidates_i[0]
                      and scores_i.min() != scores_i.max()
@@ -81,13 +78,13 @@ def run_train_phase(sv, env, listener_model, speaker_model, args):
                 "listener_loss": losses[0],
                 "speaker_loss": losses[1],
                 "listener_train_success": pct_success,
-                "listener_dev_success": eval_success("pre_train_dev",
-                    *eval_args, n_batches=5),
+                "listener_dev_success": do_eval(*eval_args,
+                    corpus="pre_train_dev", n_batches=5),
             }
             summary_points.update({
                 ("speaker_advfm_%s_success") % (corpus[corpus.rindex("_")+1:]):
-                    eval_success(corpus, *eval_args, n_batches=2,
-                        infer_with_speaker=True)
+                    do_eval(*eval_args, corpus=corpus, n_batches=2,
+                            infer_with_speaker=True)
                 for corpus in env.advfm_corpora["dev"]})
             summary = make_summary(summary_points)
             sv.summary_computed(tf.get_default_session(), summary)
@@ -97,61 +94,90 @@ def run_train_phase(sv, env, listener_model, speaker_model, args):
             do_eval(sv, env, listener_model, speaker_model, args)
 
 
-def eval_success(corpus, env, l_model, s_model, args, n_batches=1,
-                 infer_with_speaker=False):
+def do_eval(env, listener_model, speaker_model, args, batch=None,
+            corpus="pre_train_dev", n_batches=1, verbose=False, **kwargs):
     """
-    Quick evaluation: fetch a few batches and compute average success.
+    Evaluate models on minibatch(es) or a whole corpus.
+
+    Arguments:
+        env:
+        listener_model:
+        speaker_model:
+        args: CLI args
+        batch: Optional specific batch on which to evaluate
+        corpus: Corpus from which to fetch batches
+        n_batches: Number of batches over which to compute success statistics.
+            If 0, use the entire corpus.
+        verbose: If `True`, print per-example detail on success for one of the
+            batches
+        kwargs: kwargs forwarded to `run_trial`
+
+    Returns:
+        avg_success: Average success across all examples
     """
-    pct_successes = []
 
-    for _ in range(n_batches):
-        batch = env.get_batch(corpus, batch_size=args.batch_size,
-                            negative_samples=args.negative_samples)
-        _, _, _, pct_success = \
-                run_trial(batch, l_model, s_model,
-                        update_listener=False, update_speaker=False,
-                        infer_with_speaker=infer_with_speaker)
+    # Prepare kwargs for `run_trial`
+    kwargs_ = kwargs
+    kwargs = {
+        "update_listener": False,
+        "update_speaker": False,
+        "infer_with_speaker": False,
+    }
+    kwargs.update(kwargs_)
 
-        pct_successes.append(pct_success)
+    if batch is not None:
+        batches = []
+    else:
+        # Fetch `n` batches
+        # TODO: support fetching all
+        batches = [env.get_batch(corpus, batch_size=args.batch_size,
+                                 negative_samples=args.negative_samples)
+                   for _ in range(n_batches)]
 
-    return np.mean(pct_successes)
+    predictions, pct_success = [], []
+    for batch in batches:
+        b_pred, _, _, b_pct = run_trial(batch, listener_model, speaker_model,
+                                        **kwargs)
+        predictions.append(b_pred)
+        pct_success.append(b_pct)
 
+    # Average % successes
+    batch_sizes = [len(batch[1]) for batch in batches]
+    mean_success = sum([pct_i * size_i for pct_i, size_i
+                        in zip(pct_success, batch_sizes)])
+    mean_success /= sum(batch_sizes)
 
-def do_eval(sv, env, listener_model, speaker_model, args, batch=None,
-            corpus="pre_train_dev", verbose=False):
-    d_batch = batch
-    if d_batch is None:
-        d_batch = env.get_batch(corpus, batch_size=args.batch_size,
-                                negative_samples=args.negative_samples)
-    d_utt, d_cands, d_lengths, d_n_cands = d_batch
+    if verbose:
+        # Verbose output for one of the batches
+        i = np.random.choice(len(batches))
+        batch_i, predictions_i = batches[i], predictions[i]
+        utt_i, cands_i, lengths_i, n_cands_i = batch_i
 
-    d_predictions, _, _, d_pct_success = \
-            run_trial(d_batch, listener_model, speaker_model,
-                      update_listener=False, update_speaker=False,
-                      verbose=verbose)
+        # Test: draw some samples for this new input
+        silent_batch = (cands_i, n_cands_i)
+        utt_s, lengths_s = sample_utterances(env, silent_batch, speaker_model)
 
-    # Test: draw some samples for this new input
-    silent_batch = (d_cands, d_n_cands)
-    s_utt, s_lengths = sample_utterances(env, silent_batch, speaker_model)
+        # Prepare to print per-example results
+        correct, false = [], []
+        for utterance, cands, prediction, sample in zip(utt_i.T, cands_i,
+                                                        predictions_i, utt_s.T):
+            utterance = " ".join(env.utterance_to_tokens(utterance))
+            sample = " ".join(env.utterance_to_tokens(sample))
 
-    # Debug: print utterances
-    correct, false = [], []
-    for utterance, cands, prediction, sample in zip(d_utt.T, d_cands,
-                                                    d_predictions, s_utt.T):
-        utterance = " ".join(env.utterance_to_tokens(utterance))
-        sample = " ".join(env.utterance_to_tokens(sample))
+            pos_cand = cands[0]
+            dest = correct if prediction == pos_cand else false
+            dest.append("%40s\t%60s\t%40s\t%40s" %
+                        (utterance, sample,
+                         " ".join([env.graph_vocab[idx] for idx in pos_cand]),
+                         " ".join([env.graph_vocab[idx] for idx in prediction])))
 
-        dest = correct if prediction == cands[0] else false
-        dest.append("%40s\t%60s\t%40s\t%40s" %
-                    (utterance, sample,
-                     " ".join([env.graph_vocab[idx] for idx in cands[0]]),
-                     " ".join([env.graph_vocab[idx] for idx in prediction])))
+        tqdm.write("=========== Correct:")
+        tqdm.write("\n".join(correct))
 
-    tqdm.write("=========== Correct:")
-    tqdm.write("\n".join(correct))
+        tqdm.write("\n========== False:")
+        tqdm.write("\n".join(false))
 
-    tqdm.write("\n========== False:")
-    tqdm.write("\n".join(false))
+    return mean_success
 
 
 def run_fm_phase(sv, env, listener_model, speaker_model, args,
@@ -307,15 +333,15 @@ def run_dream_phase(sv, env, listener_model, speaker_model, fm_batch, args):
 
         if i % args.eval_interval == 0 or i == args.n_dream_iters - 1:
             print("========= eval: synth training batch")
-            do_eval(sv, env, listener_model, speaker_model, args,
-                    batch=batch)
+            do_eval(env, listener_model, speaker_model, args, batch=batch,
+                    verbose=True)
 
             dev_corpora = ["dreaming_dev", "pre_train_dev"]
             dev_corpora += env.advfm_corpora["dev"]
             for corpus in dev_corpora:
                 print("======= eval: %s" % corpus)
-                do_eval(sv, env, listener_model, speaker_model, args,
-                        corpus=corpus)
+                do_eval(env, listener_model, speaker_model, args,
+                        corpus=corpus, verbose=True)
 
         if i % verbose_interval == 0:
             ####### MORE EVALUATION
@@ -323,16 +349,17 @@ def run_dream_phase(sv, env, listener_model, speaker_model, fm_batch, args):
             eval_args = (env, listener_model, speaker_model, args)
 
             # Eval with an adversarial batch, using listener for inference.
-            advfm_successes = {corpus: eval_success(corpus, *eval_args, n_batches=2)
+            advfm_successes = {corpus: do_eval(*eval_args, corpus=corpus,
+                                               n_batches=2)
                                for corpus in env.advfm_corpora["dev"]}
 
             # Eval with a non-adversarial FM batch.
-            pct_fm_success = eval_success("dreaming_dev",
-                                          *eval_args, n_batches=5)
+            pct_fm_success = do_eval(*eval_args, corpus="dreaming_dev",
+                                     n_batches=5)
 
             # Finally, eval on pre-train dev.
-            pct_pt_success = eval_success("pre_train_dev",
-                                          *eval_args, n_batches=5)
+            pct_pt_success = do_eval(*eval_args, corpus="pre_train_dev",
+                                     n_batches=5)
 
         ###### UPDATES
 
