@@ -151,33 +151,37 @@ def do_eval(env, listener_model, speaker_model, args, batch=None,
         # Verbose output for one of the batches
         i = np.random.choice(len(batches))
         batch_i, predictions_i = batches[i], predictions[i]
-        utt_i, cands_i, lengths_i, n_cands_i = batch_i
-
-        # Test: draw some samples for this new input
-        silent_batch = (cands_i, n_cands_i)
-        utt_s, lengths_s = sample_utterances(env, silent_batch, speaker_model)
-
-        # Prepare to print per-example results
-        correct, false = [], []
-        for utterance, cands, prediction, sample in zip(utt_i.T, cands_i,
-                                                        predictions_i, utt_s.T):
-            utterance = " ".join(env.utterance_to_tokens(utterance))
-            sample = " ".join(env.utterance_to_tokens(sample))
-
-            pos_cand = cands[0]
-            dest = correct if prediction == pos_cand else false
-            dest.append("%40s\t%60s\t%40s\t%40s" %
-                        (utterance, sample,
-                         " ".join([env.graph_vocab[idx] for idx in pos_cand]),
-                         " ".join([env.graph_vocab[idx] for idx in prediction])))
-
-        tqdm.write("=========== Correct:")
-        tqdm.write("\n".join(correct))
-
-        tqdm.write("\n========== False:")
-        tqdm.write("\n".join(false))
+        print_verbose_eval(env, speaker_model, batch_i, predictions_i)
 
     return mean_success
+
+
+def print_verbose_eval(env, speaker_model, batch, predictions):
+    utt, cands, lengths, n_cands = batch
+
+    # Test: draw some samples for this new input
+    silent_batch = (cands, n_cands)
+    utt_s, lengths_s = sample_utterances(env, silent_batch, speaker_model)
+
+    # Prepare to print per-example results
+    correct, false = [], []
+    for utterance, cands, prediction, sample in zip(utt.T, cands,
+                                                    predictions, utt_s.T):
+        utterance = " ".join(env.utterance_to_tokens(utterance))
+        sample = " ".join(env.utterance_to_tokens(sample))
+
+        pos_cand = cands[0]
+        dest = correct if prediction == pos_cand else false
+        dest.append("%40s\t%60s\t%40s\t%40s" %
+                    (utterance, sample,
+                     " ".join([env.graph_vocab[idx] for idx in pos_cand]),
+                     " ".join([env.graph_vocab[idx] for idx in prediction])))
+
+    tqdm.write("=========== Correct:")
+    tqdm.write("\n".join(correct))
+
+    tqdm.write("\n========== False:")
+    tqdm.write("\n".join(false))
 
 
 def run_fm_phase(sv, env, listener_model, speaker_model, args,
