@@ -129,10 +129,13 @@ def do_eval(env, listener_model, speaker_model, args, batch=None,
         batches = []
     else:
         # Fetch `n` batches
-        # TODO: support fetching all
-        batches = [env.get_batch(corpus, batch_size=args.batch_size,
-                                 negative_samples=args.negative_samples)
-                   for _ in range(n_batches)]
+        if n_batches == 0:
+            batches = env.iter_batches(corpus, batch_size=args.batch_size,
+                                       negative_samples=args.negative_samples)
+        else:
+            batches = [env.get_batch(corpus, batch_size=args.batch_size,
+                                     negative_samples=args.negative_samples)
+                      for _ in range(n_batches)]
 
     predictions, pct_success = [], []
     for batch in batches:
@@ -311,6 +314,7 @@ def synthesize_dream_batch(env, speaker_model, batch_size,
 
 def run_dream_phase(sv, env, listener_model, speaker_model, fm_batch, args):
     verbose_interval = 50
+    full_eval_interval = 500
     for i in trange(args.n_dream_iters):
         ####### DATA PREP
 
@@ -347,23 +351,26 @@ def run_dream_phase(sv, env, listener_model, speaker_model, fm_batch, args):
                 do_eval(env, listener_model, speaker_model, args,
                         corpus=corpus, verbose=True)
 
-        if i % verbose_interval == 0:
+        if i % verbose_interval == 0 or i % full_eval_interval == 0:
             ####### MORE EVALUATION
+
+            # Full eval: evaluate on entire corpus.
+            full_eval = i % full_eval_interval == 0
 
             eval_args = (env, listener_model, speaker_model, args)
 
             # Eval with an adversarial batch, using listener for inference.
             advfm_successes = {corpus: do_eval(*eval_args, corpus=corpus,
-                                               n_batches=2)
+                                               n_batches=0 if full_eval else 2)
                                for corpus in env.advfm_corpora["dev"]}
 
             # Eval with a non-adversarial FM batch.
             pct_fm_success = do_eval(*eval_args, corpus="dreaming_dev",
-                                     n_batches=5)
+                                     n_batches=0 if full_eval else 5)
 
             # Finally, eval on pre-train dev.
             pct_pt_success = do_eval(*eval_args, corpus="pre_train_dev",
-                                     n_batches=5)
+                                     n_batches=0 if full_eval else 5)
 
         ###### UPDATES
 

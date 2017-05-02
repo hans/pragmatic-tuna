@@ -208,7 +208,6 @@ class VGEnv(gym.Env):
 
         return words_batch_ret, candidates_batch_ret, lengths, num_candidates
 
-
     def get_batch(self, corpus, batch_size=64, negative_samples=5):
         """
         Return a training batch.
@@ -235,6 +234,28 @@ class VGEnv(gym.Env):
             candidates.append(self._extract_candidates(trial, negative_samples=negative_samples))
 
         return self._pad_batch(utterances, candidates)
+
+    def iter_batches(self, corpus, batch_size=64, negative_samples=5):
+        """
+        Iterate in batches over an ordered corpus.
+
+        The final batch may be smaller than `batch_size`.
+
+        Yields elements just like the return from `self.get_batch`.
+        """
+        assert negative_samples <= self.max_negative_samples
+
+        corpus = self.corpora[corpus]
+
+        offset = 0
+        while offset < len(corpus):
+            trials = corpus[offset:offset + batch_size]
+            utterances = [trial["utterance"] for trial in trials]
+            candidates = [self._extract_candidates(trial, negative_samples=negative_samples)
+                          for trial in trials]
+
+            yield self._pad_batch(utterances, candidates)
+            offset += batch_size
 
     def get_silent_batch(self, batch_size=64, negative_samples=5, p_swap=0.75):
         """
