@@ -260,6 +260,9 @@ def sample_utterances(env, silent_batch, speaker_model):
     lengths = np.ones((batch_size,), dtype=np.int32) * max_length
     eos_positions = np.array(np.where(utterances == env.word_eos_id)).T
     for eos_idx, example in eos_positions:
+        # Every example must have at least one token -- otherwise TF graph
+        # breaks
+        if eos_idx == 0: continue
         lengths[example] = min(lengths[example], eos_idx)
 
     # # DEV: keep the lengths, but randomly replace all non-EOS tokens with other
@@ -272,8 +275,8 @@ def sample_utterances(env, silent_batch, speaker_model):
 
     # Mask to make sure these examples make sense
     mask = np.tile(np.arange(max_length).reshape((-1, 1)), (1, batch_size))
-    mask = lengths.reshape((1, -1)) > mask
-    utterances *= mask
+    mask = lengths.reshape((1, -1)) <= mask
+    utterances[mask] = env.word_eos_id
 
     return utterances, lengths
 
