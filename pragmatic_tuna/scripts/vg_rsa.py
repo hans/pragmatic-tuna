@@ -99,7 +99,8 @@ def run_train_phase(sv, env, model, args):
 
 
 def do_eval(env, model, args, batch=None, corpus="pre_train_dev",
-            n_batches=1, verbose=False, **kwargs):
+            n_batches=1, resample_utterances=False, verbose=False,
+            **kwargs):
     """
     Evaluate models on minibatch(es) or a whole corpus.
 
@@ -111,6 +112,9 @@ def do_eval(env, model, args, batch=None, corpus="pre_train_dev",
         corpus: Corpus from which to fetch batches
         n_batches: Number of batches over which to compute success statistics.
             If 0, use the entire corpus.
+        resample_utterances: If True, resample utterances from the speaker
+            model before performing inference. (Ignores the gold utterances in
+            the corpus.)
         verbose: If `True`, print per-example detail on success for one of the
             batches
         kwargs: kwargs forwarded to `run_trial`
@@ -142,6 +146,12 @@ def do_eval(env, model, args, batch=None, corpus="pre_train_dev",
 
     batch_sizes, predictions, pct_success = [], [], []
     for batch in batches:
+        if resample_utterances:
+            _, b_cands, _, b_n_cands = batch
+            silent_batch = (b_cands, b_n_cands)
+            b_utt, b_lengths = sample_utterances(env, silent_batch, model.speaker)
+            batch = (b_utt, b_cands, b_lengths, b_n_cands)
+
         b_pred, _, _, b_pct = run_trial(batch, model, **kwargs)
         batch_sizes.append(len(batch[1]))
         predictions.append(b_pred)
@@ -312,7 +322,7 @@ def synthesize_dream_batch(env, speaker_model, batch_size,
 
 
 def run_dream_phase(sv, env, model, fm_batch, args):
-    verbose_interval = 50
+    verbose_interval = 100
     full_eval_interval = 500
     for i in trange(args.n_dream_iters):
         ####### DATA PREP
@@ -372,6 +382,12 @@ def run_dream_phase(sv, env, model, fm_batch, args):
             pct_fm_success = do_eval(*eval_args, corpus="dreaming_dev",
                                      n_batches=0 if full_eval else 5)
 
+            # Eval with a non-adversarial FM batch, sampling utterances from
+            # speaker!
+            pct_fms_success = do_eval(*eval_args, corpus="dreaming_dev",
+                                      n_batches=0 if full_eval else 5,
+                                      resample_utterances=True)
+
             # Finally, eval on pre-train dev.
             pct_pt_success = do_eval(*eval_args, corpus="pre_train_dev",
                                      n_batches=0 if full_eval else 5)
@@ -400,13 +416,13 @@ def run_dream_phase(sv, env, model, fm_batch, args):
         is_full_eval = i % full_eval_interval == 0
 
         if is_verbose or is_full_eval:
-            out_str = "%5f\t%5f\tL_SYNTH:% 3.2f\tL_FM:% 3.2f\tL_PT:% 3.2f"
+            out_str = "%5f\t%5f\tL_SYNTH:% 3.2f\tL_FM:% 3.2f\tL_FMS:% 3.2f\tL_PT:% 3.2f"
             if is_full_eval:
                 out_str = "%%%%" + out_str
             vals = losses + (pct_success * 100, pct_fm_success * 100,
-                             pct_pt_success * 100)
+                             pct_fms_success * 100, pct_pt_success * 100)
         else:
-            out_str = "%5f\t%5f\tL_SYNTH:% 3.2f\t\t\t\t\t\t"
+            out_str = "%5f\t%5f\tL_SYNTH:% 3.2f\t\t\t\t\t\t\t"
             vals = losses + (pct_success * 100,)
         out_str += "\t%5f\t%5f"
         vals += norms
