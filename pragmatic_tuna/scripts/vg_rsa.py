@@ -12,7 +12,7 @@ from tqdm import trange, tqdm
 from pragmatic_tuna.environments.vg import VGEnv
 from pragmatic_tuna.models.ranking_listener import BoWRankingListener
 from pragmatic_tuna.models.vg_speaker import WindowedSequenceSpeakerModel
-from pragmatic_tuna.util import make_summary
+from pragmatic_tuna.util import make_summary, reset_momentum
 
 
 Model = namedtuple("Model", ["listener", "speaker"])
@@ -489,12 +489,6 @@ def main(args):
     speaker_model.train_op = s_opt.apply_gradients(s_grads,
                                                    global_step=s_global_step)
 
-    from pprint import pprint
-    print("Listener gradients:")
-    pprint([v.name for grad, v in l_grads if grad is not None])
-    print("\nSpeaker gradients:")
-    pprint([v.name for grad, v in s_grads if grad is not None])
-
     global l_norm, s_norm
     l_norm = tf.global_norm([grad for grad, _ in l_grads])
     s_norm = tf.global_norm([grad for grad, _ in s_grads])
@@ -518,6 +512,8 @@ def main(args):
                 run_train_phase(sv, env, model, args)
 
             if args.mode == "dream":
+                reset_momentum()
+
                 if args.fast_mapping_k > 0:
                     print("============== FAST MAPPING")
                     fm_batch = run_fm_phase(sv, env, model, args,
@@ -544,7 +540,6 @@ if __name__ == '__main__':
         # Prepend these to argv
         prepend_argv = list(itertools.chain(*[("--%s" % arg, str(value))
                                               for arg, value in prior_args.items()]))
-        print(prepend_argv)
         argv = prepend_argv + argv
 
     p = ArgumentParser()

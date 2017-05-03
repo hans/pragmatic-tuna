@@ -40,3 +40,14 @@ def make_summary(tags_values_dict):
             value = np.asscalar(value)
         items.append(tf.Summary.Value(tag=tag, simple_value=value))
     return tf.Summary(value=items)
+
+
+def reset_momentum():
+    """
+    Reset the accumulators related to the momentum optimizer.
+    """
+    sess = tf.get_default_session()
+    momentum_vars = [v for v in tf.global_variables()
+                     if "Momentum" in v.name]
+
+    sess.run(tf.variables_initializer(momentum_vars))
