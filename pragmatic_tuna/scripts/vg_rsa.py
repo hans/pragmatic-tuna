@@ -219,22 +219,23 @@ def run_fm_phase(sv, env, model, args, k=None, corpus="fast_mapping_train"):
 
     speaker_loss = np.inf
     i = 0
-    while speaker_loss > args.fast_mapping_threshold:
-        predictions, losses, norms, pct_success = \
-                run_trial(batch, model, infer_with_speaker=True,
-                          update_speaker=True, update_listener=False)
-        listener_loss, speaker_loss = losses
-        listener_norm, speaker_norm = norms
+    if args.fast_mapping_threshold > 0:
+        while speaker_loss > args.fast_mapping_threshold:
+            predictions, losses, norms, pct_success = \
+                    run_trial(batch, model, infer_with_speaker=True,
+                            update_speaker=True, update_listener=False)
+            listener_loss, speaker_loss = losses
+            listener_norm, speaker_norm = norms
 
-        tqdm.write("%5f\t%5f\tS:%.2f\t\t%5f\t%5f" %
-                   (listener_loss, speaker_loss, pct_success * 100,
-                    listener_norm, speaker_norm))
+            tqdm.write("%5f\t%5f\tS:%.2f\t\t%5f\t%5f" %
+                    (listener_loss, speaker_loss, pct_success * 100,
+                        listener_norm, speaker_norm))
 
-        i += 1
-        if i == 2000:
-            print("HALT: Fast mapping did not converge after 2000 iterations.")
-            print("Dying.")
-            sys.exit(1)
+            i += 1
+            if i == 2000:
+                print("HALT: Fast mapping did not converge after 2000 iterations.")
+                print("Dying.")
+                sys.exit(1)
 
     do_eval(env, model, args, batch=batch)
     return batch
