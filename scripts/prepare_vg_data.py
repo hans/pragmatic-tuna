@@ -2,7 +2,7 @@
 
 
 from argparse import ArgumentParser
-from collections import defaultdict
+from collections import defaultdict, Counter
 import sys
 import json
 import copy
@@ -39,20 +39,28 @@ class VisualGenomeFilter(object):
     # populates self.TRAIN_RELATIONS and self.FM_RELATIONS with most frequent
     # relations
     def _populate_relations(self, train_relation_count, fm_relation_count):
-        relation_counter = Counter()
-        for image_id, image in self._cache.items():
-            for region in image['regions']:
-                if len(region['relationships']) != 1:
-                    continue
-                reln = region['relationships'][0]
-                predicate = reln['predicate'].lower()
-                relation_counter[predicate] += 1
+        #relation_counter = Counter()
+        #for image_id, image in self._cache.items():
+        #    for region in image['regions']:
+        #        if len(region['relationships']) != 1:
+        #            continue
+        #        reln = region['relationships'][0]
+        #        predicate = reln['predicate'].lower()
+        #        relation_counter[predicate] += 1
+#
+#        most_common = relation_counter.most_common(train_relation_count 
+                                                    #  + fm_relation_count)
+ #       self.TRAIN_RELATIONS = most_common[0:train_relation_count]
+ #       self.FM_RELATIONS = most_common[train_relation_count:fm_relation_count]
+   
+  #      print(most_common)
+ 
+        self.TRAIN_RELATIONS = ["on", "in"]
+        self.FM_RELATIONS = ["behind", "near", "under"]
 
-        most_common = relation_counter.most_common(train_relation_count 
-                                                      + fm_relation_count)
-        self.TRAIN_RELATIONS = most_common[0:train_relation_count]
-        self.FM_RELATIONS = most_common[train_relation_count:fm_relation_count]
-    
+      #  print("TRAIN_RELATIONS: " + ",".join(self.TRAIN_RELATIONS))
+     #   print("FM_RELATIONS: " + ",".join(self.FM_RELATIONS))
+
     
     def _index_relations(self):
         for image_id, image in self._cache.items():
@@ -67,9 +75,9 @@ class VisualGenomeFilter(object):
                     self._relationindex[predicate].add(image_id)
     
     def _construct_splits(self):
-        train_candiates = set()
+        train_candidates = set()
         for reln in self.TRAIN_RELATIONS:
-            train_candiates = train_candiates.union(self._relationindex[reln])
+            train_candidates = train_candidates.union(self._relationindex[reln])
         
         fm_candidates = set()
         for reln in self.FM_RELATIONS:
@@ -79,24 +87,30 @@ class VisualGenomeFilter(object):
         pt_all_size = len(pt_all)
         
         fm_all = fm_candidates.intersection(train_candidates)
-        fm_all_size = len(fm_all_size)
+        fm_all_size = len(fm_all)
         
         for i, img_id in enumerate(pt_all):
             if i < pt_all_size * DEV_SPLIT_SIZE:
-                self.splits["pre_train_dev"].add(img)
+                self.splits["pre_train_dev"].add(img_id)
             elif i < pt_all_size * (DEV_SPLIT_SIZE + TEST_SPLIT_SIZE):
-                self.splits["pre_train_test"].add(img)
+                self.splits["pre_train_test"].add(img_id)
             else:
-                self.splits["pre_train_train"].add(img)
+                self.splits["pre_train_train"].add(img_id)
 
         for i, img_id in enumerate(fm_all):
             if i < fm_all_size * FM_DEV_SPLIT_SIZE:
-                self.splits["fast_mapping_dev"].add(img)
+                self.splits["fast_mapping_dev"].add(img_id)
             elif i < fm_all_size * (FM_DEV_SPLIT_SIZE + FM_TEST_SPLIT_SIZE):
-                self.splits["fast_mapping_test"].add(img)
+                self.splits["fast_mapping_test"].add(img_id)
             else:
-                self.splits["fast_mapping_train"].add(img)
+                self.splits["fast_mapping_train"].add(img_id)
         
+        print("Size of splits:", file=sys.stderr)
+         
+        for x in self.splits:
+          print(x, file=sys.stderr)
+          print(len(self.splits[x]), file=sys.stderr)
+
 
     # make sure that none of the relations in FM_RELATIONS appear within a 
     # relation or an utterance of the pre_train_train split
@@ -285,19 +299,29 @@ class VisualGenomeFilter(object):
                             domain.append(self._convert_reln_to_domain_entry(reln, objects))
 
                     if has_target:
-                        trial = {}
-                        trial['type'] = split_name
-                        trial['utterance'] = utterance.lower()
-                        trial['domain'] = domain
-                        self.trials.append(trial)
-                        self.corpora[split_name + "_" + target_reln].append(trial)
-                        
+                            
                         if t == "fast_mapping":
+                            trial = {}
+                            trial['type'] = "dreaming_%s" % split
+                            trial['utterance'] = utterance.lower()
+                            trial['domain'] = domain
+                            self.trials.append(trial)
+                            
+                            fm_trial = copy.deepcopy(trial)
+                            fm_trial['type'] = split_name
+                            fm_trial['domain'] = [x for x in domain if x['reln'] in self.TRAIN_RELATIONS or x['reln'] in self.FM_RELATIONS]
+                            self.trials.append(fm_trial)
+                            
                             adv_trial = self._create_adverserial_trial(trial, split)
                             self.trials.append(adv_trial)
                             self.corpora[adv_trial['type']].append(adv_trial)
-                            
-                    
+                        else: 
+                            trial = {}
+                            trial['type'] = split_name
+                            trial['utterance'] = utterance.lower()
+                            trial['domain'] = domain
+                            self.trials.append(trial)
+                            self.corpora[split_name + "_" + target_reln].append(trial)                
                         
 
    
