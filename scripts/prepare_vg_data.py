@@ -14,8 +14,8 @@ except:
     pass
 
 
-TRAIN_RELATIONS = ["on", "in"]
-FAST_MAPPING_RELATIONS = ["behind"]
+POSSIBLE_TRAIN_RELATIONS = ["on", "in"]
+POSSIBLE_FAST_MAPPING_RELATIONS = ["behind", "near", "under"]
 
 DEV_SPLIT_SIZE = 0.1
 TEST_SPLIT_SIZE = 0.1
@@ -39,29 +39,10 @@ class VisualGenomeFilter(object):
     # populates self.TRAIN_RELATIONS and self.FM_RELATIONS with most frequent
     # relations
     def _populate_relations(self, train_relation_count, fm_relation_count):
-        #relation_counter = Counter()
-        #for image_id, image in self._cache.items():
-        #    for region in image['regions']:
-        #        if len(region['relationships']) != 1:
-        #            continue
-        #        reln = region['relationships'][0]
-        #        predicate = reln['predicate'].lower()
-        #        relation_counter[predicate] += 1
-#
-#        most_common = relation_counter.most_common(train_relation_count 
-                                                    #  + fm_relation_count)
- #       self.TRAIN_RELATIONS = most_common[0:train_relation_count]
- #       self.FM_RELATIONS = most_common[train_relation_count:fm_relation_count]
-   
-  #      print(most_common)
- 
-        self.TRAIN_RELATIONS = ["on", "in"]
-        self.FM_RELATIONS = ["behind", "near", "under"]
+        self.TRAIN_RELATIONS = POSSIBLE_TRAIN_RELATIONS[0:train_relation_count]
+        self.FM_RELATIONS = POSSIBLE_FAST_MAPPING_RELATIONS[0:fm_relation_count]
 
-      #  print("TRAIN_RELATIONS: " + ",".join(self.TRAIN_RELATIONS))
-     #   print("FM_RELATIONS: " + ",".join(self.FM_RELATIONS))
 
-    
     def _index_relations(self):
         for image_id, image in self._cache.items():
             for region in image['regions']:
@@ -73,22 +54,22 @@ class VisualGenomeFilter(object):
                 if predicate in self.TRAIN_RELATIONS \
                         or predicate in self.FM_RELATIONS:
                     self._relationindex[predicate].add(image_id)
-    
+
     def _construct_splits(self):
         train_candidates = set()
         for reln in self.TRAIN_RELATIONS:
             train_candidates = train_candidates.union(self._relationindex[reln])
-        
+
         fm_candidates = set()
         for reln in self.FM_RELATIONS:
             fm_candidates = fm_candidates.union(self._relationindex[reln])
 
         pt_all = train_candidates.difference(fm_candidates)
         pt_all_size = len(pt_all)
-        
+
         fm_all = fm_candidates.intersection(train_candidates)
         fm_all_size = len(fm_all)
-        
+
         for i, img_id in enumerate(pt_all):
             if i < pt_all_size * DEV_SPLIT_SIZE:
                 self.splits["pre_train_dev"].add(img_id)
@@ -104,15 +85,15 @@ class VisualGenomeFilter(object):
                 self.splits["fast_mapping_test"].add(img_id)
             else:
                 self.splits["fast_mapping_train"].add(img_id)
-        
+
         print("Size of splits:", file=sys.stderr)
-         
+
         for x in self.splits:
           print(x, file=sys.stderr)
           print(len(self.splits[x]), file=sys.stderr)
 
 
-    # make sure that none of the relations in FM_RELATIONS appear within a 
+    # make sure that none of the relations in FM_RELATIONS appear within a
     # relation or an utterance of the pre_train_train split
     def _filter_pt_train(self):
         new_pt_train = set()
@@ -141,9 +122,9 @@ class VisualGenomeFilter(object):
 
             if include:
                 new_pt_train.add(image_id)
-        
+
         self.splits["pre_train_train"] = new_pt_train
-        
+
 
     def _store_known_objects(self):
         for image_id in self.splits["pre_train_train"]:
@@ -161,7 +142,7 @@ class VisualGenomeFilter(object):
                         self.known_objects.add(objects[reln['object_id']])
 
 
-    # filters pre-train dev/test trials so that the target only contains 
+    # filters pre-train dev/test trials so that the target only contains
     # previously observed objects
     def _filter_pre_train(self):
         for split in ["pre_train_dev", "pre_train_test"]:
@@ -191,7 +172,7 @@ class VisualGenomeFilter(object):
             self.splits[split] = new_split
 
 
-    # filters fast mapping train/dev/test trials so that the target and 
+    # filters fast mapping train/dev/test trials so that the target and
     # distractors only contain previously observed objects
     def _filter_fm(self):
         for split in ["fast_mapping_train", "fast_mapping_dev", "fast_mapping_test"]:
@@ -221,7 +202,7 @@ class VisualGenomeFilter(object):
             self.splits[split] = new_split
 
 
- 
+
     def _convert_reln_to_domain_entry(self, reln, objects, is_target=False):
         entry = {}
         entry['object1'] = objects[reln['subject_id']]
@@ -234,7 +215,7 @@ class VisualGenomeFilter(object):
         return {obj['object_id']: obj['synsets'][0]
                         for obj in region['objects'] if len(obj['synsets']) > 0}
 
-    def _create_adverserial_trial(self, trial, t, other_relations=TRAIN_RELATIONS):
+    def _create_adverserial_trial(self, trial, t, other_relations=self.TRAIN_RELATIONS):
         for entry in trial['domain']:
             if entry['target']:
                 target = entry
@@ -264,9 +245,9 @@ class VisualGenomeFilter(object):
 
     def _generate_trials(self):
         for t in ["pre_train", "fast_mapping"]:
-            
+
             target_relations = self.TRAIN_RELATIONS if t == "pre_train" else self.FM_RELATIONS
-            
+
             for split in ["train", "dev", "test"]:
                 split_name = t + "_" + split
                 for image_id in self.splits[split_name]:
@@ -299,42 +280,43 @@ class VisualGenomeFilter(object):
                             domain.append(self._convert_reln_to_domain_entry(reln, objects))
 
                     if has_target:
-                            
+
                         if t == "fast_mapping":
                             trial = {}
                             trial['type'] = "dreaming_%s" % split
                             trial['utterance'] = utterance.lower()
                             trial['domain'] = domain
                             self.trials.append(trial)
-                            
+
                             fm_trial = copy.deepcopy(trial)
                             fm_trial['type'] = split_name
                             fm_trial['domain'] = [x for x in domain if x['reln'] in self.TRAIN_RELATIONS or x['reln'] in self.FM_RELATIONS]
                             self.trials.append(fm_trial)
-                            
+
+                            other_relations = set(self.FAST_MAPPING_RELATIONS + self.TRAIN_RELATIONS).difference(set([target_reln]))
                             adv_trial = self._create_adverserial_trial(trial, split)
                             self.trials.append(adv_trial)
                             self.corpora[adv_trial['type']].append(adv_trial)
-                        else: 
+                        else:
                             trial = {}
                             trial['type'] = split_name
                             trial['utterance'] = utterance.lower()
                             trial['domain'] = domain
                             self.trials.append(trial)
-                            self.corpora[split_name + "_" + target_reln].append(trial)                
-                        
+                            self.corpora[split_name + "_" + target_reln].append(trial)
 
-   
+
+
     def _add_pre_train_adv_trials(self):
         for split in ["train", "dev", "test"]:
             adv_corpus_name = "adv_fast_mapping_%s" % split
             corpus_len = len(self.corpora[adv_corpus_name])
-            for reln in TRAIN_RELATIONS:
+            for reln in self.TRAIN_RELATIONS:
                 train_trials_corpus_name = "pre_train_%s_%s" % (split, reln)
                 train_trials = self.corpora[train_trials_corpus_name]
                 k = min(corpus_len, len(train_trials))
                 adv_trials = random.sample(train_trials, k)
-                other_relations = set(FAST_MAPPING_RELATIONS + TRAIN_RELATIONS).difference(set([reln]))
+                other_relations = set(self.FAST_MAPPING_RELATIONS + self.TRAIN_RELATIONS).difference(set([reln]))
                 for trial in adv_trials:
                     adv_trial = self._create_adverserial_trial(trial, split,other_relations=other_relations)
                     self.trials.append(adv_trial)
@@ -344,13 +326,13 @@ class VisualGenomeFilter(object):
     def main(self, args):
 
         f = open(args.corpus_path, 'r')
-        
+
         data = json.load(f)
-        
+
         self._cache = dict()
         for image in data:
             self._cache[image["image_id"]] = image
-            
+
         self._populate_relations(args.train_relations, args.fast_mapping_relations)
         self._index_relations()
         self._construct_splits()
@@ -371,9 +353,8 @@ if __name__ == '__main__':
 
     p.add_argument("--train_relations", type=int, default=2)
     p.add_argument("--fast_mapping_relations", type=int, default=1)
-    
+
 
     filt = VisualGenomeFilter()
 
     filt.main(p.parse_args())
-
