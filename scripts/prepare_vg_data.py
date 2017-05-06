@@ -215,7 +215,7 @@ class VisualGenomeFilter(object):
         return {obj['object_id']: obj['synsets'][0]
                         for obj in region['objects'] if len(obj['synsets']) > 0}
 
-    def _create_adverserial_trial(self, trial, t, other_relations=self.TRAIN_RELATIONS):
+    def _create_adverserial_trial(self, trial, t, other_relations):
         for entry in trial['domain']:
             if entry['target']:
                 target = entry
@@ -293,8 +293,8 @@ class VisualGenomeFilter(object):
                             fm_trial['domain'] = [x for x in domain if x['reln'] in self.TRAIN_RELATIONS or x['reln'] in self.FM_RELATIONS]
                             self.trials.append(fm_trial)
 
-                            other_relations = set(self.FAST_MAPPING_RELATIONS + self.TRAIN_RELATIONS).difference(set([target_reln]))
-                            adv_trial = self._create_adverserial_trial(trial, split)
+                            other_relations = set(self.FM_RELATIONS + self.TRAIN_RELATIONS).difference(set([target_reln]))
+                            adv_trial = self._create_adverserial_trial(trial, split, other_relations)
                             self.trials.append(adv_trial)
                             self.corpora[adv_trial['type']].append(adv_trial)
                         else:
@@ -316,9 +316,9 @@ class VisualGenomeFilter(object):
                 train_trials = self.corpora[train_trials_corpus_name]
                 k = min(corpus_len, len(train_trials))
                 adv_trials = random.sample(train_trials, k)
-                other_relations = set(self.FAST_MAPPING_RELATIONS + self.TRAIN_RELATIONS).difference(set([reln]))
+                other_relations = set(self.FM_RELATIONS + self.TRAIN_RELATIONS).difference(set([reln]))
                 for trial in adv_trials:
-                    adv_trial = self._create_adverserial_trial(trial, split,other_relations=other_relations)
+                    adv_trial = self._create_adverserial_trial(trial, split, other_relations)
                     self.trials.append(adv_trial)
                     self.corpora[adv_trial['type']].append(adv_trial)
 
