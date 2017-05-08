@@ -448,6 +448,40 @@ def run_dream_phase(sv, env, model, fm_batch, args):
             tqdm.write(out_str)
 
 
+def rig_embedding_gradients(opt, loss, embedding_var, rig_idxs, scale=100.):
+    """
+    Compute gradients on an embedding variable.
+
+    Upscale certain embedding indices (or mask out non-specified embedding
+    updates altogether).
+
+    Arguments:
+        opt:
+        loss:
+        embedding_var:
+        rig_idxs: Embeddings (rows of `embedding_var`) to select
+        scale: Float scalar for selected embeddings. If zero, mask non-selected
+            embedding gradients to zero and leave selected embeddings untouched.
+    """
+    grads = {v: grad for grad, v in opt.compute_gradients(loss)
+             if grad is not None}
+    emb_grads = grads[embedding_var]
+
+    scale_mask = tf.zeros_like(emb_grads.indices)
+    for rig_idx in rig_idxs:
+        scale_mask = tf.logical_or(scale_mask,
+                                   tf.equal(emb_grads.indices, rig_idx))
+    scale_mask = tf.expand_dims(tf.to_float(scale_mask), 1)
+
+    if scale == 0:
+        scale = scale_mask
+    else:
+        scale = scale_mask * (scale - 1.0) + 1.0
+    grads[embedding_var] = tf.IndexedSlices(indices=emb_grads.indices,
+                                            values=emb_grads.values * scale)
+    return [(grad, v) for v, grad in grads.items()]
+
+
 def main(args):
     env = VGEnv(args.corpus_path, embedding_dim=args.embedding_dim)
     graph_embeddings = tf.Variable(env.graph_embeddings, name="graph_embeddings",
