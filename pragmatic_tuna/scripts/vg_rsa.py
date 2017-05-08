@@ -482,6 +482,34 @@ def rig_embedding_gradients(opt, loss, embedding_var, rig_idxs, scale=100.):
     return [(grad, v) for v, grad in grads.items()]
 
 
+def prepare_opt(model, args):
+    if args.optimizer == "momentum":
+        opt_f = lambda lr: tf.train.MomentumOptimizer(lr, 0.9)
+    elif args.optimizer == "adagrad":
+        opt_f = lambda lr: tf.train.AdagradOptimizer(lr)
+    elif args.optimizer == "sgd":
+        opt_f = lambda lr: tf.train.GradientDescentOptimizer(lr)
+
+    l_opt = opt_f(args.listener_learning_rate)
+    l_global_step = tf.Variable(0, name="global_step_listener")
+
+    l_grads = l_opt.compute_gradients(model.listener.loss)
+    model.listener.train_op = l_opt.apply_gradients(l_grads,
+                                                    global_step=l_global_step)
+
+    speaker_lr = args.listener_learning_rate * args.speaker_lr_factor
+    s_opt = opt_f(speaker_lr)
+    s_global_step = tf.Variable(0, name="global_step_speaker")
+
+    s_grads = s_opt.compute_gradients(model.speaker.loss)
+    model.speaker.train_op = s_opt.apply_gradients(s_grads,
+                                                   global_step=s_global_step)
+
+    global_step = l_global_step + s_global_step
+
+    return l_grads, s_grads, global_step
+
+
 def main(args):
     env = VGEnv(args.corpus_path, embedding_dim=args.embedding_dim)
     graph_embeddings = tf.Variable(env.graph_embeddings, name="graph_embeddings",
@@ -502,33 +530,12 @@ def main(args):
             dropout_keep_prob=args.dropout_keep_prob)
     model = Model(listener_model, speaker_model)
 
-    if args.optimizer == "momentum":
-        opt_f = lambda lr: tf.train.MomentumOptimizer(lr, 0.9)
-    elif args.optimizer == "adagrad":
-        opt_f = lambda lr: tf.train.AdagradOptimizer(lr)
-    elif args.optimizer == "sgd":
-        opt_f = lambda lr: tf.train.GradientDescentOptimizer(lr)
-
-    l_opt = opt_f(args.listener_learning_rate)
-    l_global_step = tf.Variable(0, name="global_step_listener")
-
-    l_grads = l_opt.compute_gradients(listener_model.loss)
-    listener_model.train_op = l_opt.apply_gradients(l_grads,
-                                                    global_step=l_global_step)
-
-    speaker_lr = args.listener_learning_rate * args.speaker_lr_factor
-    s_opt = opt_f(speaker_lr)
-    s_global_step = tf.Variable(0, name="global_step_speaker")
-
-    s_grads = s_opt.compute_gradients(speaker_model.loss)
-    speaker_model.train_op = s_opt.apply_gradients(s_grads,
-                                                   global_step=s_global_step)
+    l_grads, s_grads, global_step = prepare_opt(model, args)
 
     global l_norm, s_norm
     l_norm = tf.global_norm([grad for grad, _ in l_grads])
     s_norm = tf.global_norm([grad for grad, _ in s_grads])
 
-    global_step = l_global_step + s_global_step
     sv = tf.train.Supervisor(logdir=args.logdir, global_step=global_step,
                              summary_op=None)
 
