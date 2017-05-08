@@ -1,3 +1,5 @@
 template.0*.sh
 template.1*.sh
+template.2*.sh
+template.3*.sh
 *.log

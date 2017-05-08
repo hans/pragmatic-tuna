@@ -9,7 +9,7 @@ sweep_path = sys.argv[1]
 
 number_re = re.compile("[0-9]+(?:\.[0-9]+)?")
 full_1_re = re.compile("L_([^\s]+): *([0-9]+(?:\.[0-9]+)?)")
-full_2_re = re.compile("([A-Za-z]+[A-Za-z-]*)\s+([0-9]+(?:\.[0-9]+)?)")
+full_2_re = re.compile("([A-Za-z]+[A-Za-z-]*)\s+(-?[0-9]+(?:\.[0-9]+)?)")
 
 # Get headers
 with Path(sweep_path, "0000", "stdout").open("r") as stdout0:
