@@ -491,17 +491,22 @@ def prepare_opt(model, args):
         opt_f = lambda lr: tf.train.GradientDescentOptimizer(lr)
 
     l_opt = opt_f(args.listener_learning_rate)
-    l_global_step = tf.Variable(0, name="global_step_listener")
-
     l_grads = l_opt.compute_gradients(model.listener.loss)
-    model.listener.train_op = l_opt.apply_gradients(l_grads,
-                                                    global_step=l_global_step)
 
     speaker_lr = args.listener_learning_rate * args.speaker_lr_factor
     s_opt = opt_f(speaker_lr)
-    s_global_step = tf.Variable(0, name="global_step_speaker")
-
     s_grads = s_opt.compute_gradients(model.speaker.loss)
+
+    if args.dream_update == "embeddings":
+        allowed = [model.listener.embeddings, model.listener.graph_embeddings,
+                   model.speaker.embeddings, model.speaker.graph_embeddings]
+        l_grads = [(grad, var) for grad, var in l_grads if var in allowed]
+        s_grads = [(grad, var) for grad, var in s_grads if var in allowed]
+
+    l_global_step = tf.Variable(0, name="global_step_listener")
+    s_global_step = tf.Variable(0, name="global_step_speaker")
+    model.listener.train_op = l_opt.apply_gradients(l_grads,
+                                                    global_step=l_global_step)
     model.speaker.train_op = s_opt.apply_gradients(s_grads,
                                                    global_step=s_global_step)
 
@@ -628,6 +633,9 @@ if __name__ == '__main__':
     p.add_argument("--dream_p_swap", type=float, default=0.75,
                    help=("Probability of swapping positive referent with a "
                          "negative one in silent batches"))
+    p.add_argument("--dream_update", default="all",
+                   choices=["all", "embeddings", "rig_embeddings"])
+    p.add_argument("--dream_rig_scale", type=float, default=0)
 
     args = p.parse_args(argv)
     main(args)
